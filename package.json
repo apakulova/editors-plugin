@@ -1,0 +1,14 @@
+{
+  "name": "chistovik-figma-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Figma plugin for Russian typography cleanup.",
+  "scripts": {
+    "dev": "tsc -p tsconfig.json --watch",
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.106.0",
+    "typescript": "^5.6.3"
+  }
+}

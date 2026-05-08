@@ -1,0 +1,7 @@
+{
+  "name": "Чистовик",
+  "id": "chistovik",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "editorType": ["figma"]
+}
