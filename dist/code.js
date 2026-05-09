@@ -613,12 +613,34 @@ function formatNumbersAndMoney(input) {
                 return match;
             }
         });
+        text = normalizeGroupedNumberSpaces(text);
         text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]*(₽|\$|€|км|кг|м)(?=$|[^A-Za-zА-Яа-яЁё])/g, `$1${NBSP}$2`);
         text = normalizeSpacedYears(text);
         return text;
     }
     catch (error) {
         console.error("[Чистовик] Failed to format numbers and money", error);
+        throw error;
+    }
+}
+function normalizeGroupedNumberSpaces(input) {
+    try {
+        return input.replace(/\b\d{1,3}(?:[ \t\u00A0]\d{3})+(?:,\d+)?\b/g, (match, offset, fullText) => {
+            try {
+                const compactInteger = match.split(",")[0].replace(/[ \t\u00A0]/g, "");
+                if (shouldSkipNumberGrouping(fullText, offset, offset + match.length, compactInteger)) {
+                    return match;
+                }
+                return match.replace(/[ \t\u00A0](?=\d{3}(?:[ \t\u00A0,]|$))/g, NBSP);
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize grouped number candidate", error);
+                return match;
+            }
+        });
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to normalize grouped number spaces", error);
         throw error;
     }
 }
@@ -805,7 +827,7 @@ function applyNonBreakingSpaces(input) {
         let text = input;
         const shortWords = "а|в|во|и|к|ко|о|об|обо|у|с|со|по|за|из|от|до|не|ни|но|на|я|мы|вы|он|да|же|ли";
         text = text.replace(/[ \t\u00A0]+—/g, `${NBSP}${EM_DASH}`);
-        text = text.replace(new RegExp(`(^|[^${LETTERS}\\d])(${shortWords})[ \\t\\u00A0]+(?=\\S)`, "gi"), `$1$2${NBSP}`);
+        text = applyShortWordNonBreakingSpaces(text, shortWords);
         text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}$3.${NBSP}`);
         text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`);
         text = text.replace(/([№§])[ \t\u00A0]*(?=\S)/g, `$1${NBSP}`);
@@ -814,6 +836,23 @@ function applyNonBreakingSpaces(input) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to apply non-breaking spaces", error);
+        throw error;
+    }
+}
+function applyShortWordNonBreakingSpaces(input, shortWords) {
+    try {
+        const shortWordPattern = new RegExp(`(^|[^${LETTERS}\\d])(${shortWords})[ \\t]+(?=\\S)`, "gi");
+        let text = input;
+        let previous = "";
+        while (text !== previous) {
+            previous = text;
+            shortWordPattern.lastIndex = 0;
+            text = text.replace(shortWordPattern, `$1$2${NBSP}`);
+        }
+        return text;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to apply short word non-breaking spaces", error);
         throw error;
     }
 }
