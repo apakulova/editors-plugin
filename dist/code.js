@@ -1,5 +1,10 @@
 "use strict";
 const NBSP = "\u00A0";
+const DEVELOPMENT_NBSP_MARKER = "*";
+const DEVELOPMENT_NBSP_FILL = {
+    type: "SOLID",
+    color: { r: 1, g: 64 / 255, b: 83 / 255 },
+};
 const NB_HYPHEN = "\u2011";
 const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
@@ -233,13 +238,19 @@ async function processTextNodes(textNodes, skippedLocked, options) {
             try {
                 processed += 1;
                 const oldText = textNode.characters;
-                const newText = cleanTypography(oldText, options);
+                const cleanResult = cleanTypographyWithMetadata(oldText, options);
+                const newText = cleanResult.text;
                 if (newText !== oldText) {
                     await loadFontsForTextNode(textNode);
                     const styles = captureTextStyles(textNode);
                     const styleMap = buildStyleMap(oldText, newText, styles);
                     textNode.characters = newText;
                     restoreTextStyles(textNode, styleMap, styles);
+                    applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
+                    changed += 1;
+                }
+                else if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
+                    applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
                     changed += 1;
                 }
             }
@@ -419,7 +430,118 @@ function applyStyleSegment(textNode, start, end, style) {
         throw error;
     }
 }
-function cleanTypography(input, _options = getDefaultRunOptions()) {
+function applyDevelopmentMarkerStyles(textNode, markerIndexes) {
+    try {
+        for (const index of markerIndexes) {
+            if (textNode.characters[index] === DEVELOPMENT_NBSP_MARKER) {
+                textNode.setRangeFills(index, index + 1, [createDevelopmentMarkerFill()]);
+            }
+        }
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to apply development marker styles for text node ${textNode.id}`, error);
+        throw error;
+    }
+}
+function needsDevelopmentMarkerStyles(textNode, markerIndexes) {
+    try {
+        for (const index of markerIndexes) {
+            if (textNode.characters[index] !== DEVELOPMENT_NBSP_MARKER) {
+                continue;
+            }
+            const fills = textNode.getRangeFills(index, index + 1);
+            if (fills === figma.mixed || !isDevelopmentMarkerFills(fills)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to check development marker styles for text node ${textNode.id}`, error);
+        throw error;
+    }
+}
+function isDevelopmentMarkerFills(fills) {
+    try {
+        return fills.length === 1 && isDevelopmentMarkerFill(fills[0]);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check development marker fills", error);
+        throw error;
+    }
+}
+function isDevelopmentMarkerFill(fill) {
+    var _a;
+    try {
+        return fill.type === "SOLID" && fill.color.r === DEVELOPMENT_NBSP_FILL.color.r && fill.color.g === DEVELOPMENT_NBSP_FILL.color.g && fill.color.b === DEVELOPMENT_NBSP_FILL.color.b && ((_a = fill.opacity) !== null && _a !== void 0 ? _a : 1) === 1;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check development marker fill", error);
+        throw error;
+    }
+}
+function createDevelopmentMarkerFill() {
+    try {
+        return {
+            type: DEVELOPMENT_NBSP_FILL.type,
+            color: {
+                r: DEVELOPMENT_NBSP_FILL.color.r,
+                g: DEVELOPMENT_NBSP_FILL.color.g,
+                b: DEVELOPMENT_NBSP_FILL.color.b,
+            },
+        };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to create development marker fill", error);
+        throw error;
+    }
+}
+function cleanTypography(input, options = getDefaultRunOptions()) {
+    try {
+        return cleanTypographyWithMetadata(input, options).text;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to clean text", error);
+        throw error;
+    }
+}
+function cleanTypographyWithMetadata(input, options = getDefaultRunOptions()) {
+    try {
+        const beautyText = cleanTypographyForBeauty(restoreDevelopmentNonBreakingSpaceMarkers(input));
+        if (options.mode !== "development") {
+            return {
+                text: beautyText,
+                developmentMarkerIndexes: [],
+            };
+        }
+        return createDevelopmentTypographyResult(beautyText);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to clean text with metadata", error);
+        throw error;
+    }
+}
+function createDevelopmentTypographyResult(beautyText) {
+    try {
+        let text = "";
+        const developmentMarkerIndexes = [];
+        for (let index = 0; index < beautyText.length; index += 1) {
+            if (beautyText[index] === NBSP) {
+                developmentMarkerIndexes.push(index);
+                text += DEVELOPMENT_NBSP_MARKER;
+            }
+            else {
+                text += beautyText[index];
+            }
+        }
+        return { text, developmentMarkerIndexes };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to create development typography result", error);
+        throw error;
+    }
+}
+function cleanTypographyForBeauty(input) {
     try {
         let text = input;
         text = cleanupSpaces(text);
@@ -434,7 +556,106 @@ function cleanTypography(input, _options = getDefaultRunOptions()) {
         return text;
     }
     catch (error) {
-        console.error("[Чистовик] Failed to clean text", error);
+        console.error("[Чистовик] Failed to clean text for beauty mode", error);
+        throw error;
+    }
+}
+function restoreDevelopmentNonBreakingSpaceMarkers(input) {
+    try {
+        let text = input;
+        text = restoreDevelopmentMarkersBeforeEmDash(text);
+        text = restoreDevelopmentMarkersAfterShortWords(text);
+        text = restoreDevelopmentMarkersInInitials(text);
+        text = restoreDevelopmentMarkersAfterSpecialSigns(text);
+        text = restoreDevelopmentMarkersInNumberGroups(text);
+        text = restoreDevelopmentMarkersAfterNumbers(text);
+        text = restoreDevelopmentMarkersInAbbreviations(text);
+        return text;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore development non-breaking space markers", error);
+        throw error;
+    }
+}
+function restoreDevelopmentMarkersBeforeEmDash(input) {
+    try {
+        return input.replace(/(\S)\*(—)/g, `$1${NBSP}$2`);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore development markers before em dash", error);
+        throw error;
+    }
+}
+function restoreDevelopmentMarkersAfterShortWords(input) {
+    try {
+        const shortWords = "а|в|во|и|к|ко|о|об|обо|у|с|со|по|за|из|от|до|не|ни|но|на|я|мы|вы|он|да|же|ли";
+        const shortWordMarkerPattern = new RegExp(`(^|[^${LETTER_OR_DIGIT}])(${shortWords})\\*(?=\\S)`, "gi");
+        let text = input;
+        let previous = "";
+        while (text !== previous) {
+            previous = text;
+            shortWordMarkerPattern.lastIndex = 0;
+            text = text.replace(shortWordMarkerPattern, `$1$2${NBSP}`);
+        }
+        return text;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore development markers after short words", error);
+        throw error;
+    }
+}
+function restoreDevelopmentMarkersInInitials(input) {
+    try {
+        let text = input;
+        let previous = "";
+        while (text !== previous) {
+            previous = text;
+            text = text
+                .replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ]\.)\*(?=[А-ЯЁ]\.)/g, `$1$2${NBSP}`)
+                .replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ]\.)\*(?=[А-ЯЁ][а-яё]+)/g, `$1$2${NBSP}`);
+        }
+        return text;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore development markers in initials", error);
+        throw error;
+    }
+}
+function restoreDevelopmentMarkersAfterSpecialSigns(input) {
+    try {
+        return input.replace(/([№§])\*(?=\S)/g, `$1${NBSP}`);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore development markers after special signs", error);
+        throw error;
+    }
+}
+function restoreDevelopmentMarkersInNumberGroups(input) {
+    try {
+        return input.replace(/(\d)\*(?=\d{3}(?:\D|$))/g, `$1${NBSP}`);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore development markers in number groups", error);
+        throw error;
+    }
+}
+function restoreDevelopmentMarkersAfterNumbers(input) {
+    try {
+        return input.replace(/(\d(?:[\d \u00A0*]*\d)?(?:,\d+)?)\*(?=[A-Za-zА-Яа-яЁё₽$€°])/g, `$1${NBSP}`);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore development markers after numbers", error);
+        throw error;
+    }
+}
+function restoreDevelopmentMarkersInAbbreviations(input) {
+    try {
+        return input
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])т\.\*(?=[екдп]\.)/gi, `$1т.${NBSP}`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(кв\.|куб\.)\*(?=м(?=$|[^A-Za-zА-Яа-яЁё]))/gi, `$1$2${NBSP}`);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore development markers in abbreviations", error);
         throw error;
     }
 }
