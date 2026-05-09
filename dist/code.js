@@ -23,15 +23,7 @@ async function run() {
             openSettingsUI();
             return;
         }
-        const options = getDefaultRunOptions();
-        const collection = collectTargetTextNodes({
-            processLocked: options.processLockedNodes,
-        });
-        const result = await processTextNodes(collection.nodes, collection.skippedLocked, options);
-        if (result.failed > 0) {
-            throw new Error(`Failed to process ${result.failed} text node(s)`);
-        }
-        notifyCleanResult(result);
+        await runTypograph(getDefaultRunOptions());
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean typography", error);
@@ -50,9 +42,14 @@ function openSettingsUI() {
             themeColors: true,
             width: 360,
         });
-        figma.ui.onmessage = (message) => {
+        figma.ui.onmessage = async (message) => {
             try {
                 if (message.type === "close") {
+                    figma.closePlugin();
+                    return;
+                }
+                if (message.type === "run-typograph") {
+                    await runTypograph(getRunOptionsFromMessage(message));
                     figma.closePlugin();
                 }
             }
@@ -67,6 +64,22 @@ function openSettingsUI() {
         throw error;
     }
 }
+async function runTypograph(options) {
+    try {
+        const collection = collectTargetTextNodes({
+            processLocked: options.processLockedNodes,
+        });
+        const result = await processTextNodes(collection.nodes, collection.skippedLocked, options);
+        if (result.failed > 0) {
+            throw new Error(`Failed to process ${result.failed} text node(s)`);
+        }
+        notifyCleanResult(result);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to run typograph", error);
+        throw error;
+    }
+}
 function getDefaultRunOptions() {
     try {
         return {
@@ -76,6 +89,21 @@ function getDefaultRunOptions() {
     }
     catch (error) {
         console.error("[Чистовик] Failed to get default run options", error);
+        throw error;
+    }
+}
+function getRunOptionsFromMessage(message) {
+    var _a, _b;
+    try {
+        const defaults = getDefaultRunOptions();
+        const mode = ((_a = message.options) === null || _a === void 0 ? void 0 : _a.mode) === "development" ? "development" : defaults.mode;
+        return {
+            mode,
+            processLockedNodes: ((_b = message.options) === null || _b === void 0 ? void 0 : _b.processLockedNodes) === true,
+        };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get run options from UI message", error);
         throw error;
     }
 }

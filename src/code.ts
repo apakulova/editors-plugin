@@ -23,6 +23,11 @@ interface PluginRunOptions {
   processLockedNodes: boolean;
 }
 
+interface PluginUIMessage {
+  options?: Partial<PluginRunOptions>;
+  type?: string;
+}
+
 interface QuoteState {
   script: QuoteScript;
   level: number;
@@ -52,17 +57,7 @@ async function run(): Promise<void> {
       return;
     }
 
-    const options = getDefaultRunOptions();
-    const collection = collectTargetTextNodes({
-      processLocked: options.processLockedNodes,
-    });
-    const result = await processTextNodes(collection.nodes, collection.skippedLocked, options);
-
-    if (result.failed > 0) {
-      throw new Error(`Failed to process ${result.failed} text node(s)`);
-    }
-
-    notifyCleanResult(result);
+    await runTypograph(getDefaultRunOptions());
   } catch (error) {
     console.error("[Чистовик] Failed to clean typography", error);
     figma.notify("Ой, не получилось почистить 🛑", { error: true });
@@ -81,9 +76,15 @@ function openSettingsUI(): void {
       width: 360,
     });
 
-    figma.ui.onmessage = (message: { type?: string }) => {
+    figma.ui.onmessage = async (message: PluginUIMessage) => {
       try {
         if (message.type === "close") {
+          figma.closePlugin();
+          return;
+        }
+
+        if (message.type === "run-typograph") {
+          await runTypograph(getRunOptionsFromMessage(message));
           figma.closePlugin();
         }
       } catch (error) {
@@ -97,6 +98,24 @@ function openSettingsUI(): void {
   }
 }
 
+async function runTypograph(options: PluginRunOptions): Promise<void> {
+  try {
+    const collection = collectTargetTextNodes({
+      processLocked: options.processLockedNodes,
+    });
+    const result = await processTextNodes(collection.nodes, collection.skippedLocked, options);
+
+    if (result.failed > 0) {
+      throw new Error(`Failed to process ${result.failed} text node(s)`);
+    }
+
+    notifyCleanResult(result);
+  } catch (error) {
+    console.error("[Чистовик] Failed to run typograph", error);
+    throw error;
+  }
+}
+
 function getDefaultRunOptions(): PluginRunOptions {
   try {
     return {
@@ -105,6 +124,21 @@ function getDefaultRunOptions(): PluginRunOptions {
     };
   } catch (error) {
     console.error("[Чистовик] Failed to get default run options", error);
+    throw error;
+  }
+}
+
+function getRunOptionsFromMessage(message: PluginUIMessage): PluginRunOptions {
+  try {
+    const defaults = getDefaultRunOptions();
+    const mode = message.options?.mode === "development" ? "development" : defaults.mode;
+
+    return {
+      mode,
+      processLockedNodes: message.options?.processLockedNodes === true,
+    };
+  } catch (error) {
+    console.error("[Чистовик] Failed to get run options from UI message", error);
     throw error;
   }
 }
