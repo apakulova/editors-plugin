@@ -205,6 +205,7 @@ npm run dev
 - `manifest.json` — манифест Figma-плагина, указывает на `dist/code.js`.
 - `package.json` — npm-скрипты и зависимости.
 - `tsconfig.json` — настройки TypeScript. Используется `target: ES2017`, `module: none` и `outFile: dist/code.js`, чтобы собранный файл был совместим с рантаймом Figma Plugin API.
+- `assets/plugin-icon.svg` — иконка плагина для публикации и локального предпросмотра. В `manifest.json` она не подключается: Figma задает иконку плагина через окно публикации или обновления ресурса.
 
 ## План развития
 

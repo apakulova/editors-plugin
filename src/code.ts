@@ -71,7 +71,7 @@ async function run(): Promise<void> {
 function openSettingsUI(): void {
   try {
     figma.showUI(__html__, {
-      height: 420,
+      height: 340,
       themeColors: true,
       width: 360,
     });

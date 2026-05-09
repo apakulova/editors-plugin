@@ -4,8 +4,22 @@
     <meta charset="utf-8" />
     <style>
       :root {
+        --accent-color: #2f7f7a;
+        --accent-color-hover: #276d69;
+        --figma-color-bg: #ffffff;
+        --figma-color-bg-brand: var(--accent-color);
+        --figma-color-bg-brand-hover: var(--accent-color-hover);
+        --figma-color-bg-hover: #f5f5f5;
+        --figma-color-bg-secondary: #f7f7f5;
+        --figma-color-border: #dbdbd9;
+        --figma-color-border-brand: var(--accent-color);
+        --figma-color-icon: #141414;
+        --figma-color-text: #141414;
+        --figma-color-text-disabled: #b8b8b8;
+        --figma-color-text-onbrand: #ffffff;
+        --figma-color-text-secondary: #757575;
         color-scheme: light dark;
-        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: Manrope, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
       * {
@@ -29,207 +43,271 @@
         flex-direction: column;
       }
 
-      .header {
-        align-items: center;
-        border-bottom: 1px solid var(--figma-color-border);
-        display: flex;
-        gap: 12px;
-        padding: 16px;
-      }
-
-      .mark {
-        align-items: center;
-        background: var(--figma-color-bg-brand);
-        border-radius: 8px;
-        color: var(--figma-color-text-onbrand);
-        display: flex;
-        flex: 0 0 auto;
-        font-size: 18px;
-        font-weight: 700;
-        height: 36px;
-        justify-content: center;
-        width: 36px;
-      }
-
-      .heading {
-        min-width: 0;
-      }
-
-      .title {
-        font-size: 16px;
-        font-weight: 700;
-        line-height: 22px;
-      }
-
-      .subtitle {
-        color: var(--figma-color-text-secondary);
-        font-size: 12px;
-        line-height: 18px;
-      }
-
-      .close {
-        align-items: center;
-        appearance: none;
-        background: transparent;
-        border: 0;
-        border-radius: 6px;
-        color: var(--figma-color-icon);
-        cursor: pointer;
-        display: flex;
-        flex: 0 0 auto;
-        height: 28px;
-        justify-content: center;
-        margin-left: auto;
-        padding: 0;
-        width: 28px;
-      }
-
-      .close:hover {
-        background: var(--figma-color-bg-hover);
-      }
-
       .tabs {
+        align-items: end;
         border-bottom: 1px solid var(--figma-color-border);
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        display: flex;
+        gap: 22px;
+        min-height: 50px;
+        overflow: visible;
+        padding: 7px 16px 0;
+        position: relative;
       }
 
       .tab {
         appearance: none;
         background: transparent;
         border: 0;
-        border-bottom: 2px solid transparent;
         color: var(--figma-color-text-secondary);
-        font-size: 12px;
-        font-weight: 600;
-        height: 40px;
-        padding: 0 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 800;
+        height: 43px;
+        line-height: 18px;
+        padding: 0 0 8px;
+        position: relative;
         text-align: center;
+        white-space: nowrap;
+      }
+
+      .tab-label {
+        position: relative;
       }
 
       .tab.active {
-        border-color: var(--figma-color-bg-brand);
         color: var(--figma-color-text);
       }
 
+      .tab.active::after {
+        background: var(--figma-color-bg-brand);
+        border-radius: 999px 68% 999px 72%;
+        bottom: -4px;
+        box-shadow: 0 1px 0 rgba(47, 127, 122, 0.16);
+        content: "";
+        height: 5px;
+        left: -2px;
+        position: absolute;
+        right: -3px;
+        transform: rotate(-0.9deg);
+      }
+
       .tab:disabled {
+        color: var(--figma-color-text-disabled);
         cursor: default;
-        opacity: 0.55;
+      }
+
+      .tab-doodles {
+        bottom: 13px;
+        height: 14px;
+        left: calc(100% - 14px);
+        pointer-events: none;
+        position: absolute;
+        width: 22px;
+      }
+
+      .tab-doodles span {
+        background: var(--figma-color-bg-brand);
+        border-radius: 999px;
+        display: block;
+        height: 1.5px;
+        opacity: 0.9;
+        position: absolute;
+        transform-origin: center;
+      }
+
+      .tab-doodles span:nth-child(1) {
+        left: 1px;
+        top: 7px;
+        transform: rotate(88deg);
+        width: 10px;
+      }
+
+      .tab-doodles span:nth-child(2) {
+        left: 10px;
+        top: 4px;
+        transform: rotate(-55deg);
+        width: 13px;
+      }
+
+      .tab-doodles span:nth-child(3) {
+        left: 15px;
+        top: 11px;
+        transform: rotate(-32deg);
+        width: 7px;
       }
 
       .content {
         display: grid;
-        gap: 14px;
-        padding: 16px;
+        gap: 20px;
+        padding: 24px 16px 12px;
       }
 
       .group {
         display: grid;
-        gap: 8px;
+        gap: 14px;
       }
 
       .group-title {
-        font-size: 12px;
+        font-size: 16px;
         font-weight: 700;
-        line-height: 18px;
+        line-height: 20px;
       }
 
-      .mode-grid {
+      .mode-list {
         display: grid;
-        gap: 8px;
-        grid-template-columns: 1fr 1fr;
+        gap: 12px;
       }
 
       .mode {
-        align-items: flex-start;
-        appearance: none;
-        background: var(--figma-color-bg-secondary);
-        border: 1px solid var(--figma-color-border);
-        border-radius: 8px;
-        color: var(--figma-color-text);
+        align-items: start;
         cursor: pointer;
+        display: flex;
+        gap: 12px;
+      }
+
+      .mode input {
+        height: 1px;
+        opacity: 0;
+        position: absolute;
+        width: 1px;
+      }
+
+      .radio-mark {
+        background: #e1e1df;
+        border: 0;
+        border-radius: 50%;
+        flex: 0 0 auto;
+        height: 24px;
+        margin-top: -1px;
+        position: relative;
+        transition: background 120ms ease;
+        width: 24px;
+      }
+
+      .radio-mark::after {
+        background-image: url("data:image/svg+xml,%3Csvg width='16' height='12' viewBox='0 0 16 12' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2 6.15L6.02 9.72L14 1.28' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: 100% 100%;
+        content: "";
+        height: 12px;
+        left: 50%;
+        opacity: 0;
+        position: absolute;
+        top: calc(50% + 0.7px);
+        transform: translate(-50%, -50%);
+        transition: opacity 120ms ease, transform 120ms ease;
+        width: 16px;
+      }
+
+      .mode input:checked + .radio-mark {
+        background: var(--figma-color-bg-brand);
+      }
+
+      .mode input:checked + .radio-mark::after {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+      }
+
+      .mode input:focus-visible + .radio-mark {
+        box-shadow: 0 0 0 2px rgba(47, 127, 122, 0.22);
+      }
+
+      .mode-content {
         display: grid;
-        gap: 4px;
-        min-height: 88px;
-        padding: 11px;
-        text-align: left;
-      }
-
-      .mode.active {
-        border-color: var(--figma-color-border-brand, var(--figma-color-bg-brand));
-        box-shadow: inset 0 0 0 1px var(--figma-color-border-brand, var(--figma-color-bg-brand));
-      }
-
-      .mode:disabled {
-        cursor: default;
-        opacity: 0.58;
+        gap: 3px;
+        padding-top: 1px;
       }
 
       .mode-name {
-        font-size: 12px;
+        font-size: 14px;
         font-weight: 700;
         line-height: 18px;
       }
 
       .mode-text {
         color: var(--figma-color-text-secondary);
-        font-size: 11px;
-        line-height: 16px;
+        font-size: 12px;
+        line-height: 17px;
+      }
+
+      .nbsp-star {
+        color: #ff4053;
+        font-weight: 800;
       }
 
       .option {
-        align-items: flex-start;
-        background: var(--figma-color-bg-secondary);
-        border: 1px solid var(--figma-color-border);
-        border-radius: 8px;
+        align-items: start;
+        background: transparent;
+        border: 0;
         cursor: pointer;
         display: grid;
-        gap: 10px;
+        gap: 8px;
         grid-template-columns: 16px 1fr;
-        padding: 12px;
+        padding: 0;
       }
 
       .option input {
-        accent-color: var(--figma-color-bg-brand);
-        height: 14px;
-        margin: 2px 0 0;
-        width: 14px;
+        appearance: none;
+        background: #ffffff;
+        border: 1px solid #b8b8b8;
+        border-radius: 4px;
+        height: 16px;
+        margin: 1px 0 0;
+        position: relative;
+        width: 16px;
+      }
+
+      .option input:checked {
+        background: var(--figma-color-bg-brand);
+        border-color: var(--figma-color-bg-brand);
+      }
+
+      .option input:checked::after {
+        background-image: url("data:image/svg+xml,%3Csvg width='10' height='8' viewBox='0 0 10 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.2 4.15L3.8 6.45L8.8 1.15' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: 100% 100%;
+        content: "";
+        height: 8px;
+        left: 50%;
+        position: absolute;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 10px;
+      }
+
+      .option input:focus-visible {
+        box-shadow: 0 0 0 2px rgba(47, 127, 122, 0.22);
       }
 
       .option-title {
-        font-size: 12px;
-        font-weight: 700;
+        display: block;
+        font-size: 13px;
+        font-weight: 400;
         line-height: 18px;
       }
 
       .option-text {
         color: var(--figma-color-text-secondary);
+        display: block;
         font-size: 11px;
         line-height: 16px;
         margin-top: 2px;
-      }
-
-      .status {
-        background: var(--figma-color-bg-secondary);
-        border-radius: 8px;
-        color: var(--figma-color-text-secondary);
-        font-size: 11px;
-        line-height: 16px;
-        padding: 10px 12px;
       }
 
       .actions {
         display: grid;
         gap: 8px;
         margin-top: auto;
-        padding: 16px;
+        padding: 12px 16px 16px;
       }
 
       .primary {
         appearance: none;
         background: var(--figma-color-bg-brand);
         border: 0;
-        border-radius: 6px;
+        border-radius: 8px;
         color: var(--figma-color-text-onbrand);
         cursor: pointer;
         font-size: 12px;
@@ -246,70 +324,71 @@
   </head>
   <body>
     <main class="shell">
-      <header class="header">
-        <div class="mark">Ч</div>
-        <div class="heading">
-          <div class="title">Чистовик</div>
-          <div class="subtitle">Типографика для редакторской проверки</div>
-        </div>
-        <button class="close" id="close" type="button" aria-label="Закрыть">×</button>
-      </header>
-
       <nav class="tabs" aria-label="Разделы настроек">
         <button class="tab active" type="button">Типограф</button>
         <button class="tab" type="button" disabled>Правила</button>
-        <button class="tab" type="button" disabled>О плагине</button>
+        <button class="tab" type="button" disabled>
+          <span class="tab-label">
+            О плагине
+            <span class="tab-doodles" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </span>
+        </button>
       </nav>
 
       <section class="content">
         <div class="group">
-          <div class="group-title">Режим</div>
-          <div class="mode-grid" role="radiogroup" aria-label="Режим типографа">
-            <button class="mode active" id="beautyMode" type="button" role="radio" aria-checked="true">
-              <span class="mode-name">Для красоты</span>
-              <span class="mode-text">Готовые символы: кавычки, тире и неразрывные пробелы.</span>
-            </button>
-            <button class="mode" type="button" role="radio" aria-checked="false" disabled>
-              <span class="mode-name">Для разработки</span>
-              <span class="mode-text">Скоро: покажет неразрывные пробелы звёздочками.</span>
-            </button>
+          <div class="group-title">Как подготовить текст?</div>
+          <div class="mode-list" role="radiogroup" aria-label="Режим типографа">
+            <label class="mode" for="beautyMode">
+              <input id="beautyMode" name="typographMode" type="radio" value="beauty" checked />
+              <span class="radio-mark" aria-hidden="true"></span>
+              <span class="mode-content">
+                <span class="mode-name">Для красоты</span>
+                <span class="mode-text">Поставит готовые символы</span>
+              </span>
+            </label>
+            <label class="mode" for="developmentMode">
+              <input id="developmentMode" name="typographMode" type="radio" value="development" />
+              <span class="radio-mark" aria-hidden="true"></span>
+              <span class="mode-content">
+                <span class="mode-name">Для разработки</span>
+                <span class="mode-text">Покажет <span class="nbsp-star">*</span> на&nbsp;месте неразрывных пробелов</span>
+              </span>
+            </label>
           </div>
         </div>
 
         <label class="option" for="processLocked">
           <input id="processLocked" type="checkbox" />
           <span>
-            <span class="option-title">Обрабатывать заблокированные слои</span>
-            <span class="option-text">По умолчанию замочки считаются намерением не менять текст.</span>
+            <span class="option-title">Обработать даже слои с замочком</span>
           </span>
         </label>
 
-        <div class="status">
-          Быстрый запуск без окна остаётся в основном режиме. Эти настройки применяются только при запуске из этого окна.
-        </div>
       </section>
 
       <div class="actions">
-        <button class="primary" id="run" type="button">Запустить Чистовик</button>
+        <button class="primary" id="run" type="button">Запустить типограф</button>
       </div>
     </main>
 
     <script>
-      const closeButton = document.getElementById("close");
       const runButton = document.getElementById("run");
       const processLocked = document.getElementById("processLocked");
 
-      closeButton.addEventListener("click", () => {
-        parent.postMessage({ pluginMessage: { type: "close" } }, "*");
-      });
-
       runButton.addEventListener("click", () => {
+        const selectedMode = document.querySelector('input[name="typographMode"]:checked');
+
         parent.postMessage(
           {
             pluginMessage: {
               type: "run-typograph",
               options: {
-                mode: "beauty",
+                mode: selectedMode ? selectedMode.value : "beauty",
                 processLockedNodes: processLocked.checked,
               },
             },

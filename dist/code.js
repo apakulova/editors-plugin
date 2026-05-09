@@ -38,7 +38,7 @@ async function run() {
 function openSettingsUI() {
     try {
         figma.showUI(__html__, {
-            height: 420,
+            height: 340,
             themeColors: true,
             width: 360,
         });
