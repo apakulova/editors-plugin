@@ -4,6 +4,7 @@ const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const LETTER_OR_DIGIT = "A-Za-zА-Яа-яЁё\\d";
+const PROCESS_LOCKED_NODES = false;
 const STYLE_FIELDS: Array<"fontName" | "fontSize" | "fills" | "textCase" | "textDecoration" | "letterSpacing" | "lineHeight"> = [
   "fontName",
   "fontSize",
@@ -25,24 +26,28 @@ interface TextProcessResult {
   processed: number;
   changed: number;
   failed: number;
+  skippedLocked: number;
+}
+
+interface TextCollectionResult {
+  nodes: TextNode[];
+  skippedLocked: number;
 }
 
 type StyleSegment = Pick<StyledTextSegment, "fontName" | "fontSize" | "fills" | "textCase" | "textDecoration" | "letterSpacing" | "lineHeight" | "characters" | "start" | "end">;
 
 async function run(): Promise<void> {
   try {
-    const textNodes = collectTargetTextNodes();
-    const result = await processTextNodes(textNodes);
+    const collection = collectTargetTextNodes({
+      processLocked: PROCESS_LOCKED_NODES,
+    });
+    const result = await processTextNodes(collection.nodes, collection.skippedLocked);
 
     if (result.failed > 0) {
       throw new Error(`Failed to process ${result.failed} text node(s)`);
     }
 
-    if (result.changed > 0) {
-      figma.notify("Теперь всё чисто 🔥🔥🔥", { timeout: 4000 });
-    } else {
-      figma.notify("Всё уже было чисто 👌", { timeout: 4000 });
-    }
+    notifyCleanResult(result);
   } catch (error) {
     console.error("[Чистовик] Failed to clean typography", error);
     figma.notify("Ой, не получилось почистить 🛑", { error: true });
@@ -51,22 +56,45 @@ async function run(): Promise<void> {
   }
 }
 
-function collectTargetTextNodes(): TextNode[] {
+function notifyCleanResult(result: TextProcessResult): void {
+  try {
+    if (result.skippedLocked > 0) {
+      if (result.changed > 0) {
+        figma.notify("Замочки не тронуты, в остальном — теперь всё чисто 🔥🔥🔥", { timeout: 4000 });
+      } else {
+        figma.notify("Замочки не тронуты, а остальное уже было чисто 👌", { timeout: 4000 });
+      }
+
+      return;
+    }
+
+    if (result.changed > 0) {
+      figma.notify("Теперь всё чисто 🔥🔥🔥", { timeout: 4000 });
+    } else {
+      figma.notify("Всё уже было чисто 👌", { timeout: 4000 });
+    }
+  } catch (error) {
+    console.error("[Чистовик] Failed to notify result", error);
+    throw error;
+  }
+}
+
+function collectTargetTextNodes(options: { processLocked: boolean }): TextCollectionResult {
   try {
     const selection = figma.currentPage.selection;
+    let candidates: TextNode[] = [];
 
     if (selection.length === 0) {
-      return figma.currentPage.findAll((node) => node.type === "TEXT") as TextNode[];
+      candidates = figma.currentPage.findAll((node) => node.type === "TEXT") as TextNode[];
+    } else {
+      const seen = new Set<string>();
+
+      for (const selectedNode of selection) {
+        collectTextNodesFromNode(selectedNode, candidates, seen);
+      }
     }
 
-    const nodes: TextNode[] = [];
-    const seen = new Set<string>();
-
-    for (const selectedNode of selection) {
-      collectTextNodesFromNode(selectedNode, nodes, seen);
-    }
-
-    return nodes;
+    return filterProcessableTextNodes(candidates, options);
   } catch (error) {
     console.error("[Чистовик] Failed to collect text nodes", error);
     throw error;
@@ -100,7 +128,62 @@ function collectTextNodesFromNode(node: SceneNode, result: TextNode[], seen: Set
   }
 }
 
-async function processTextNodes(textNodes: TextNode[]): Promise<TextProcessResult> {
+function filterProcessableTextNodes(textNodes: TextNode[], options: { processLocked: boolean }): TextCollectionResult {
+  try {
+    if (options.processLocked) {
+      return {
+        nodes: textNodes,
+        skippedLocked: 0,
+      };
+    }
+
+    const nodes: TextNode[] = [];
+    let skippedLocked = 0;
+
+    for (const textNode of textNodes) {
+      if (isLockedForProcessing(textNode)) {
+        skippedLocked += 1;
+      } else {
+        nodes.push(textNode);
+      }
+    }
+
+    return { nodes, skippedLocked };
+  } catch (error) {
+    console.error("[Чистовик] Failed to filter processable text nodes", error);
+    throw error;
+  }
+}
+
+function isLockedForProcessing(node: BaseNode): boolean {
+  try {
+    let current: BaseNode | null = node;
+
+    while (current !== null) {
+      if (hasLockedProperty(current) && current.locked) {
+        return true;
+      }
+
+      current = current.parent;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check locked node state", error);
+    throw error;
+  }
+}
+
+function hasLockedProperty(node: BaseNode): node is BaseNode & { locked: boolean } {
+  try {
+    return "locked" in node && typeof node.locked === "boolean";
+  } catch (error) {
+    console.error("[Чистовик] Failed to check locked property", error);
+    throw error;
+  }
+}
+
+async function processTextNodes(textNodes: TextNode[], skippedLocked: number): Promise<TextProcessResult> {
   try {
     let processed = 0;
     let changed = 0;
@@ -126,7 +209,7 @@ async function processTextNodes(textNodes: TextNode[]): Promise<TextProcessResul
       }
     }
 
-    return { processed, changed, failed };
+    return { processed, changed, failed, skippedLocked };
   } catch (error) {
     console.error("[Чистовик] Failed to process text nodes", error);
     throw error;
@@ -583,7 +666,7 @@ function formatNumbersAndMoney(input: string): string {
   try {
     let text = input.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart: string, decimalPart: string, offset: number, fullText: string) => {
       try {
-        if (isVersionOrIpDecimal(fullText, offset, offset + match.length)) {
+        if (isProtectedDottedNumber(fullText, offset, offset + match.length)) {
           return match;
         }
 
@@ -598,7 +681,7 @@ function formatNumbersAndMoney(input: string): string {
       try {
         const [integerPart, decimalPart] = match.split(",");
 
-        if (shouldSkipNumberGrouping(fullText, offset, offset + integerPart.length, integerPart)) {
+        if (isNumberPartOfDate(fullText, offset, offset + integerPart.length) || shouldSkipNumberGrouping(fullText, offset, offset + integerPart.length, integerPart)) {
           return match;
         }
 
@@ -619,8 +702,12 @@ function formatNumbersAndMoney(input: string): string {
   }
 }
 
-function isVersionOrIpDecimal(fullText: string, start: number, end: number): boolean {
+function isProtectedDottedNumber(fullText: string, start: number, end: number): boolean {
   try {
+    if (isNumberPartOfDate(fullText, start, end)) {
+      return true;
+    }
+
     let tokenStart = start;
     let tokenEnd = end;
 
@@ -637,7 +724,96 @@ function isVersionOrIpDecimal(fullText: string, start: number, end: number): boo
 
     return dotCount > 1 || /[A-Za-zА-Яа-яЁё]/.test(token);
   } catch (error) {
-    console.error("[Чистовик] Failed to check decimal exception", error);
+    console.error("[Чистовик] Failed to check dotted number exception", error);
+    throw error;
+  }
+}
+
+function isNumberPartOfDate(fullText: string, start: number, end: number): boolean {
+  try {
+    const bounds = getDottedNumberTokenBounds(fullText, start, end);
+
+    if (bounds === null) {
+      return false;
+    }
+
+    const token = fullText.slice(bounds.start, bounds.end);
+
+    if (isShortDateToken(token) && isFollowedByDecimalUnitOrCurrency(fullText, bounds.end)) {
+      return false;
+    }
+
+    return isDateToken(token);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check date token", error);
+    throw error;
+  }
+}
+
+function getDottedNumberTokenBounds(fullText: string, start: number, end: number): { start: number; end: number } | null {
+  try {
+    let tokenStart = start;
+    let tokenEnd = end;
+
+    while (tokenStart > 0 && /[\d.]/.test(fullText[tokenStart - 1])) {
+      tokenStart -= 1;
+    }
+
+    while (tokenEnd < fullText.length && /[\d.]/.test(fullText[tokenEnd])) {
+      tokenEnd += 1;
+    }
+
+    if (tokenStart > 0 && /[A-Za-zА-Яа-яЁё\d.]/.test(fullText[tokenStart - 1])) {
+      return null;
+    }
+
+    if (tokenEnd < fullText.length && /[A-Za-zА-Яа-яЁё\d.]/.test(fullText[tokenEnd])) {
+      return null;
+    }
+
+    return { start: tokenStart, end: tokenEnd };
+  } catch (error) {
+    console.error("[Чистовик] Failed to get dotted number token bounds", error);
+    throw error;
+  }
+}
+
+function isDateToken(token: string): boolean {
+  try {
+    const match = /^(\d{1,2})\.(\d{2})(?:\.(\d{4}))?$/.exec(token);
+
+    if (match === null) {
+      return false;
+    }
+
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = match[3] === undefined ? null : Number(match[3]);
+
+    return day >= 1 && day <= 31 && month >= 1 && month <= 12 && (year === null || (year >= 1000 && year <= 2999));
+  } catch (error) {
+    console.error("[Чистовик] Failed to check date token format", error);
+    throw error;
+  }
+}
+
+function isShortDateToken(token: string): boolean {
+  try {
+    return /^\d{1,2}\.\d{2}$/.test(token) && isDateToken(token);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check short date token", error);
+    throw error;
+  }
+}
+
+function isFollowedByDecimalUnitOrCurrency(fullText: string, index: number): boolean {
+  try {
+    const after = fullText.slice(index);
+    const match = /^[ \t\u00A0]*(₽|\$|€|%|руб\.?|коп\.?|тыс\.?|млн|млрд|трлн|км|кг|мм|см|мл|м|г\.?|л|шт\.?|сек\.?|мин\.?|мес\.?|с|кв\.?|куб\.?)(?=$|[^A-Za-zА-Яа-яЁё])/i.exec(after);
+
+    return match !== null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check decimal unit or currency", error);
     throw error;
   }
 }
@@ -695,6 +871,11 @@ function normalizeAbbreviations(input: string): string {
     let text = input;
 
     text = text.replace(/([₽$€])[ \t\u00A0]*\/[ \t\u00A0]*мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, "$1/мес");
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*д\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}т.${NBSP}д.`);
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*п\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}т.${NBSP}п.`);
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+др\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}др.`);
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*е\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}е.`);
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*к\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}к.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*д\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}д.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*п\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}п.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])кв\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1кв.${NBSP}м`);
