@@ -3,5 +3,10 @@
   "id": "chistovik",
   "api": "1.0.0",
   "main": "dist/code.js",
+  "ui": "src/ui.html",
+  "menu": [
+    { "name": "Запустить Чистовик", "command": "run-chistovik" },
+    { "name": "Настройки Чистовика", "command": "open-settings" }
+  ],
   "editorType": ["figma"]
 }

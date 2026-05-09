@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: var(--figma-color-bg);
+        color: var(--figma-color-text);
+      }
+
+      .shell {
+        display: flex;
+        min-height: 100vh;
+        flex-direction: column;
+      }
+
+      .header {
+        align-items: center;
+        border-bottom: 1px solid var(--figma-color-border);
+        display: flex;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .mark {
+        align-items: center;
+        background: var(--figma-color-bg-brand);
+        border-radius: 8px;
+        color: var(--figma-color-text-onbrand);
+        display: flex;
+        flex: 0 0 auto;
+        font-size: 18px;
+        font-weight: 700;
+        height: 36px;
+        justify-content: center;
+        width: 36px;
+      }
+
+      .title {
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 22px;
+      }
+
+      .subtitle {
+        color: var(--figma-color-text-secondary);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .content {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .tabs {
+        border-bottom: 1px solid var(--figma-color-border);
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .tab {
+        border-bottom: 2px solid transparent;
+        color: var(--figma-color-text-secondary);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 10px 8px 9px;
+        text-align: center;
+      }
+
+      .tab.active {
+        border-color: var(--figma-color-bg-brand);
+        color: var(--figma-color-text);
+      }
+
+      .panel {
+        background: var(--figma-color-bg-secondary);
+        border: 1px solid var(--figma-color-border);
+        border-radius: 8px;
+        padding: 14px;
+      }
+
+      .panel-title {
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 18px;
+        margin-bottom: 6px;
+      }
+
+      .panel-text {
+        color: var(--figma-color-text-secondary);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .actions {
+        margin-top: auto;
+        padding: 16px;
+      }
+
+      button {
+        appearance: none;
+        background: var(--figma-color-bg-brand);
+        border: 0;
+        border-radius: 6px;
+        color: var(--figma-color-text-onbrand);
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        height: 32px;
+        padding: 0 14px;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="header">
+        <div class="mark">Ч</div>
+        <div>
+          <div class="title">Чистовик</div>
+          <div class="subtitle">Настройки скоро будут здесь</div>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Разделы настроек">
+        <div class="tab active">Типограф</div>
+        <div class="tab">Правила</div>
+        <div class="tab">О плагине</div>
+      </nav>
+
+      <section class="content">
+        <article class="panel">
+          <div class="panel-title">Заготовка интерфейса</div>
+          <div class="panel-text">
+            Быстрый запуск уже работает через отдельную команду. На следующих этапах здесь появятся режимы, чекбокс для замочков, правила и текст о плагине.
+          </div>
+        </article>
+      </section>
+
+      <div class="actions">
+        <button id="close" type="button">Закрыть</button>
+      </div>
+    </main>
+
+    <script>
+      document.getElementById("close").addEventListener("click", () => {
+        parent.postMessage({ pluginMessage: { type: "close" } }, "*");
+      });
+    </script>
+  </body>
+</html>

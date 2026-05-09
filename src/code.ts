@@ -2,6 +2,7 @@ const NBSP = "\u00A0";
 const NB_HYPHEN = "\u2011";
 const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
+const COMMAND_OPEN_SETTINGS = "open-settings";
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const LETTER_OR_DIGIT = "A-Za-zА-Яа-яЁё\\d";
 const STYLE_FIELDS: Array<"fontName" | "fontSize" | "fills" | "textCase" | "textDecoration" | "letterSpacing" | "lineHeight"> = [
@@ -42,7 +43,15 @@ interface TextCollectionResult {
 type StyleSegment = Pick<StyledTextSegment, "fontName" | "fontSize" | "fills" | "textCase" | "textDecoration" | "letterSpacing" | "lineHeight" | "characters" | "start" | "end">;
 
 async function run(): Promise<void> {
+  let shouldClosePlugin = true;
+
   try {
+    if (figma.command === COMMAND_OPEN_SETTINGS) {
+      shouldClosePlugin = false;
+      openSettingsUI();
+      return;
+    }
+
     const options = getDefaultRunOptions();
     const collection = collectTargetTextNodes({
       processLocked: options.processLockedNodes,
@@ -58,7 +67,33 @@ async function run(): Promise<void> {
     console.error("[Чистовик] Failed to clean typography", error);
     figma.notify("Ой, не получилось почистить 🛑", { error: true });
   } finally {
-    figma.closePlugin();
+    if (shouldClosePlugin) {
+      figma.closePlugin();
+    }
+  }
+}
+
+function openSettingsUI(): void {
+  try {
+    figma.showUI(__html__, {
+      height: 420,
+      themeColors: true,
+      width: 360,
+    });
+
+    figma.ui.onmessage = (message: { type?: string }) => {
+      try {
+        if (message.type === "close") {
+          figma.closePlugin();
+        }
+      } catch (error) {
+        console.error("[Чистовик] Failed to handle UI message", error);
+        figma.notify("Ой, не получилось почистить 🛑", { error: true });
+      }
+    };
+  } catch (error) {
+    console.error("[Чистовик] Failed to open settings UI", error);
+    throw error;
   }
 }
 
