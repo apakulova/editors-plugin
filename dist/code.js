@@ -5,7 +5,6 @@ const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const LETTER_OR_DIGIT = "A-Za-zА-Яа-яЁё\\d";
-const PROCESS_LOCKED_NODES = false;
 const STYLE_FIELDS = [
     "fontName",
     "fontSize",
@@ -17,10 +16,11 @@ const STYLE_FIELDS = [
 ];
 async function run() {
     try {
+        const options = getDefaultRunOptions();
         const collection = collectTargetTextNodes({
-            processLocked: PROCESS_LOCKED_NODES,
+            processLocked: options.processLockedNodes,
         });
-        const result = await processTextNodes(collection.nodes, collection.skippedLocked);
+        const result = await processTextNodes(collection.nodes, collection.skippedLocked, options);
         if (result.failed > 0) {
             throw new Error(`Failed to process ${result.failed} text node(s)`);
         }
@@ -32,6 +32,18 @@ async function run() {
     }
     finally {
         figma.closePlugin();
+    }
+}
+function getDefaultRunOptions() {
+    try {
+        return {
+            mode: "beauty",
+            processLockedNodes: false,
+        };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get default run options", error);
+        throw error;
     }
 }
 function notifyCleanResult(result) {
@@ -151,7 +163,7 @@ function hasLockedProperty(node) {
         throw error;
     }
 }
-async function processTextNodes(textNodes, skippedLocked) {
+async function processTextNodes(textNodes, skippedLocked, options) {
     try {
         let processed = 0;
         let changed = 0;
@@ -160,7 +172,7 @@ async function processTextNodes(textNodes, skippedLocked) {
             try {
                 processed += 1;
                 const oldText = textNode.characters;
-                const newText = cleanTypography(oldText);
+                const newText = cleanTypography(oldText, options);
                 if (newText !== oldText) {
                     await loadFontsForTextNode(textNode);
                     const styles = captureTextStyles(textNode);
@@ -346,7 +358,7 @@ function applyStyleSegment(textNode, start, end, style) {
         throw error;
     }
 }
-function cleanTypography(input) {
+function cleanTypography(input, _options = getDefaultRunOptions()) {
     try {
         let text = input;
         text = cleanupSpaces(text);

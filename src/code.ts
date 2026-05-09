@@ -4,7 +4,6 @@ const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const LETTER_OR_DIGIT = "A-Za-zА-Яа-яЁё\\d";
-const PROCESS_LOCKED_NODES = false;
 const STYLE_FIELDS: Array<"fontName" | "fontSize" | "fills" | "textCase" | "textDecoration" | "letterSpacing" | "lineHeight"> = [
   "fontName",
   "fontSize",
@@ -15,7 +14,13 @@ const STYLE_FIELDS: Array<"fontName" | "fontSize" | "fills" | "textCase" | "text
   "lineHeight",
 ];
 
+type TypographMode = "beauty" | "development";
 type QuoteScript = "cyrillic" | "latin";
+
+interface PluginRunOptions {
+  mode: TypographMode;
+  processLockedNodes: boolean;
+}
 
 interface QuoteState {
   script: QuoteScript;
@@ -38,10 +43,11 @@ type StyleSegment = Pick<StyledTextSegment, "fontName" | "fontSize" | "fills" | 
 
 async function run(): Promise<void> {
   try {
+    const options = getDefaultRunOptions();
     const collection = collectTargetTextNodes({
-      processLocked: PROCESS_LOCKED_NODES,
+      processLocked: options.processLockedNodes,
     });
-    const result = await processTextNodes(collection.nodes, collection.skippedLocked);
+    const result = await processTextNodes(collection.nodes, collection.skippedLocked, options);
 
     if (result.failed > 0) {
       throw new Error(`Failed to process ${result.failed} text node(s)`);
@@ -53,6 +59,18 @@ async function run(): Promise<void> {
     figma.notify("Ой, не получилось почистить 🛑", { error: true });
   } finally {
     figma.closePlugin();
+  }
+}
+
+function getDefaultRunOptions(): PluginRunOptions {
+  try {
+    return {
+      mode: "beauty",
+      processLockedNodes: false,
+    };
+  } catch (error) {
+    console.error("[Чистовик] Failed to get default run options", error);
+    throw error;
   }
 }
 
@@ -183,7 +201,7 @@ function hasLockedProperty(node: BaseNode): node is BaseNode & { locked: boolean
   }
 }
 
-async function processTextNodes(textNodes: TextNode[], skippedLocked: number): Promise<TextProcessResult> {
+async function processTextNodes(textNodes: TextNode[], skippedLocked: number, options: PluginRunOptions): Promise<TextProcessResult> {
   try {
     let processed = 0;
     let changed = 0;
@@ -193,7 +211,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number): P
       try {
         processed += 1;
         const oldText = textNode.characters;
-        const newText = cleanTypography(oldText);
+        const newText = cleanTypography(oldText, options);
 
         if (newText !== oldText) {
           await loadFontsForTextNode(textNode);
@@ -398,7 +416,7 @@ function applyStyleSegment(textNode: TextNode, start: number, end: number, style
   }
 }
 
-function cleanTypography(input: string): string {
+function cleanTypography(input: string, _options: PluginRunOptions = getDefaultRunOptions()): string {
   try {
     let text = input;
 
