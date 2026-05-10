@@ -142,6 +142,14 @@
         padding: 24px 16px 12px;
       }
 
+      .panel {
+        display: none;
+      }
+
+      .panel.active {
+        display: grid;
+      }
+
       .group {
         display: grid;
         gap: 14px;
@@ -296,11 +304,83 @@
         margin-top: 2px;
       }
 
+      .about {
+        align-content: start;
+        display: grid;
+        gap: 12px;
+      }
+
+      .about-lead {
+        color: var(--figma-color-text);
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 20px;
+        margin: 0;
+      }
+
+      .about-text {
+        color: var(--figma-color-text-secondary);
+        font-size: 12px;
+        line-height: 17px;
+        margin: 0;
+      }
+
+      .about-list {
+        display: grid;
+        gap: 7px;
+      }
+
+      .about-list-item {
+        color: var(--figma-color-text-secondary);
+        display: grid;
+        font-size: 12px;
+        gap: 7px;
+        grid-template-columns: 12px 1fr;
+        line-height: 17px;
+      }
+
+      .about-bullet {
+        color: var(--figma-color-bg-brand);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 17px;
+      }
+
+      .about-note {
+        background: var(--figma-color-bg-secondary);
+        border-radius: 8px;
+        display: grid;
+        gap: 3px;
+        padding: 9px 12px;
+      }
+
+      .about-note-title {
+        color: var(--figma-color-text);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 16px;
+      }
+
+      .about-link {
+        color: var(--figma-color-bg-brand);
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .about-note .about-text {
+        font-size: 11px;
+        line-height: 15px;
+      }
+
       .actions {
         display: grid;
         gap: 8px;
         margin-top: auto;
         padding: 12px 16px 16px;
+      }
+
+      .actions.hidden {
+        display: none;
       }
 
       .primary {
@@ -310,9 +390,9 @@
         border-radius: 8px;
         color: var(--figma-color-text-onbrand);
         cursor: pointer;
-        font-size: 12px;
-        font-weight: 600;
-        height: 32px;
+        font-size: 14px;
+        font-weight: 500;
+        height: 40px;
         padding: 0 14px;
         width: 100%;
       }
@@ -325,9 +405,9 @@
   <body>
     <main class="shell">
       <nav class="tabs" aria-label="Разделы настроек">
-        <button class="tab active" type="button">Типограф</button>
+        <button class="tab active" type="button" data-tab="typograph" aria-selected="true">Типограф</button>
         <button class="tab" type="button" disabled>Правила</button>
-        <button class="tab" type="button" disabled>
+        <button class="tab" type="button" data-tab="about" aria-selected="false">
           <span class="tab-label">
             О плагине
             <span class="tab-doodles" aria-hidden="true">
@@ -339,7 +419,7 @@
         </button>
       </nav>
 
-      <section class="content">
+      <section class="content panel active" data-panel="typograph">
         <div class="group">
           <div class="group-title">Как обработать текст?</div>
           <div class="mode-list" role="radiogroup" aria-label="Режим типографа">
@@ -348,7 +428,7 @@
               <span class="radio-mark" aria-hidden="true"></span>
               <span class="mode-content">
                 <span class="mode-name">Для красоты</span>
-                <span class="mode-text">Поставит готовые символы</span>
+                <span class="mode-text">Готовыми символами</span>
               </span>
             </label>
             <label class="mode" for="developmentMode">
@@ -356,7 +436,7 @@
               <span class="radio-mark" aria-hidden="true"></span>
               <span class="mode-content">
                 <span class="mode-name">Для разработки</span>
-                <span class="mode-text">Покажет <span class="nbsp-star">*</span> на&nbsp;месте неразрывных пробелов</span>
+                <span class="mode-text">С&nbsp;<span class="nbsp-star">*</span> на&nbsp;месте неразрывных пробелов</span>
               </span>
             </label>
           </div>
@@ -371,6 +451,30 @@
 
       </section>
 
+      <section class="content panel about-panel" data-panel="about">
+        <div class="about">
+          <p class="about-lead">Чистовик&nbsp;&mdash; плагин для UX-редакторов</p>
+          <div class="about-list">
+            <div class="about-list-item">
+              <span class="about-bullet" aria-hidden="true">✦</span>
+              <span>Убирает висячие предлоги, ставит правильные тире, исправляет кавычки и&nbsp;другие мелочи</span>
+            </div>
+            <div class="about-list-item">
+              <span class="about-bullet" aria-hidden="true">✦</span>
+              <span>Умеет работать с&nbsp;отдельным текстовым слоем, фреймом или всей страницей сразу</span>
+            </div>
+            <div class="about-list-item">
+              <span class="about-bullet" aria-hidden="true">✦</span>
+              <span>Сохраняет стили и&nbsp;цвета текста, даже если в&nbsp;одном слое их&nbsp;несколько</span>
+            </div>
+          </div>
+          <div class="about-note">
+            <span class="about-note-title">Автор плагина&nbsp;&mdash; Аня Акулова</span>
+            <p class="about-text">Я&nbsp;работаю редактором в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале <a class="about-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">«Аня учится пилить проекты»</a>. Заходите в&nbsp;гости!</p>
+          </div>
+        </div>
+      </section>
+
       <div class="actions">
         <button class="primary" id="run" type="button">Запустить типограф</button>
       </div>
@@ -379,6 +483,35 @@
     <script>
       const runButton = document.getElementById("run");
       const processLocked = document.getElementById("processLocked");
+      const tabs = Array.from(document.querySelectorAll("[data-tab]"));
+      const panels = Array.from(document.querySelectorAll("[data-panel]"));
+      const actions = document.querySelector(".actions");
+
+      function selectTab(selectedTab) {
+        tabs.forEach((item) => {
+          const isActive = item.dataset.tab === selectedTab;
+          item.classList.toggle("active", isActive);
+          item.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+
+        panels.forEach((panel) => {
+          panel.classList.toggle("active", panel.dataset.panel === selectedTab);
+        });
+
+        actions.classList.toggle("hidden", selectedTab !== "typograph");
+      }
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          selectTab(tab.dataset.tab);
+        });
+      });
+
+      const initialTab = new URLSearchParams(window.location.search).get("tab");
+
+      if (initialTab && tabs.some((tab) => tab.dataset.tab === initialTab)) {
+        selectTab(initialTab);
+      }
 
       runButton.addEventListener("click", () => {
         const selectedMode = document.querySelector('input[name="typographMode"]:checked');
