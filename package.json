@@ -4,8 +4,9 @@
   "private": true,
   "description": "Figma plugin for Russian typography cleanup.",
   "scripts": {
-    "dev": "tsc -p tsconfig.json --watch",
-    "build": "tsc -p tsconfig.json"
+    "sync-ui": "node scripts/sync-ui-content.js",
+    "dev": "npm run sync-ui && tsc -p tsconfig.json --watch",
+    "build": "npm run sync-ui && tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.106.0",

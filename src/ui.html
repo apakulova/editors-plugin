@@ -537,179 +537,189 @@
   <body>
     <main class="shell">
       <nav class="tabs" aria-label="Разделы настроек">
-        <button class="tab active" type="button" data-tab="typograph" aria-selected="true">Типограф</button>
-        <button class="tab" type="button" data-tab="rules" aria-selected="false">Правила</button>
-        <button class="tab" type="button" data-tab="about" aria-selected="false">
-          <span class="tab-label">
-            О плагине
-            <span class="tab-doodles" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
+        <!-- chistovik-content:tabs:start -->
+          <button class="tab active" type="button" data-tab="typograph" aria-selected="true">Типограф</button>
+          <button class="tab" type="button" data-tab="rules" aria-selected="false">Правила</button>
+          <button class="tab" type="button" data-tab="about" aria-selected="false">
+            <span class="tab-label">
+              О плагине
+              <span class="tab-doodles" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+        <!-- chistovik-content:tabs:end -->
       </nav>
 
       <section class="content panel active" data-panel="typograph">
-        <div class="group">
-          <div class="group-title">Как обработать текст?</div>
-          <div class="mode-list" role="radiogroup" aria-label="Режим типографа">
-            <label class="mode" for="beautyMode">
-              <input id="beautyMode" name="typographMode" type="radio" value="beauty" checked />
-              <span class="radio-mark" aria-hidden="true"></span>
-              <span class="mode-content">
-                <span class="mode-name">Для красоты</span>
-                <span class="mode-text">Готовыми символами</span>
-              </span>
-            </label>
-            <label class="mode" for="developmentMode">
-              <input id="developmentMode" name="typographMode" type="radio" value="development" />
-              <span class="radio-mark" aria-hidden="true"></span>
-              <span class="mode-content">
-                <span class="mode-name">Для разработки</span>
-                <span class="mode-text">С&nbsp;<span class="nbsp-star">*</span> на&nbsp;месте неразрывных пробелов</span>
-              </span>
-            </label>
+        <!-- chistovik-content:typograph:start -->
+          <div class="group">
+            <div class="group-title">Как обработать текст?</div>
+            <div class="mode-list" role="radiogroup" aria-label="Режим типографа">
+              <label class="mode" for="beautyMode">
+                <input id="beautyMode" name="typographMode" type="radio" value="beauty" checked />
+                <span class="radio-mark" aria-hidden="true"></span>
+                <span class="mode-content">
+                  <span class="mode-name">Для красоты</span>
+                  <span class="mode-text">Готовыми символами</span>
+                </span>
+              </label>
+              <label class="mode" for="developmentMode">
+                <input id="developmentMode" name="typographMode" type="radio" value="development" />
+                <span class="radio-mark" aria-hidden="true"></span>
+                <span class="mode-content">
+                  <span class="mode-name">Для разработки</span>
+                  <span class="mode-text">С&nbsp;<span class="nbsp-star">*</span> на&nbsp;месте неразрывных пробелов</span>
+                </span>
+              </label>
+            </div>
           </div>
-        </div>
 
-        <label class="option" for="processLocked">
-          <input id="processLocked" type="checkbox" />
-          <span>
-            <span class="option-title">Обработать даже слои с замочком</span>
-          </span>
-        </label>
+          <label class="option" for="processLocked">
+            <input id="processLocked" type="checkbox" />
+            <span>
+              <span class="option-title">Обработать даже слои с замочком</span>
+            </span>
+          </label>
+        <!-- chistovik-content:typograph:end -->
 
       </section>
 
       <section class="content panel rules-panel" data-panel="rules">
         <div class="rules-list">
-          <details class="rule">
-            <summary>Кавычки и&nbsp;пунктуация</summary>
-            <div class="rule-body">
-              <div class="rule-point">В&nbsp;русском тексте кавычки первого уровня «ёлочки», а&nbsp;второго „лапки“: <span class="rule-example">«Он&nbsp;сказал „привет“»</span></div>
-              <div class="rule-point">В&nbsp;латинице кавычки первого уровня "двойные", а&nbsp;второго 'одинарные'</div>
-              <div class="rule-point">Точка, запятая, точка с&nbsp;запятой, двоеточие и&nbsp;многоточие после кавычек: <span class="rule-example">Он&nbsp;сказал «привет».</span></div>
-              <div class="rule-point">Вопрос и&nbsp;восклицание внутри кавычек: <span class="rule-example">«Как дела?»</span></div>
-              <div class="rule-point">Три точки меняются на&nbsp;многоточие: <span class="rule-example">... <span class="rule-arrow">→</span> …</span></div>
-              <div class="rule-point">Повторные восклицательные знаки: <span class="rule-example">!! <span class="rule-arrow">→</span> !</span></div>
-              <div class="rule-point">Сочетание !?: <span class="rule-example">!? <span class="rule-arrow">→</span> ?!</span></div>
-            </div>
-          </details>
+          <!-- chistovik-content:rules:start -->
+            <details class="rule">
+              <summary>Кавычки и&nbsp;пунктуация</summary>
+              <div class="rule-body">
+                <div class="rule-point">В&nbsp;русском тексте кавычки первого уровня «ёлочки», а&nbsp;второго „лапки“: <span class="rule-example">«Он&nbsp;сказал „привет“»</span></div>
+                <div class="rule-point">В&nbsp;латинице кавычки первого уровня "двойные", а&nbsp;второго 'одинарные'</div>
+                <div class="rule-point">Точка, запятая, точка с&nbsp;запятой, двоеточие и&nbsp;многоточие после кавычек: <span class="rule-example">Он&nbsp;сказал «привет».</span></div>
+                <div class="rule-point">Вопрос и&nbsp;восклицание внутри кавычек: <span class="rule-example">«Как дела?»</span></div>
+                <div class="rule-point">Три точки меняются на&nbsp;многоточие: <span class="rule-example">... <span class="rule-arrow">→</span> …</span></div>
+                <div class="rule-point">Повторные восклицательные знаки: <span class="rule-example">!! <span class="rule-arrow">→</span> !</span></div>
+                <div class="rule-point">Сочетание !?: <span class="rule-example">!? <span class="rule-arrow">→</span> ?!</span></div>
+              </div>
+            </details>
 
-          <details class="rule">
-            <summary>Тире и&nbsp;дефисы</summary>
-            <div class="rule-body">
-              <div class="rule-point">Длинное тире между словами: <span class="rule-example">слово&nbsp;— слово</span></div>
-              <div class="rule-point">Среднее тире в&nbsp;диапазонах: <span class="rule-example">10–20</span></div>
-              <div class="rule-point">Неразрывный дефис внутри слов: <span class="rule-example">кто‑то</span></div>
-              <div class="rule-point">Тире в&nbsp;начале строки</div>
-              <div class="rule-point">Неразрывный пробел перед длинным тире</div>
-            </div>
-          </details>
+            <details class="rule">
+              <summary>Тире и&nbsp;дефисы</summary>
+              <div class="rule-body">
+                <div class="rule-point">Длинное тире между словами: <span class="rule-example">слово&nbsp;— слово</span></div>
+                <div class="rule-point">Среднее тире в&nbsp;диапазонах: <span class="rule-example">10–20</span></div>
+                <div class="rule-point">Неразрывный дефис внутри слов: <span class="rule-example">кто‑то</span></div>
+                <div class="rule-point">Тире в&nbsp;начале строки</div>
+                <div class="rule-point">Неразрывный пробел перед длинным тире</div>
+              </div>
+            </details>
 
-          <details class="rule">
-            <summary>Телефоны</summary>
-            <div class="rule-body">
-              <div class="rule-point">Российские номера: <span class="rule-example">+7&nbsp;900&nbsp;123‑45‑67</span></div>
-              <div class="rule-point">Внутри номера цифры разделяются неразрывными пробелами и&nbsp;дефисами</div>
-              <div class="rule-point">Номер с&nbsp;<span class="rule-example">7</span> получает <span class="rule-example">+7</span></div>
-              <div class="rule-point">Номер с&nbsp;<span class="rule-example">8</span> сохраняет восьмёрку</div>
-              <div class="rule-point">Числа после <span class="rule-example">№</span> и&nbsp;рядом с&nbsp;валютой не&nbsp;считаются телефоном</div>
-            </div>
-          </details>
+            <details class="rule">
+              <summary>Телефоны</summary>
+              <div class="rule-body">
+                <div class="rule-point">Российские номера: <span class="rule-example">+7&nbsp;900&nbsp;123‑45‑67</span></div>
+                <div class="rule-point">Внутри номера цифры разделяются неразрывными пробелами и&nbsp;дефисами</div>
+                <div class="rule-point">Номер с&nbsp;<span class="rule-example">7</span> получает <span class="rule-example">+7</span></div>
+                <div class="rule-point">Номер с&nbsp;<span class="rule-example">8</span> сохраняет восьмёрку</div>
+                <div class="rule-point">Числа после <span class="rule-example">№</span> и&nbsp;рядом с&nbsp;валютой не&nbsp;считаются телефоном</div>
+              </div>
+            </details>
 
-          <details class="rule">
-            <summary>Числа, даты и&nbsp;деньги</summary>
-            <div class="rule-body">
-              <div class="rule-point">Разряды в&nbsp;длинных числах: <span class="rule-example">1000000 <span class="rule-arrow">→</span> 1&nbsp;000&nbsp;000</span></div>
-              <div class="rule-point">Десятичная запятая: <span class="rule-example">10.5 <span class="rule-arrow">→</span> 10,5</span></div>
-              <div class="rule-point">Неразрывный пробел перед валютой или единицей измерения: <span class="rule-example">5&nbsp;кг, 1&nbsp;000&nbsp;₽</span></div>
-              <div class="rule-point">Год рядом с&nbsp;<span class="rule-example">©</span> и&nbsp;<span class="rule-example">г.</span>: <span class="rule-example">©&nbsp;2024, 2024&nbsp;г.</span></div>
-              <div class="rule-point">IP-адреса, версии и&nbsp;даты не&nbsp;делятся на&nbsp;разряды</div>
-              <div class="rule-point">Числа после <span class="rule-example">№</span> и&nbsp;<span class="rule-example">§</span> не&nbsp;делятся на&nbsp;разряды</div>
-            </div>
-          </details>
+            <details class="rule">
+              <summary>Числа, даты и&nbsp;деньги</summary>
+              <div class="rule-body">
+                <div class="rule-point">Разряды в&nbsp;длинных числах: <span class="rule-example">1000000 <span class="rule-arrow">→</span> 1&nbsp;000&nbsp;000</span></div>
+                <div class="rule-point">Десятичная запятая: <span class="rule-example">10.5 <span class="rule-arrow">→</span> 10,5</span></div>
+                <div class="rule-point">Неразрывный пробел перед валютой или единицей измерения: <span class="rule-example">5&nbsp;кг, 1&nbsp;000&nbsp;₽</span></div>
+                <div class="rule-point">Год рядом с&nbsp;<span class="rule-example">©</span> и&nbsp;<span class="rule-example">г.</span>: <span class="rule-example">©&nbsp;2024, 2024&nbsp;г.</span></div>
+                <div class="rule-point">IP-адреса, версии и&nbsp;даты не&nbsp;делятся на&nbsp;разряды</div>
+                <div class="rule-point">Числа после <span class="rule-example">№</span> и&nbsp;<span class="rule-example">§</span> не&nbsp;делятся на&nbsp;разряды</div>
+              </div>
+            </details>
 
-          <details class="rule">
-            <summary>Сокращения</summary>
-            <div class="rule-body">
-              <div class="rule-point">С&nbsp;точкой: <span class="rule-example">тыс., мин., д., кв., г., рис., стр., им., руб., коп., т.&nbsp;д., т.&nbsp;е., т.&nbsp;к., т.&nbsp;п., и&nbsp;т.&nbsp;д., и&nbsp;др., и&nbsp;т.&nbsp;п.</span></div>
-              <div class="rule-point">Без точки: <span class="rule-example">млн, млрд, трлн</span>; после числа&nbsp;— <span class="rule-example">с, м, км, кг</span></div>
-              <div class="rule-point">Площадь и&nbsp;объём: <span class="rule-example">кв.&nbsp;м, куб.&nbsp;м</span></div>
-              <div class="rule-point">Месяцы: <span class="rule-example">6&nbsp;мес.</span>, но&nbsp;<span class="rule-example">₽/мес</span></div>
-            </div>
-          </details>
+            <details class="rule">
+              <summary>Сокращения</summary>
+              <div class="rule-body">
+                <div class="rule-point">С&nbsp;точкой: <span class="rule-example">тыс., мин., д., кв., г., рис., стр., им., руб., коп., т.&nbsp;д., т.&nbsp;е., т.&nbsp;к., т.&nbsp;п., и&nbsp;т.&nbsp;д., и&nbsp;др., и&nbsp;т.&nbsp;п.</span></div>
+                <div class="rule-point">Без точки: <span class="rule-example">млн, млрд, трлн</span>; после числа&nbsp;— <span class="rule-example">с, м, км, кг</span></div>
+                <div class="rule-point">Площадь и&nbsp;объём: <span class="rule-example">кв.&nbsp;м, куб.&nbsp;м</span></div>
+                <div class="rule-point">Месяцы: <span class="rule-example">6&nbsp;мес.</span>, но&nbsp;<span class="rule-example">₽/мес</span></div>
+              </div>
+            </details>
 
-          <details class="rule">
-            <summary>Неразрывные пробелы</summary>
-            <div class="rule-body">
-              <div class="rule-point">Перед длинным тире: <span class="rule-example">Москва&nbsp;— столица</span></div>
-              <div class="rule-point">После <span class="rule-example">№</span> и&nbsp;<span class="rule-example">§</span></div>
-              <div class="rule-point">Между числом и&nbsp;единицей: <span class="rule-example">5&nbsp;кг, 20&nbsp;°C</span></div>
-              <div class="rule-point">В&nbsp;датах: <span class="rule-example">30&nbsp;сентября</span></div>
-              <div class="rule-point">В&nbsp;инициалах: <span class="rule-example">И.&nbsp;И.&nbsp;Иванов</span></div>
-              <div class="rule-point">После коротких слов и&nbsp;предлогов: <span class="rule-example">в, во, и, к, ко, о, об, обо, у, с, со, по, за, из, от, до, не, ни, но, на, я, мы, вы, он, да, же, ли</span></div>
-            </div>
-          </details>
+            <details class="rule">
+              <summary>Неразрывные пробелы</summary>
+              <div class="rule-body">
+                <div class="rule-point">Перед длинным тире: <span class="rule-example">Москва&nbsp;— столица</span></div>
+                <div class="rule-point">После <span class="rule-example">№</span> и&nbsp;<span class="rule-example">§</span></div>
+                <div class="rule-point">Между числом и&nbsp;единицей: <span class="rule-example">5&nbsp;кг, 20&nbsp;°C</span></div>
+                <div class="rule-point">В&nbsp;датах: <span class="rule-example">30&nbsp;сентября</span></div>
+                <div class="rule-point">В&nbsp;инициалах: <span class="rule-example">И.&nbsp;И.&nbsp;Иванов</span></div>
+                <div class="rule-point">После коротких слов и&nbsp;предлогов: <span class="rule-example">в, во, и, к, ко, о, об, обо, у, с, со, по, за, из, от, до, не, ни, но, на, я, мы, вы, он, да, же, ли</span></div>
+              </div>
+            </details>
 
-          <details class="rule">
-            <summary>Обычные пробелы</summary>
-            <div class="rule-body">
-              <div class="rule-point">Без двойных пробелов</div>
-              <div class="rule-point">Без пробелов в&nbsp;начале и&nbsp;конце строки</div>
-              <div class="rule-point">Без лишних пробелов перед знаками препинания: <span class="rule-example">. , : ; ? ! » ) ]</span></div>
-              <div class="rule-point">Без лишних пробелов после открывающих знаков: <span class="rule-example">« ( [</span></div>
-              <div class="rule-point">Проценты без пробела: <span class="rule-example">50%</span></div>
-              <div class="rule-point">Тильда без пробела: <span class="rule-example">~100</span></div>
-            </div>
-          </details>
+            <details class="rule">
+              <summary>Обычные пробелы</summary>
+              <div class="rule-body">
+                <div class="rule-point">Без двойных пробелов</div>
+                <div class="rule-point">Без пробелов в&nbsp;начале и&nbsp;конце строки</div>
+                <div class="rule-point">Без лишних пробелов перед знаками препинания: <span class="rule-example">. , : ; ? ! » ) ]</span></div>
+                <div class="rule-point">Без лишних пробелов после открывающих знаков: <span class="rule-example">« ( [</span></div>
+                <div class="rule-point">Проценты без пробела: <span class="rule-example">50%</span></div>
+                <div class="rule-point">Тильда без пробела: <span class="rule-example">~100</span></div>
+              </div>
+            </details>
 
-          <details class="rule">
-            <summary>Математика и&nbsp;символы</summary>
-            <div class="rule-body">
-              <div class="rule-point">Знак умножения: <span class="rule-example">10x20 <span class="rule-arrow">→</span> 10×20</span></div>
-              <div class="rule-point">Типографские дроби: <span class="rule-example">1/2 <span class="rule-arrow">→</span> ½, 1/4 <span class="rule-arrow">→</span> ¼</span></div>
-              <div class="rule-point">Температура: <span class="rule-example">20 C <span class="rule-arrow">→</span> 20&nbsp;°C, 100F <span class="rule-arrow">→</span> 100&nbsp;°F</span></div>
-              <div class="rule-point">Символы: <span class="rule-example">(c) <span class="rule-arrow">→</span> ©, (tm) <span class="rule-arrow">→</span> ™, (r) <span class="rule-arrow">→</span> ®</span></div>
-              <div class="rule-point">Стрелка: <span class="rule-example">-&gt; <span class="rule-arrow">→</span> →</span></div>
-            </div>
-          </details>
+            <details class="rule">
+              <summary>Математика и&nbsp;символы</summary>
+              <div class="rule-body">
+                <div class="rule-point">Знак умножения: <span class="rule-example">10x20 <span class="rule-arrow">→</span> 10×20</span></div>
+                <div class="rule-point">Типографские дроби: <span class="rule-example">1/2 <span class="rule-arrow">→</span> ½, 1/4 <span class="rule-arrow">→</span> ¼</span></div>
+                <div class="rule-point">Температура: <span class="rule-example">20 C <span class="rule-arrow">→</span> 20&nbsp;°C, 100F <span class="rule-arrow">→</span> 100&nbsp;°F</span></div>
+                <div class="rule-point">Символы: <span class="rule-example">(c) <span class="rule-arrow">→</span> ©, (tm) <span class="rule-arrow">→</span> ™, (r) <span class="rule-arrow">→</span> ®</span></div>
+                <div class="rule-point">Стрелка: <span class="rule-example">-&gt; <span class="rule-arrow">→</span> →</span></div>
+              </div>
+            </details>
+          <!-- chistovik-content:rules:end -->
         </div>
       </section>
 
       <section class="content panel about-panel" data-panel="about">
-        <div class="about">
-          <p class="about-lead">Чистовик&nbsp;&mdash; это финальный штрих перед разработкой</p>
-          <div class="about-list">
-            <div class="about-list-item">
-              <span class="about-bullet" aria-hidden="true">✦</span>
-              <span>Исправляет кавычки, тире и&nbsp;пробелы</span>
+        <!-- chistovik-content:about:start -->
+          <div class="about">
+            <p class="about-lead">Чистовик&nbsp;&mdash; это финальный штрих перед разработкой</p>
+            <div class="about-list">
+              <div class="about-list-item">
+                <span class="about-bullet" aria-hidden="true">✦</span>
+                <span>Исправляет кавычки, тире и&nbsp;пробелы</span>
+              </div>
+              <div class="about-list-item">
+                <span class="about-bullet" aria-hidden="true">✦</span>
+                <span>Работает с&nbsp;текстом, фреймом или всей страницей</span>
+              </div>
+              <div class="about-list-item">
+                <span class="about-bullet" aria-hidden="true">✦</span>
+                <span>Сохраняет цвета и&nbsp;стили внутри текста</span>
+              </div>
             </div>
-            <div class="about-list-item">
-              <span class="about-bullet" aria-hidden="true">✦</span>
-              <span>Работает с&nbsp;текстом, фреймом или всей страницей</span>
-            </div>
-            <div class="about-list-item">
-              <span class="about-bullet" aria-hidden="true">✦</span>
-              <span>Сохраняет цвета и&nbsp;стили внутри текста</span>
+            <div class="about-note">
+              <span class="about-sparkles" aria-hidden="true">
+                <span class="about-sparkle large">✦</span>
+                <span class="about-sparkle medium">✦</span>
+                <span class="about-sparkle small">✦</span>
+              </span>
+              <span class="about-note-title">Сделано редактором для редакторов</span>
+              <p class="about-text">Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;работаю в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class="about-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Заходите в&nbsp;гости&nbsp;→</a></p>
             </div>
           </div>
-          <div class="about-note">
-            <span class="about-sparkles" aria-hidden="true">
-              <span class="about-sparkle large">✦</span>
-              <span class="about-sparkle medium">✦</span>
-              <span class="about-sparkle small">✦</span>
-            </span>
-            <span class="about-note-title">Сделано редактором для редакторов</span>
-            <p class="about-text">Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;работаю в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class="about-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Заходите в&nbsp;гости&nbsp;→</a></p>
-          </div>
-        </div>
+        <!-- chistovik-content:about:end -->
       </section>
 
       <div class="actions">
-        <button class="primary" id="run" type="button">Запустить типограф</button>
+        <!-- chistovik-content:actions:start -->
+          <button class="primary" id="run" type="button">Запустить типограф</button>
+        <!-- chistovik-content:actions:end -->
       </div>
     </main>
 

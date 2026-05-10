@@ -1,0 +1,128 @@
+module.exports = {
+  tabs: [
+    { id: "typograph", label: "Типограф", active: true },
+    { id: "rules", label: "Правила" },
+    { id: "about", label: "О плагине", hasDoodles: true },
+  ],
+  typograph: {
+    title: "Как обработать текст?",
+    modeAriaLabel: "Режим типографа",
+    modes: [
+      {
+        id: "beautyMode",
+        name: "typographMode",
+        value: "beauty",
+        checked: true,
+        title: "Для красоты",
+        text: "Готовыми символами",
+      },
+      {
+        id: "developmentMode",
+        name: "typographMode",
+        value: "development",
+        title: "Для разработки",
+        text: "С&nbsp;<span class=\"nbsp-star\">*</span> на&nbsp;месте неразрывных пробелов",
+      },
+    ],
+    processLockedLabel: "Обработать даже слои с замочком",
+  },
+  rules: [
+    {
+      title: "Кавычки и&nbsp;пунктуация",
+      points: [
+        "В&nbsp;русском тексте кавычки первого уровня «ёлочки», а&nbsp;второго „лапки“: <span class=\"rule-example\">«Он&nbsp;сказал „привет“»</span>",
+        "В&nbsp;латинице кавычки первого уровня \"двойные\", а&nbsp;второго 'одинарные'",
+        "Точка, запятая, точка с&nbsp;запятой, двоеточие и&nbsp;многоточие после кавычек: <span class=\"rule-example\">Он&nbsp;сказал «привет».</span>",
+        "Вопрос и&nbsp;восклицание внутри кавычек: <span class=\"rule-example\">«Как дела?»</span>",
+        "Три точки меняются на&nbsp;многоточие: <span class=\"rule-example\">... <span class=\"rule-arrow\">→</span> …</span>",
+        "Повторные восклицательные знаки: <span class=\"rule-example\">!! <span class=\"rule-arrow\">→</span> !</span>",
+        "Сочетание !?: <span class=\"rule-example\">!? <span class=\"rule-arrow\">→</span> ?!</span>",
+      ],
+    },
+    {
+      title: "Тире и&nbsp;дефисы",
+      points: [
+        "Длинное тире между словами: <span class=\"rule-example\">слово&nbsp;— слово</span>",
+        "Среднее тире в&nbsp;диапазонах: <span class=\"rule-example\">10–20</span>",
+        "Неразрывный дефис внутри слов: <span class=\"rule-example\">кто‑то</span>",
+        "Тире в&nbsp;начале строки",
+        "Неразрывный пробел перед длинным тире",
+      ],
+    },
+    {
+      title: "Телефоны",
+      points: [
+        "Российские номера: <span class=\"rule-example\">+7&nbsp;900&nbsp;123‑45‑67</span>",
+        "Внутри номера цифры разделяются неразрывными пробелами и&nbsp;дефисами",
+        "Номер с&nbsp;<span class=\"rule-example\">7</span> получает <span class=\"rule-example\">+7</span>",
+        "Номер с&nbsp;<span class=\"rule-example\">8</span> сохраняет восьмёрку",
+        "Числа после <span class=\"rule-example\">№</span> и&nbsp;рядом с&nbsp;валютой не&nbsp;считаются телефоном",
+      ],
+    },
+    {
+      title: "Числа, даты и&nbsp;деньги",
+      points: [
+        "Разряды в&nbsp;длинных числах: <span class=\"rule-example\">1000000 <span class=\"rule-arrow\">→</span> 1&nbsp;000&nbsp;000</span>",
+        "Десятичная запятая: <span class=\"rule-example\">10.5 <span class=\"rule-arrow\">→</span> 10,5</span>",
+        "Неразрывный пробел перед валютой или единицей измерения: <span class=\"rule-example\">5&nbsp;кг, 1&nbsp;000&nbsp;₽</span>",
+        "Год рядом с&nbsp;<span class=\"rule-example\">©</span> и&nbsp;<span class=\"rule-example\">г.</span>: <span class=\"rule-example\">©&nbsp;2024, 2024&nbsp;г.</span>",
+        "IP-адреса, версии и&nbsp;даты не&nbsp;делятся на&nbsp;разряды",
+        "Числа после <span class=\"rule-example\">№</span> и&nbsp;<span class=\"rule-example\">§</span> не&nbsp;делятся на&nbsp;разряды",
+      ],
+    },
+    {
+      title: "Сокращения",
+      points: [
+        "С&nbsp;точкой: <span class=\"rule-example\">тыс., мин., д., кв., г., рис., стр., им., руб., коп., т.&nbsp;д., т.&nbsp;е., т.&nbsp;к., т.&nbsp;п., и&nbsp;т.&nbsp;д., и&nbsp;др., и&nbsp;т.&nbsp;п.</span>",
+        "Без точки: <span class=\"rule-example\">млн, млрд, трлн</span>; после числа&nbsp;— <span class=\"rule-example\">с, м, км, кг</span>",
+        "Площадь и&nbsp;объём: <span class=\"rule-example\">кв.&nbsp;м, куб.&nbsp;м</span>",
+        "Месяцы: <span class=\"rule-example\">6&nbsp;мес.</span>, но&nbsp;<span class=\"rule-example\">₽/мес</span>",
+      ],
+    },
+    {
+      title: "Неразрывные пробелы",
+      points: [
+        "Перед длинным тире: <span class=\"rule-example\">Москва&nbsp;— столица</span>",
+        "После <span class=\"rule-example\">№</span> и&nbsp;<span class=\"rule-example\">§</span>",
+        "Между числом и&nbsp;единицей: <span class=\"rule-example\">5&nbsp;кг, 20&nbsp;°C</span>",
+        "В&nbsp;датах: <span class=\"rule-example\">30&nbsp;сентября</span>",
+        "В&nbsp;инициалах: <span class=\"rule-example\">И.&nbsp;И.&nbsp;Иванов</span>",
+        "После коротких слов и&nbsp;предлогов: <span class=\"rule-example\">в, во, и, к, ко, о, об, обо, у, с, со, по, за, из, от, до, не, ни, но, на, я, мы, вы, он, да, же, ли</span>",
+      ],
+    },
+    {
+      title: "Обычные пробелы",
+      points: [
+        "Без двойных пробелов",
+        "Без пробелов в&nbsp;начале и&nbsp;конце строки",
+        "Без лишних пробелов перед знаками препинания: <span class=\"rule-example\">. , : ; ? ! » ) ]</span>",
+        "Без лишних пробелов после открывающих знаков: <span class=\"rule-example\">« ( [</span>",
+        "Проценты без пробела: <span class=\"rule-example\">50%</span>",
+        "Тильда без пробела: <span class=\"rule-example\">~100</span>",
+      ],
+    },
+    {
+      title: "Математика и&nbsp;символы",
+      points: [
+        "Знак умножения: <span class=\"rule-example\">10x20 <span class=\"rule-arrow\">→</span> 10×20</span>",
+        "Типографские дроби: <span class=\"rule-example\">1/2 <span class=\"rule-arrow\">→</span> ½, 1/4 <span class=\"rule-arrow\">→</span> ¼</span>",
+        "Температура: <span class=\"rule-example\">20 C <span class=\"rule-arrow\">→</span> 20&nbsp;°C, 100F <span class=\"rule-arrow\">→</span> 100&nbsp;°F</span>",
+        "Символы: <span class=\"rule-example\">(c) <span class=\"rule-arrow\">→</span> ©, (tm) <span class=\"rule-arrow\">→</span> ™, (r) <span class=\"rule-arrow\">→</span> ®</span>",
+        "Стрелка: <span class=\"rule-example\">-&gt; <span class=\"rule-arrow\">→</span> →</span>",
+      ],
+    },
+  ],
+  about: {
+    lead: "Чистовик&nbsp;&mdash; это финальный штрих перед разработкой",
+    bullets: [
+      "Исправляет кавычки, тире и&nbsp;пробелы",
+      "Работает с&nbsp;текстом, фреймом или всей страницей",
+      "Сохраняет цвета и&nbsp;стили внутри текста",
+    ],
+    noteTitle: "Сделано редактором для редакторов",
+    noteHtml: "Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;работаю в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class=\"about-link\" href=\"https://t.me/akanna_notes\" target=\"_blank\" rel=\"noreferrer\">Заходите в&nbsp;гости&nbsp;→</a>",
+  },
+  actions: {
+    runButton: "Запустить типограф",
+  },
+};
