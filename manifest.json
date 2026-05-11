@@ -5,8 +5,8 @@
   "main": "dist/code.js",
   "ui": "src/ui.html",
   "menu": [
-    { "name": "Запустить Чистовик", "command": "run-chistovik" },
-    { "name": "Настройки Чистовика", "command": "open-settings" }
+    { "name": "Запустить типограф", "command": "run-chistovik" },
+    { "name": "⚙️ Настройки", "command": "open-settings" }
   ],
   "editorType": ["figma"]
 }
