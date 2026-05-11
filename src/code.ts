@@ -1210,8 +1210,19 @@ function applyNonBreakingSpaces(input: string): string {
     text = applyShortWordNonBreakingSpaces(text, shortWords);
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}$3.${NBSP}`);
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`);
-    text = text.replace(/([№§])[ \t\u00A0]*(?=\S)/g, `$1${NBSP}`);
-    text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+(?=[A-Za-zА-Яа-яЁё])/g, `$1${NBSP}`);
+    text = text.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`);
+    text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+(?=[A-Za-zА-Яа-яЁё])/g, (match: string, number: string, offset: number, fullText: string) => {
+      try {
+        if (isNumberPartOfDate(fullText, offset, offset + number.length)) {
+          return match;
+        }
+
+        return `${number}${NBSP}`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to apply number non-breaking space", error);
+        return match;
+      }
+    });
 
     return text;
   } catch (error) {

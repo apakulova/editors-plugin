@@ -83,7 +83,7 @@ module.exports = {
       title: "Неразрывные пробелы",
       points: [
         "Перед длинным тире: <span class=\"rule-example\">Москва&nbsp;— столица</span>",
-        "После <span class=\"rule-example\">№</span> и&nbsp;<span class=\"rule-example\">§</span>",
+        "После <span class=\"rule-example\">№</span> и&nbsp;<span class=\"rule-example\">§</span> перед числом",
         "Между числом и&nbsp;единицей: <span class=\"rule-example\">5&nbsp;кг, 20&nbsp;°C</span>",
         "В&nbsp;датах: <span class=\"rule-example\">30&nbsp;сентября</span>",
         "В&nbsp;инициалах: <span class=\"rule-example\">И.&nbsp;И.&nbsp;Иванов</span>",
