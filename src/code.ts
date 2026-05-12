@@ -655,7 +655,10 @@ function cleanTypography(input: string, options: PluginRunOptions = getDefaultRu
 
 function cleanTypographyWithMetadata(input: string, options: PluginRunOptions = getDefaultRunOptions(), existingDevelopmentMarkerIndexes: number[] = []): TypographyCleanResult {
   try {
-    const beautyText = cleanTypographyForBeauty(normalizeInputNonBreakingSpaces(restoreExistingDevelopmentMarkers(input, existingDevelopmentMarkerIndexes)));
+    const normalizedInput = normalizeInputNonBreakingSpaces(input);
+    const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, existingDevelopmentMarkerIndexes);
+    const beautyInput = options.mode === "development" ? inputWithKnownMarkers : restoreTypographicDevelopmentMarkers(inputWithKnownMarkers);
+    const beautyText = cleanTypographyForBeauty(beautyInput);
 
     if (options.mode !== "development") {
       return {
@@ -667,6 +670,39 @@ function cleanTypographyWithMetadata(input: string, options: PluginRunOptions = 
     return createDevelopmentTypographyResult(beautyText);
   } catch (error) {
     console.error("[Чистовик] Failed to clean text with metadata", error);
+    throw error;
+  }
+}
+
+function restoreTypographicDevelopmentMarkers(input: string): string {
+  try {
+    if (!input.includes(DEVELOPMENT_NBSP_MARKER)) {
+      return input;
+    }
+
+    const chars = input.split("");
+
+    for (let index = 0; index < chars.length; index += 1) {
+      if (chars[index] === DEVELOPMENT_NBSP_MARKER && isTypographicDevelopmentMarker(input, index)) {
+        chars[index] = " ";
+      }
+    }
+
+    return chars.join("");
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore typographic development markers", error);
+    throw error;
+  }
+}
+
+function isTypographicDevelopmentMarker(input: string, index: number): boolean {
+  try {
+    const candidate = `${input.slice(0, index)} ${input.slice(index + 1)}`;
+    const beautyText = cleanTypographyForBeauty(candidate);
+
+    return beautyText[index] === NBSP;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check typographic development marker", error);
     throw error;
   }
 }
