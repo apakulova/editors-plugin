@@ -24,7 +24,18 @@ module.exports = {
         text: "С&nbsp;<span class=\"nbsp-star\">*</span> на&nbsp;месте неразрывных пробелов",
       },
     ],
-    processLockedLabel: "Обработать даже слои с замочком",
+    options: [
+      {
+        id: "processLocked",
+        key: "processLockedNodes",
+        label: "Обработать даже слои с замочком",
+      },
+      {
+        id: "processHidden",
+        key: "processHiddenNodes",
+        label: "Обработать даже скрытые слои",
+      },
+    ],
   },
   rules: [
     {
@@ -120,7 +131,7 @@ module.exports = {
       "Сохраняет цвета и&nbsp;стили внутри текста",
     ],
     noteTitle: "Сделано редактором для редакторов",
-    noteHtml: "Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;работаю в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class=\"about-link\" href=\"https://t.me/akanna_notes\" target=\"_blank\" rel=\"noreferrer\">Заходите в&nbsp;гости&nbsp;→</a>",
+    noteHtml: "Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;UX-редактор в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class=\"about-link\" href=\"https://t.me/akanna_notes\" target=\"_blank\" rel=\"noreferrer\">Заходите в&nbsp;гости&nbsp;→</a>",
   },
   actions: {
     runButton: "Запустить типограф",

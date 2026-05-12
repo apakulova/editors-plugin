@@ -255,6 +255,11 @@
         padding: 0;
       }
 
+      .options {
+        display: grid;
+        gap: 10px;
+      }
+
       .option input {
         appearance: none;
         background: #ffffff;
@@ -577,12 +582,20 @@
             </div>
           </div>
 
-          <label class="option" for="processLocked">
-            <input id="processLocked" type="checkbox" />
-            <span>
-              <span class="option-title">Обработать даже слои с замочком</span>
-            </span>
-          </label>
+          <div class="options">
+            <label class="option" for="processLocked">
+              <input id="processLocked" type="checkbox" data-option="processLockedNodes" />
+              <span>
+                <span class="option-title">Обработать даже слои с замочком</span>
+              </span>
+            </label>
+            <label class="option" for="processHidden">
+              <input id="processHidden" type="checkbox" data-option="processHiddenNodes" />
+              <span>
+                <span class="option-title">Обработать даже скрытые слои</span>
+              </span>
+            </label>
+          </div>
         <!-- chistovik-content:typograph:end -->
 
       </section>
@@ -710,7 +723,7 @@
                 <span class="about-sparkle small">✦</span>
               </span>
               <span class="about-note-title">Сделано редактором для редакторов</span>
-              <p class="about-text">Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;работаю в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class="about-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Заходите в&nbsp;гости&nbsp;→</a></p>
+              <p class="about-text">Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;UX-редактор в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class="about-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Заходите в&nbsp;гости&nbsp;→</a></p>
             </div>
           </div>
         <!-- chistovik-content:about:end -->
@@ -726,6 +739,7 @@
     <script>
       const runButton = document.getElementById("run");
       const processLocked = document.getElementById("processLocked");
+      const processHidden = document.getElementById("processHidden");
       const tabs = Array.from(document.querySelectorAll("[data-tab]"));
       const panels = Array.from(document.querySelectorAll("[data-panel]"));
       const actions = document.querySelector(".actions");
@@ -766,6 +780,7 @@
               options: {
                 mode: selectedMode ? selectedMode.value : "beauty",
                 processLockedNodes: processLocked.checked,
+                processHiddenNodes: processHidden.checked,
               },
             },
           },

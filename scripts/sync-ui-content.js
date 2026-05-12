@@ -53,6 +53,16 @@ function renderTypograph() {
 </label>`;
     })
     .join("\n");
+  const options = content.typograph.options
+    .map(
+      (option) => `<label class="option" for="${option.id}">
+  <input id="${option.id}" type="checkbox" data-option="${option.key}" />
+  <span>
+    <span class="option-title">${option.label}</span>
+  </span>
+</label>`
+    )
+    .join("\n");
 
   return `<div class="group">
   <div class="group-title">${content.typograph.title}</div>
@@ -61,12 +71,9 @@ ${indent(modes, 4)}
   </div>
 </div>
 
-<label class="option" for="processLocked">
-  <input id="processLocked" type="checkbox" />
-  <span>
-    <span class="option-title">${content.typograph.processLockedLabel}</span>
-  </span>
-</label>`;
+<div class="options">
+${indent(options, 2)}
+</div>`;
 }
 
 function renderRules() {
