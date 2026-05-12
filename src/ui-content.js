@@ -75,6 +75,7 @@ module.exports = {
       points: [
         "Разряды в&nbsp;длинных числах: <span class=\"rule-example\">1000000 <span class=\"rule-arrow\">→</span> 1&nbsp;000&nbsp;000</span>",
         "Десятичная запятая: <span class=\"rule-example\">10.5 <span class=\"rule-arrow\">→</span> 10,5</span>",
+        "Английская запись числа: <span class=\"rule-example\">62,226,338.00&nbsp;₽ <span class=\"rule-arrow\">→</span> 62&nbsp;226&nbsp;338,00&nbsp;₽</span>",
         "Неразрывный пробел перед валютой или единицей измерения: <span class=\"rule-example\">5&nbsp;кг, 1&nbsp;000&nbsp;₽</span>",
         "Год рядом с&nbsp;<span class=\"rule-example\">©</span> и&nbsp;<span class=\"rule-example\">г.</span>: <span class=\"rule-example\">©&nbsp;2024, 2024&nbsp;г.</span>",
         "IP-адреса, версии и&nbsp;даты не&nbsp;делятся на&nbsp;разряды",

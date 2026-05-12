@@ -1024,7 +1024,9 @@ function formatPhoneNumbers(input: string): string {
 
 function formatNumbersAndMoney(input: string): string {
   try {
-    let text = input.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart: string, decimalPart: string, offset: number, fullText: string) => {
+    let text = normalizeWesternGroupedNumbers(input);
+
+    text = text.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart: string, decimalPart: string, offset: number, fullText: string) => {
       try {
         if (isProtectedDottedNumber(fullText, offset, offset + match.length)) {
           return match;
@@ -1059,6 +1061,30 @@ function formatNumbersAndMoney(input: string): string {
     return text;
   } catch (error) {
     console.error("[Чистовик] Failed to format numbers and money", error);
+    throw error;
+  }
+}
+
+function normalizeWesternGroupedNumbers(input: string): string {
+  try {
+    return input.replace(/(^|[^\d])(\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?=$|[^\d])/g, (match, prefix: string, candidate: string, offset: number, fullText: string) => {
+      try {
+        const candidateStart = offset + prefix.length;
+        const [integerPart, decimalPart] = candidate.split(".");
+        const compactInteger = integerPart.replace(/,/g, "");
+
+        if (shouldSkipNumberGrouping(fullText, candidateStart, candidateStart + integerPart.length, compactInteger)) {
+          return match;
+        }
+
+        return `${prefix}${integerPart.replace(/,/g, NBSP)}${decimalPart === undefined ? "" : `,${decimalPart}`}`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to normalize western grouped number candidate", error);
+        return match;
+      }
+    });
+  } catch (error) {
+    console.error("[Чистовик] Failed to normalize western grouped numbers", error);
     throw error;
   }
 }
