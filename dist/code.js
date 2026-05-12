@@ -70,10 +70,12 @@ function openSettingsUI() {
 }
 async function runTypograph(options) {
     try {
-        const collection = collectTargetTextNodes({
+        figma.skipInvisibleInstanceChildren = !options.processHiddenNodes;
+        const collection = await collectTargetTextNodes({
+            processHidden: options.processHiddenNodes,
             processLocked: options.processLockedNodes,
         });
-        const result = await processTextNodes(collection.nodes, collection.skippedLocked, options);
+        const result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
         if (result.failed > 0) {
             throw new Error(`Failed to process ${result.failed} text node(s)`);
         }
@@ -88,6 +90,7 @@ function getDefaultRunOptions() {
     try {
         return {
             mode: "beauty",
+            processHiddenNodes: false,
             processLockedNodes: false,
         };
     }
@@ -97,13 +100,14 @@ function getDefaultRunOptions() {
     }
 }
 function getRunOptionsFromMessage(message) {
-    var _a, _b;
+    var _a, _b, _c;
     try {
         const defaults = getDefaultRunOptions();
         const mode = ((_a = message.options) === null || _a === void 0 ? void 0 : _a.mode) === "development" ? "development" : defaults.mode;
         return {
             mode,
-            processLockedNodes: ((_b = message.options) === null || _b === void 0 ? void 0 : _b.processLockedNodes) === true,
+            processHiddenNodes: ((_b = message.options) === null || _b === void 0 ? void 0 : _b.processHiddenNodes) === true,
+            processLockedNodes: ((_c = message.options) === null || _c === void 0 ? void 0 : _c.processLockedNodes) === true,
         };
     }
     catch (error) {
@@ -113,12 +117,13 @@ function getRunOptionsFromMessage(message) {
 }
 function notifyCleanResult(result) {
     try {
-        if (result.skippedLocked > 0) {
+        if (result.skippedLocked > 0 || result.skippedHidden > 0) {
+            const skippedLabel = getSkippedLayerLabel(result);
             if (result.changed > 0) {
-                figma.notify("Замочки не тронуты, в остальном — теперь всё чисто 🔥🔥🔥", { timeout: 4000 });
+                figma.notify(`${skippedLabel} не тронуты, в остальном — теперь всё чисто 🔥🔥🔥`, { timeout: 4000 });
             }
             else {
-                figma.notify("Замочки не тронуты, а остальное уже было чисто 👌", { timeout: 4000 });
+                figma.notify(`${skippedLabel} не тронуты, а остальное уже было чисто 👌`, { timeout: 4000 });
             }
             return;
         }
@@ -134,12 +139,28 @@ function notifyCleanResult(result) {
         throw error;
     }
 }
-function collectTargetTextNodes(options) {
+function getSkippedLayerLabel(result) {
     try {
+        if (result.skippedLocked > 0 && result.skippedHidden > 0) {
+            return "Замочки и скрытые слои";
+        }
+        if (result.skippedHidden > 0) {
+            return "Скрытые слои";
+        }
+        return "Замочки";
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get skipped layer label", error);
+        throw error;
+    }
+}
+async function collectTargetTextNodes(options) {
+    try {
+        await figma.currentPage.loadAsync();
         const selection = figma.currentPage.selection;
         let candidates = [];
         if (selection.length === 0) {
-            candidates = figma.currentPage.findAll((node) => node.type === "TEXT");
+            candidates = figma.currentPage.findAllWithCriteria({ types: ["TEXT"] });
         }
         else {
             const seen = new Set();
@@ -163,8 +184,8 @@ function collectTextNodesFromNode(node, result, seen) {
             }
             return;
         }
-        if ("findAll" in node) {
-            const textNodes = node.findAll((child) => child.type === "TEXT");
+        if ("findAllWithCriteria" in node) {
+            const textNodes = node.findAllWithCriteria({ types: ["TEXT"] });
             for (const textNode of textNodes) {
                 if (!seen.has(textNode.id)) {
                     result.push(textNode);
@@ -180,23 +201,21 @@ function collectTextNodesFromNode(node, result, seen) {
 }
 function filterProcessableTextNodes(textNodes, options) {
     try {
-        if (options.processLocked) {
-            return {
-                nodes: textNodes,
-                skippedLocked: 0,
-            };
-        }
         const nodes = [];
+        let skippedHidden = 0;
         let skippedLocked = 0;
         for (const textNode of textNodes) {
-            if (isLockedForProcessing(textNode)) {
+            if (!options.processLocked && isLockedForProcessing(textNode)) {
                 skippedLocked += 1;
+            }
+            else if (!options.processHidden && isHiddenForProcessing(textNode)) {
+                skippedHidden += 1;
             }
             else {
                 nodes.push(textNode);
             }
         }
-        return { nodes, skippedLocked };
+        return { nodes, skippedHidden, skippedLocked };
     }
     catch (error) {
         console.error("[Чистовик] Failed to filter processable text nodes", error);
@@ -219,6 +238,31 @@ function isLockedForProcessing(node) {
         throw error;
     }
 }
+function isHiddenForProcessing(node) {
+    try {
+        let current = node;
+        while (current !== null) {
+            if (hasVisibleProperty(current) && !current.visible) {
+                return true;
+            }
+            current = current.parent;
+        }
+        return false;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check hidden node state", error);
+        throw error;
+    }
+}
+function hasVisibleProperty(node) {
+    try {
+        return "visible" in node && typeof node.visible === "boolean";
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check visible property", error);
+        throw error;
+    }
+}
 function hasLockedProperty(node) {
     try {
         return "locked" in node && typeof node.locked === "boolean";
@@ -228,7 +272,7 @@ function hasLockedProperty(node) {
         throw error;
     }
 }
-async function processTextNodes(textNodes, skippedLocked, options) {
+async function processTextNodes(textNodes, skippedLocked, skippedHidden, options) {
     try {
         let processed = 0;
         let changed = 0;
@@ -259,7 +303,7 @@ async function processTextNodes(textNodes, skippedLocked, options) {
                 console.error(`[Чистовик] Failed to process text node ${textNode.id}`, error);
             }
         }
-        return { processed, changed, failed, skippedLocked };
+        return { processed, changed, failed, skippedHidden, skippedLocked };
     }
     catch (error) {
         console.error("[Чистовик] Failed to process text nodes", error);

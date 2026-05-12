@@ -24,6 +24,7 @@ type QuoteScript = "cyrillic" | "latin";
 
 interface PluginRunOptions {
   mode: TypographMode;
+  processHiddenNodes: boolean;
   processLockedNodes: boolean;
 }
 
@@ -41,11 +42,13 @@ interface TextProcessResult {
   processed: number;
   changed: number;
   failed: number;
+  skippedHidden: number;
   skippedLocked: number;
 }
 
 interface TextCollectionResult {
   nodes: TextNode[];
+  skippedHidden: number;
   skippedLocked: number;
 }
 
@@ -109,10 +112,13 @@ function openSettingsUI(): void {
 
 async function runTypograph(options: PluginRunOptions): Promise<void> {
   try {
-    const collection = collectTargetTextNodes({
+    figma.skipInvisibleInstanceChildren = !options.processHiddenNodes;
+
+    const collection = await collectTargetTextNodes({
+      processHidden: options.processHiddenNodes,
       processLocked: options.processLockedNodes,
     });
-    const result = await processTextNodes(collection.nodes, collection.skippedLocked, options);
+    const result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
 
     if (result.failed > 0) {
       throw new Error(`Failed to process ${result.failed} text node(s)`);
@@ -129,6 +135,7 @@ function getDefaultRunOptions(): PluginRunOptions {
   try {
     return {
       mode: "beauty",
+      processHiddenNodes: false,
       processLockedNodes: false,
     };
   } catch (error) {
@@ -144,6 +151,7 @@ function getRunOptionsFromMessage(message: PluginUIMessage): PluginRunOptions {
 
     return {
       mode,
+      processHiddenNodes: message.options?.processHiddenNodes === true,
       processLockedNodes: message.options?.processLockedNodes === true,
     };
   } catch (error) {
@@ -154,11 +162,13 @@ function getRunOptionsFromMessage(message: PluginUIMessage): PluginRunOptions {
 
 function notifyCleanResult(result: TextProcessResult): void {
   try {
-    if (result.skippedLocked > 0) {
+    if (result.skippedLocked > 0 || result.skippedHidden > 0) {
+      const skippedLabel = getSkippedLayerLabel(result);
+
       if (result.changed > 0) {
-        figma.notify("Замочки не тронуты, в остальном — теперь всё чисто 🔥🔥🔥", { timeout: 4000 });
+        figma.notify(`${skippedLabel} не тронуты, в остальном — теперь всё чисто 🔥🔥🔥`, { timeout: 4000 });
       } else {
-        figma.notify("Замочки не тронуты, а остальное уже было чисто 👌", { timeout: 4000 });
+        figma.notify(`${skippedLabel} не тронуты, а остальное уже было чисто 👌`, { timeout: 4000 });
       }
 
       return;
@@ -175,13 +185,32 @@ function notifyCleanResult(result: TextProcessResult): void {
   }
 }
 
-function collectTargetTextNodes(options: { processLocked: boolean }): TextCollectionResult {
+function getSkippedLayerLabel(result: TextProcessResult): string {
   try {
+    if (result.skippedLocked > 0 && result.skippedHidden > 0) {
+      return "Замочки и скрытые слои";
+    }
+
+    if (result.skippedHidden > 0) {
+      return "Скрытые слои";
+    }
+
+    return "Замочки";
+  } catch (error) {
+    console.error("[Чистовик] Failed to get skipped layer label", error);
+    throw error;
+  }
+}
+
+async function collectTargetTextNodes(options: { processHidden: boolean; processLocked: boolean }): Promise<TextCollectionResult> {
+  try {
+    await figma.currentPage.loadAsync();
+
     const selection = figma.currentPage.selection;
     let candidates: TextNode[] = [];
 
     if (selection.length === 0) {
-      candidates = figma.currentPage.findAll((node) => node.type === "TEXT") as TextNode[];
+      candidates = figma.currentPage.findAllWithCriteria({ types: ["TEXT"] });
     } else {
       const seen = new Set<string>();
 
@@ -208,8 +237,8 @@ function collectTextNodesFromNode(node: SceneNode, result: TextNode[], seen: Set
       return;
     }
 
-    if ("findAll" in node) {
-      const textNodes = node.findAll((child) => child.type === "TEXT") as TextNode[];
+    if ("findAllWithCriteria" in node) {
+      const textNodes = node.findAllWithCriteria({ types: ["TEXT"] });
 
       for (const textNode of textNodes) {
         if (!seen.has(textNode.id)) {
@@ -224,27 +253,23 @@ function collectTextNodesFromNode(node: SceneNode, result: TextNode[], seen: Set
   }
 }
 
-function filterProcessableTextNodes(textNodes: TextNode[], options: { processLocked: boolean }): TextCollectionResult {
+function filterProcessableTextNodes(textNodes: TextNode[], options: { processHidden: boolean; processLocked: boolean }): TextCollectionResult {
   try {
-    if (options.processLocked) {
-      return {
-        nodes: textNodes,
-        skippedLocked: 0,
-      };
-    }
-
     const nodes: TextNode[] = [];
+    let skippedHidden = 0;
     let skippedLocked = 0;
 
     for (const textNode of textNodes) {
-      if (isLockedForProcessing(textNode)) {
+      if (!options.processLocked && isLockedForProcessing(textNode)) {
         skippedLocked += 1;
+      } else if (!options.processHidden && isHiddenForProcessing(textNode)) {
+        skippedHidden += 1;
       } else {
         nodes.push(textNode);
       }
     }
 
-    return { nodes, skippedLocked };
+    return { nodes, skippedHidden, skippedLocked };
   } catch (error) {
     console.error("[Чистовик] Failed to filter processable text nodes", error);
     throw error;
@@ -270,6 +295,34 @@ function isLockedForProcessing(node: BaseNode): boolean {
   }
 }
 
+function isHiddenForProcessing(node: BaseNode): boolean {
+  try {
+    let current: BaseNode | null = node;
+
+    while (current !== null) {
+      if (hasVisibleProperty(current) && !current.visible) {
+        return true;
+      }
+
+      current = current.parent;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check hidden node state", error);
+    throw error;
+  }
+}
+
+function hasVisibleProperty(node: BaseNode): node is BaseNode & { visible: boolean } {
+  try {
+    return "visible" in node && typeof node.visible === "boolean";
+  } catch (error) {
+    console.error("[Чистовик] Failed to check visible property", error);
+    throw error;
+  }
+}
+
 function hasLockedProperty(node: BaseNode): node is BaseNode & { locked: boolean } {
   try {
     return "locked" in node && typeof node.locked === "boolean";
@@ -279,7 +332,7 @@ function hasLockedProperty(node: BaseNode): node is BaseNode & { locked: boolean
   }
 }
 
-async function processTextNodes(textNodes: TextNode[], skippedLocked: number, options: PluginRunOptions): Promise<TextProcessResult> {
+async function processTextNodes(textNodes: TextNode[], skippedLocked: number, skippedHidden: number, options: PluginRunOptions): Promise<TextProcessResult> {
   try {
     let processed = 0;
     let changed = 0;
@@ -311,7 +364,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, op
       }
     }
 
-    return { processed, changed, failed, skippedLocked };
+    return { processed, changed, failed, skippedHidden, skippedLocked };
   } catch (error) {
     console.error("[Чистовик] Failed to process text nodes", error);
     throw error;

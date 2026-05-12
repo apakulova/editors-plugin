@@ -2,6 +2,7 @@
   "name": "Чистовик",
   "id": "chistovik",
   "api": "1.0.0",
+  "documentAccess": "dynamic-page",
   "main": "dist/code.js",
   "ui": "src/ui.html",
   "menu": [
