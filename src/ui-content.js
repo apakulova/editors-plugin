@@ -42,7 +42,7 @@ module.exports = {
       title: "Кавычки и&nbsp;пунктуация",
       points: [
         "В&nbsp;русском тексте кавычки первого уровня «ёлочки», а&nbsp;второго „лапки“: <span class=\"rule-example\">«Он&nbsp;сказал „привет“»</span>",
-        "В&nbsp;латинице кавычки первого уровня \"двойные\", а&nbsp;второго 'одинарные'",
+        "Кавычки зависят от&nbsp;текста вне кавычек: <span class=\"rule-example\">«Design System»</span>, но&nbsp;<span class=\"rule-example\">The word \"привет\"</span>",
         "Точка, запятая, точка с&nbsp;запятой, двоеточие и&nbsp;многоточие после кавычек: <span class=\"rule-example\">Он&nbsp;сказал «привет».</span>",
         "Вопрос и&nbsp;восклицание внутри кавычек: <span class=\"rule-example\">«Как дела?»</span>",
         "Три точки меняются на&nbsp;многоточие: <span class=\"rule-example\">... <span class=\"rule-arrow\">→</span> …</span>",
@@ -78,7 +78,8 @@ module.exports = {
         "Английская запись числа: <span class=\"rule-example\">62,226,338.00&nbsp;₽ <span class=\"rule-arrow\">→</span> 62&nbsp;226&nbsp;338,00&nbsp;₽</span>",
         "Неразрывный пробел перед валютой или единицей измерения: <span class=\"rule-example\">5&nbsp;кг, 1&nbsp;000&nbsp;₽</span>",
         "Год рядом с&nbsp;<span class=\"rule-example\">©</span> и&nbsp;<span class=\"rule-example\">г.</span>: <span class=\"rule-example\">©&nbsp;2024, 2024&nbsp;г.</span>",
-        "IP-адреса, версии и&nbsp;даты не&nbsp;делятся на&nbsp;разряды",
+        "IP-адреса, версии и&nbsp;даты не&nbsp;делятся на&nbsp;разряды: <span class=\"rule-example\">10.04.2025</span>",
+        "Числа внутри кодов не&nbsp;делятся на&nbsp;разряды: <span class=\"rule-example\">SALE-2026</span>",
         "Числа после <span class=\"rule-example\">№</span> и&nbsp;<span class=\"rule-example\">§</span> не&nbsp;делятся на&nbsp;разряды",
       ],
     },

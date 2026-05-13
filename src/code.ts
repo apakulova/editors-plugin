@@ -816,29 +816,33 @@ function cleanupQuotesAndPunctuation(input: string): string {
 function formatQuotes(input: string): string {
   try {
     const stack: QuoteState[] = [];
+    const textScript = detectTextQuoteScript(input);
     let result = "";
+    let lastQuoteWasOpening = false;
 
     for (let index = 0; index < input.length; index += 1) {
       const char = input[index];
 
       if (!isQuoteChar(char) || isApostropheInsideWord(input, index)) {
         result += char;
+        lastQuoteWasOpening = false;
         continue;
       }
 
-      const opening = isOpeningQuote(input, index, stack);
+      const opening = isOpeningQuote(input, index, stack, lastQuoteWasOpening);
 
       if (opening) {
-        const script = detectQuoteScript(input, index, stack);
         const level = stack.length;
-        stack.push({ script, level });
-        result += getOpeningQuote(script, level);
+        stack.push({ script: textScript, level });
+        result += getOpeningQuote(textScript, level);
+        lastQuoteWasOpening = true;
       } else {
         const state = stack.pop() ?? {
-          script: detectQuoteScript(input, index, stack),
+          script: textScript,
           level: 0,
         };
         result += getClosingQuote(state.script, state.level);
+        lastQuoteWasOpening = false;
       }
     }
 
@@ -873,7 +877,7 @@ function isApostropheInsideWord(input: string, index: number): boolean {
   }
 }
 
-function isOpeningQuote(input: string, index: number, stack: QuoteState[]): boolean {
+function isOpeningQuote(input: string, index: number, stack: QuoteState[], lastQuoteWasOpening: boolean): boolean {
   try {
     const prev = input[index - 1] ?? "";
     const next = nextVisibleChar(input, index);
@@ -883,6 +887,10 @@ function isOpeningQuote(input: string, index: number, stack: QuoteState[]): bool
     }
 
     if (!prev) {
+      return true;
+    }
+
+    if (isQuoteChar(prev) && lastQuoteWasOpening && stack.length > 0) {
       return true;
     }
 
@@ -901,40 +909,57 @@ function isOpeningQuote(input: string, index: number, stack: QuoteState[]): bool
   }
 }
 
-function detectQuoteScript(input: string, index: number, stack: QuoteState[]): QuoteScript {
+function detectTextQuoteScript(input: string): QuoteScript {
   try {
-    const lookahead = input.slice(index + 1, findNextQuoteIndex(input, index + 1));
-    const cyrillicCount = countMatches(lookahead, /[А-Яа-яЁё]/g);
-    const latinCount = countMatches(lookahead, /[A-Za-z]/g);
+    const textOutsideQuotes = getTextOutsideQuotes(input);
 
-    if (cyrillicCount > latinCount) {
+    if (/[А-Яа-яЁё]/.test(textOutsideQuotes)) {
       return "cyrillic";
     }
 
-    if (latinCount > 0) {
+    if (/[A-Za-z]/.test(textOutsideQuotes)) {
       return "latin";
     }
 
-    return stack[stack.length - 1]?.script ?? "cyrillic";
+    return /[А-Яа-яЁё]/.test(input) ? "cyrillic" : "latin";
   } catch (error) {
-    console.error("[Чистовик] Failed to detect quote script", error);
+    console.error("[Чистовик] Failed to detect text quote script", error);
     throw error;
   }
 }
 
-function findNextQuoteIndex(input: string, start: number): number {
+function getTextOutsideQuotes(input: string): string {
   try {
-    const max = Math.min(input.length, start + 120);
+    const stack: QuoteState[] = [];
+    let result = "";
+    let lastQuoteWasOpening = false;
 
-    for (let index = start; index < max; index += 1) {
-      if (isQuoteChar(input[index]) && !isApostropheInsideWord(input, index)) {
-        return index;
+    for (let index = 0; index < input.length; index += 1) {
+      const char = input[index];
+
+      if (!isQuoteChar(char) || isApostropheInsideWord(input, index)) {
+        if (stack.length === 0) {
+          result += char;
+        }
+
+        lastQuoteWasOpening = false;
+        continue;
+      }
+
+      const opening = isOpeningQuote(input, index, stack, lastQuoteWasOpening);
+
+      if (opening) {
+        stack.push({ script: "cyrillic", level: stack.length });
+        lastQuoteWasOpening = true;
+      } else {
+        stack.pop();
+        lastQuoteWasOpening = false;
       }
     }
 
-    return max;
+    return result;
   } catch (error) {
-    console.error("[Чистовик] Failed to find next quote", error);
+    console.error("[Чистовик] Failed to get text outside quotes", error);
     throw error;
   }
 }
@@ -1113,7 +1138,7 @@ function normalizeGroupedNumberSpaces(input: string): string {
 
 function isProtectedDottedNumber(fullText: string, start: number, end: number): boolean {
   try {
-    if (isNumberPartOfDate(fullText, start, end)) {
+    if (isNumberPartOfCodeToken(fullText, start, end) || isNumberPartOfDate(fullText, start, end)) {
       return true;
     }
 
@@ -1230,6 +1255,7 @@ function isFollowedByDecimalUnitOrCurrency(fullText: string, index: number): boo
 function normalizeSpacedYears(input: string): string {
   try {
     return input
+      .replace(/(\b\d{1,2}\.\d{2}\.)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3")
       .replace(/(^|[^\d])([12])[ \t\u00A0](\d{3})(?=[ \t\u00A0]*(?:г\.?|год|году)(?=$|[^A-Za-zА-Яа-яЁё]))/gi, "$1$2$3")
       .replace(/(©[ \t\u00A0]*)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3");
   } catch (error) {
@@ -1240,6 +1266,10 @@ function normalizeSpacedYears(input: string): string {
 
 function shouldSkipNumberGrouping(fullText: string, start: number, end: number, integerPart: string): boolean {
   try {
+    if (isNumberPartOfCodeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end)) {
+      return true;
+    }
+
     const previous = previousNonSpace(fullText, start);
 
     if (previous === "№" || previous === "§") {
@@ -1262,6 +1292,35 @@ function shouldSkipNumberGrouping(fullText: string, start: number, end: number, 
     return /(?:^|[\s\u00A0])(в|с|по)[\s\u00A0]*$/.test(before) || /(?:©|\(c\))[\s\u00A0]*$/i.test(before) || /^[\s\u00A0]*(г\.?|год|году)(?=$|[^A-Za-zА-Яа-яЁё])/.test(after);
   } catch (error) {
     console.error("[Чистовик] Failed to check number grouping exception", error);
+    throw error;
+  }
+}
+
+function isNumberInsideFullDate(fullText: string, start: number, end: number): boolean {
+  try {
+    const before = fullText.slice(Math.max(0, start - 6), start);
+
+    return /\d{1,2}\.\d{2}\.$/.test(before);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check full date number", error);
+    throw error;
+  }
+}
+
+function isNumberPartOfCodeToken(fullText: string, start: number, end: number): boolean {
+  try {
+    return isCodeTokenNeighbor(fullText[start - 1] ?? "") || isCodeTokenNeighbor(fullText[end] ?? "");
+  } catch (error) {
+    console.error("[Чистовик] Failed to check code token number", error);
+    throw error;
+  }
+}
+
+function isCodeTokenNeighbor(char: string): boolean {
+  try {
+    return /^[A-Za-zА-Яа-яЁё]$/.test(char) || char === "-" || char === EN_DASH || char === EM_DASH || char === NB_HYPHEN;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check code token neighbor", error);
     throw error;
   }
 }
