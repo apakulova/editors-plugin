@@ -42,7 +42,8 @@ module.exports = {
       title: "Кавычки и&nbsp;пунктуация",
       points: [
         "В&nbsp;русском тексте кавычки первого уровня «ёлочки», а&nbsp;второго „лапки“: <span class=\"rule-example\">«Он&nbsp;сказал „привет“»</span>",
-        "Кавычки зависят от&nbsp;текста вне кавычек: <span class=\"rule-example\">«Design System»</span>, но&nbsp;<span class=\"rule-example\">The word \"привет\"</span>",
+        "В&nbsp;текстах на&nbsp;латинице кавычки первого уровня <span class=\"rule-example\">\"двойные\"</span>, а&nbsp;второго <span class=\"rule-example\">'одинарные'</span>",
+        "В&nbsp;смешанных текстах кавычки зависят от&nbsp;письма вне кавычек: <span class=\"rule-example\">Он&nbsp;сказал «hello» и&nbsp;ушёл</span>, но&nbsp;<span class=\"rule-example\">He said \"привет\" and left</span>",
         "Точка, запятая, точка с&nbsp;запятой, двоеточие и&nbsp;многоточие после кавычек: <span class=\"rule-example\">Он&nbsp;сказал «привет».</span>",
         "Вопрос и&nbsp;восклицание внутри кавычек: <span class=\"rule-example\">«Как дела?»</span>",
         "Три точки меняются на&nbsp;многоточие: <span class=\"rule-example\">... <span class=\"rule-arrow\">→</span> …</span>",
@@ -78,7 +79,7 @@ module.exports = {
         "Английская запись числа: <span class=\"rule-example\">62,226,338.00&nbsp;₽ <span class=\"rule-arrow\">→</span> 62&nbsp;226&nbsp;338,00&nbsp;₽</span>",
         "Неразрывный пробел перед валютой или единицей измерения: <span class=\"rule-example\">5&nbsp;кг, 1&nbsp;000&nbsp;₽</span>",
         "Год рядом с&nbsp;<span class=\"rule-example\">©</span> и&nbsp;<span class=\"rule-example\">г.</span>: <span class=\"rule-example\">©&nbsp;2024, 2024&nbsp;г.</span>",
-        "IP-адреса, версии и&nbsp;даты не&nbsp;делятся на&nbsp;разряды: <span class=\"rule-example\">10.04.2025</span>",
+        "IP-адреса, версии и&nbsp;даты не&nbsp;делятся на&nbsp;разряды: <span class=\"rule-example\">192.168.0.1, v2.0.1 и&nbsp;10.04.2025</span>",
         "Числа внутри кодов не&nbsp;делятся на&nbsp;разряды: <span class=\"rule-example\">SALE-2026</span>",
         "Числа после <span class=\"rule-example\">№</span> и&nbsp;<span class=\"rule-example\">§</span> не&nbsp;делятся на&nbsp;разряды",
       ],
@@ -100,7 +101,7 @@ module.exports = {
         "Между числом и&nbsp;единицей: <span class=\"rule-example\">5&nbsp;кг, 20&nbsp;°C</span>",
         "В&nbsp;датах: <span class=\"rule-example\">30&nbsp;сентября</span>",
         "В&nbsp;инициалах: <span class=\"rule-example\">И.&nbsp;И.&nbsp;Иванов</span>",
-        "После отдельных кириллических слов из&nbsp;1–2 букв, но&nbsp;не&nbsp;после части слова через дефис: <span class=\"rule-example\">что‑то на&nbsp;Авито</span>",
+        "После любых слов из&nbsp;1–2 букв на&nbsp;кириллице",
       ],
     },
     {
