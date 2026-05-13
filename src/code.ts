@@ -1319,10 +1319,9 @@ function normalizeAbbreviations(input: string): string {
 function applyNonBreakingSpaces(input: string): string {
   try {
     let text = input;
-    const shortWords = "а|в|во|и|к|ко|о|об|обо|у|с|со|по|за|из|от|до|не|ни|но|на|я|мы|вы|он|да|же|ли";
 
     text = text.replace(/[ \t\u00A0]+—/g, `${NBSP}${EM_DASH}`);
-    text = applyShortWordNonBreakingSpaces(text, shortWords);
+    text = applyShortWordNonBreakingSpaces(text);
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}$3.${NBSP}`);
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`);
     text = text.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`);
@@ -1346,9 +1345,9 @@ function applyNonBreakingSpaces(input: string): string {
   }
 }
 
-function applyShortWordNonBreakingSpaces(input: string, shortWords: string): string {
+function applyShortWordNonBreakingSpaces(input: string): string {
   try {
-    const shortWordPattern = new RegExp(`(^|[^${LETTERS}\\d])(${shortWords})[ \\t]+(?=\\S)`, "gi");
+    const shortWordPattern = new RegExp(`(^|[^${LETTERS}\\d\\-${NB_HYPHEN}])([А-Яа-яЁё]{1,2})[ \\t]+(?=\\S)`, "g");
     let text = input;
     let previous = "";
 

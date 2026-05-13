@@ -99,7 +99,7 @@ module.exports = {
         "Между числом и&nbsp;единицей: <span class=\"rule-example\">5&nbsp;кг, 20&nbsp;°C</span>",
         "В&nbsp;датах: <span class=\"rule-example\">30&nbsp;сентября</span>",
         "В&nbsp;инициалах: <span class=\"rule-example\">И.&nbsp;И.&nbsp;Иванов</span>",
-        "После коротких слов и&nbsp;предлогов: <span class=\"rule-example\">в, во, и, к, ко, о, об, обо, у, с, со, по, за, из, от, до, не, ни, но, на, я, мы, вы, он, да, же, ли</span>",
+        "После отдельных кириллических слов из&nbsp;1–2 букв, но&nbsp;не&nbsp;после части слова через дефис: <span class=\"rule-example\">что‑то на&nbsp;Авито</span>",
       ],
     },
     {
