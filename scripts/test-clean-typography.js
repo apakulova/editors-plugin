@@ -1,0 +1,86 @@
+const assert = require("assert");
+const fs = require("fs");
+const vm = require("vm");
+
+const NBSP = "\u00A0";
+const NB_HYPHEN = "\u2011";
+const EN_DASH = "\u2013";
+const MINUS = "\u2212";
+const MULTIPLY = "\u00D7";
+
+const source = fs.readFileSync("dist/code.js", "utf8").replace(
+  "void run();",
+  "globalThis.cleanTypography = cleanTypography; globalThis.cleanTypographyWithMetadata = cleanTypographyWithMetadata;"
+);
+const context = { console, globalThis: {} };
+
+vm.createContext(context);
+vm.runInContext(source, context);
+
+const cleanTypography = context.globalThis.cleanTypography;
+const cleanTypographyWithMetadata = context.globalThis.cleanTypographyWithMetadata;
+
+function expectClean(input, expected) {
+  const actual = cleanTypography(input);
+
+  assert.strictEqual(actual, expected, input);
+  assert.strictEqual(cleanTypography(actual), expected, `${input} should be idempotent`);
+}
+
+expectClean("10-20", `10${EN_DASH}20`);
+expectClean("10 - 20", `10${EN_DASH}20`);
+expectClean("10 – 20", `10${EN_DASH}20`);
+expectClean("5 - 5", `5${EN_DASH}5`);
+expectClean("X-XI век", `X${EN_DASH}XI век`);
+expectClean("X – XI век", `X${EN_DASH}XI век`);
+expectClean("X—XI век", `X${EN_DASH}XI век`);
+expectClean("I - III главы", `I${EN_DASH}III главы`);
+expectClean("II-IV квартал", `II${EN_DASH}IV квартал`);
+expectClean("в X-XI веках", `в${NBSP}X${EN_DASH}XI веках`);
+expectClean("главы I-III", `главы I${EN_DASH}III`);
+expectClean("разделы IV-VI", `разделы IV${EN_DASH}VI`);
+expectClean("кв. I-II", `кв. I${EN_DASH}II`);
+expectClean("x-xi", `x${NB_HYPHEN}xi`);
+expectClean("USB-C", `USB${NB_HYPHEN}C`);
+expectClean("A-B тест", `A${NB_HYPHEN}B тест`);
+expectClean("B2B", "B2B");
+expectClean("M-Video", `M${NB_HYPHEN}Video`);
+expectClean("X-ray", `X${NB_HYPHEN}ray`);
+expectClean("план B-C", `план B${NB_HYPHEN}C`);
+expectClean("X-X", `X${NB_HYPHEN}X`);
+
+expectClean("10 - 5 = 5", `10${NBSP}${MINUS}${NBSP}5${NBSP}=${NBSP}5`);
+expectClean("10 - 5 + 2", `10${NBSP}${MINUS}${NBSP}5${NBSP}+${NBSP}2`);
+expectClean("10 - 5 - 2", `10${NBSP}${MINUS}${NBSP}5${NBSP}${MINUS}${NBSP}2`);
+expectClean("-10 - 5", `${MINUS}10${NBSP}${MINUS}${NBSP}5`);
+expectClean("-10 + 5 = -5", `${MINUS}10${NBSP}+${NBSP}5${NBSP}=${NBSP}${MINUS}5`);
+
+expectClean("2*2", `2${NBSP}${MULTIPLY}${NBSP}2`);
+expectClean("2 * 2", `2${NBSP}${MULTIPLY}${NBSP}2`);
+expectClean("2x2", `2${NBSP}${MULTIPLY}${NBSP}2`);
+expectClean("2 х 2", `2${NBSP}${MULTIPLY}${NBSP}2`);
+expectClean("2/2", `2${NBSP}/${NBSP}2`);
+expectClean("1/2", "\u00BD");
+
+expectClean("2026-05-14", "2026-05-14");
+expectClean("10.04.2025", "10.04.2025");
+expectClean("v2.0.1", "v2.0.1");
+expectClean("192.168.0.1", "192.168.0.1");
+expectClean("https://example.com/2/2", "https://example.com/2/2");
+expectClean("mail@example.com", "mail@example.com");
+expectClean("x1+2", "x1+2");
+expectClean("var_1+2", "var_1+2");
+expectClean("SALE-2026", "SALE-2026");
+expectClean("PROMO-10-20", "PROMO-10-20");
+expectClean("+7 (900) 123-45-67", `+7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67`);
+
+const development = cleanTypographyWithMetadata("2 * 2 = 4", {
+  mode: "development",
+  processHiddenNodes: false,
+  processLockedNodes: false,
+});
+
+assert.strictEqual(development.text, "2*\u00D7*2*=*4");
+assert.deepStrictEqual(Array.from(development.developmentMarkerIndexes), [1, 3, 5, 7]);
+
+console.log("cleanTypography tests passed");

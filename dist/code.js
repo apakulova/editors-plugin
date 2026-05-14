@@ -8,6 +8,7 @@ const DEVELOPMENT_NBSP_FILL = {
 const NB_HYPHEN = "\u2011";
 const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
+const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const STYLE_FIELDS = [
@@ -641,6 +642,7 @@ function cleanTypographyForBeauty(input) {
         let text = input;
         text = cleanupSpaces(text);
         text = cleanupQuotesAndPunctuation(text);
+        text = normalizeMathAndSymbols(text);
         text = cleanupDashesAndHyphens(text);
         text = formatPhoneNumbers(text);
         text = formatNumbersAndMoney(text);
@@ -879,11 +881,116 @@ function cleanupDashesAndHyphens(input) {
             .replace(/^([ \t\u00A0]*)([-–])(?=[ \t\u00A0])/gm, `$1${EM_DASH}`)
             .replace(/([^ \t\u00A0\n\r\d])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
             .replace(/([A-Za-zА-Яа-яЁё])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
-            .replace(/(\d)[ \t\u00A0]*[-–—][ \t\u00A0]*(\d)/g, `$1${EN_DASH}$2`)
+            .replace(/(^|[^\d])(\d+(?:[.,]\d+)?)[ \t\u00A0]*[-–—][ \t\u00A0]*(\d+(?:[.,]\d+)?)(?=$|[^\d])/g, (match, prefix, startNumber, endNumber, offset, fullText) => {
+            try {
+                const rangeStart = offset + prefix.length;
+                const rangeEnd = rangeStart + match.length - prefix.length;
+                if (isProtectedNumericRange(fullText, rangeStart, rangeEnd)) {
+                    return match;
+                }
+                return `${prefix}${startNumber}${EN_DASH}${endNumber}`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize numeric range", error);
+                return match;
+            }
+        })
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])([IVXLCDM]+)[ \t\u00A0]*[-–—][ \t\u00A0]*([IVXLCDM]+)(?=$|[^A-Za-zА-Яа-яЁё\d])/g, (match, prefix, startRoman, endRoman, offset, fullText) => {
+            try {
+                const rangeStart = offset + prefix.length;
+                const rangeEnd = rangeStart + match.length - prefix.length;
+                if (isProtectedRomanRange(fullText, rangeStart, rangeEnd) || !hasRomanRangeContext(fullText, rangeStart, rangeEnd)) {
+                    return match;
+                }
+                return `${prefix}${startRoman}${EN_DASH}${endRoman}`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize roman numeral range", error);
+                return match;
+            }
+        })
             .replace(/([A-Za-zА-Яа-яЁё])-([A-Za-zА-Яа-яЁё])/g, `$1${NB_HYPHEN}$2`);
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean dashes and hyphens", error);
+        throw error;
+    }
+}
+function isProtectedNumericRange(fullText, start, end) {
+    var _a, _b;
+    try {
+        if (isInsideProtectedToken(fullText, start, end)) {
+            return true;
+        }
+        return isCodeTokenNeighbor((_a = fullText[start - 1]) !== null && _a !== void 0 ? _a : "") || isCodeTokenNeighbor((_b = fullText[end]) !== null && _b !== void 0 ? _b : "");
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check protected numeric range", error);
+        throw error;
+    }
+}
+function isProtectedRomanRange(fullText, start, end) {
+    try {
+        if (isInsidePhoneNumberCandidate(fullText, start, end)) {
+            return true;
+        }
+        const bounds = getLooseTokenBounds(fullText, start, end);
+        const token = fullText.slice(bounds.start, bounds.end);
+        if (/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(token) || /^www\./i.test(token) || token.includes("@") || token.includes("_")) {
+            return true;
+        }
+        if (/\d/.test(token) || hasProtectedRomanRangeTokenLetters(token)) {
+            return true;
+        }
+        return false;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check protected roman range", error);
+        throw error;
+    }
+}
+function hasRomanRangeContext(fullText, start, end) {
+    try {
+        return hasRomanRangeContextBefore(fullText, start) || hasRomanRangeContextAfter(fullText, end);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check roman range context", error);
+        throw error;
+    }
+}
+function hasRomanRangeContextBefore(fullText, start) {
+    try {
+        const before = fullText.slice(0, start).toLowerCase();
+        const match = /(^|[^А-Яа-яЁё])(век|века|веках|веков|глава|главы|глав|часть|части|частей|раздел|разделы|разделов|пункт|пункты|пунктов|квартал|кварталы|кварталов|кв\.|том|тома|томов|параграф|параграфы|параграфов)[ \t\u00A0]*$/.exec(before);
+        return match !== null;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check roman range context before", error);
+        throw error;
+    }
+}
+function hasRomanRangeContextAfter(fullText, end) {
+    try {
+        const after = fullText.slice(end).toLowerCase();
+        const match = /^[ \t\u00A0]*(век|века|веках|веков|глава|главы|глав|часть|части|частей|раздел|разделы|разделов|пункт|пункты|пунктов|квартал|кварталы|кварталов|кв\.|том|тома|томов|параграф|параграфы|параграфов)(?=$|[^А-Яа-яЁё])/.exec(after);
+        return match !== null;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check roman range context after", error);
+        throw error;
+    }
+}
+function hasProtectedRomanRangeTokenLetters(token) {
+    try {
+        for (const char of token) {
+            if (isLetter(char) && !/[IVXLCDM]/.test(char)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check protected roman range token letters", error);
         throw error;
     }
 }
@@ -1262,11 +1369,25 @@ function applyShortWordNonBreakingSpaces(input) {
 }
 function normalizeMathAndSymbols(input) {
     try {
-        return input
-            .replace(/(\d)[ \t\u00A0]*[xх][ \t\u00A0]*(\d)/gi, "$1×$2")
+        const text = input
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d])1\/2($|[^A-Za-zА-Яа-яЁё\d])/g, "$1½$2")
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d])1\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¼$2")
-            .replace(/(^|[^A-Za-zА-Яа-яЁё\d])3\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¾$2")
+            .replace(/(^|[^A-Za-zА-Яа-яЁё\d])3\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¾$2");
+        return normalizeMathExpressions(text)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё\d])([-–−])[ \t\u00A0]*(\d)/g, (match, prefix, _sign, digit, offset, fullText) => {
+            try {
+                const signIndex = offset + prefix.length;
+                const previous = previousNonSpace(fullText, signIndex);
+                if (previous !== null && /\d/.test(previous)) {
+                    return match;
+                }
+                return `${prefix}${MINUS}${digit}`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize negative number", error);
+                return match;
+            }
+        })
             .replace(/(\d(?:[\d \u00A0]*\d)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])\b/g, (_match, number, unit) => `${number}${NBSP}°${unit === "F" ? "F" : "C"}`)
             .replace(/\(c\)/gi, "©")
             .replace(/\(tm\)/gi, "™")
@@ -1275,6 +1396,287 @@ function normalizeMathAndSymbols(input) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to normalize math and symbols", error);
+        throw error;
+    }
+}
+function normalizeMathExpressions(input) {
+    try {
+        let result = "";
+        let index = 0;
+        while (index < input.length) {
+            const expression = parseMathExpression(input, index);
+            if (expression === null) {
+                result += input[index];
+                index += 1;
+                continue;
+            }
+            result += expression.text;
+            index = expression.end;
+        }
+        return result;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to normalize math expressions", error);
+        throw error;
+    }
+}
+function parseMathExpression(input, start) {
+    try {
+        const firstNumber = parseMathNumber(input, start, true);
+        if (firstNumber === null || !hasMathNumberBoundaryBefore(input, start) || isInsideProtectedToken(input, start, firstNumber.end)) {
+            return null;
+        }
+        const parts = [firstNumber.text];
+        const operators = [];
+        let cursor = firstNumber.end;
+        while (cursor < input.length) {
+            const operator = parseMathOperator(input, cursor);
+            if (operator === null) {
+                break;
+            }
+            const nextNumber = parseMathNumber(input, operator.end, true);
+            if (nextNumber === null) {
+                break;
+            }
+            parts.push(`${NBSP}${operator.text}${NBSP}`, nextNumber.text);
+            operators.push(operator);
+            cursor = nextNumber.end;
+        }
+        if (operators.length === 0 || !hasMathNumberBoundaryAfter(input, cursor) || isInsideProtectedToken(input, start, cursor)) {
+            return null;
+        }
+        if (!hasMathExpressionContext(firstNumber, operators)) {
+            return null;
+        }
+        return {
+            end: cursor,
+            text: parts.join(""),
+        };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to parse math expression", error);
+        throw error;
+    }
+}
+function parseMathNumber(input, start, allowSign) {
+    var _a, _b, _c, _d;
+    try {
+        let cursor = start;
+        let sign = "";
+        if (allowSign && isMinusLike((_a = input[cursor]) !== null && _a !== void 0 ? _a : "")) {
+            sign = MINUS;
+            cursor += 1;
+            while (/[ \t\u00A0]/.test((_b = input[cursor]) !== null && _b !== void 0 ? _b : "")) {
+                cursor += 1;
+            }
+        }
+        const numberStart = cursor;
+        if (!/\d/.test((_c = input[cursor]) !== null && _c !== void 0 ? _c : "")) {
+            return null;
+        }
+        cursor += 1;
+        while (cursor < input.length) {
+            const char = input[cursor];
+            const next = (_d = input[cursor + 1]) !== null && _d !== void 0 ? _d : "";
+            if (/\d/.test(char) || (char === "," && /\d/.test(next))) {
+                cursor += 1;
+                continue;
+            }
+            if ((char === " " || char === NBSP) && /\d/.test(next)) {
+                cursor += 1;
+                continue;
+            }
+            break;
+        }
+        return {
+            end: cursor,
+            hasUnaryMinus: sign !== "",
+            text: `${sign}${input.slice(numberStart, cursor).replace(/ /g, NBSP)}`,
+        };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to parse math number", error);
+        throw error;
+    }
+}
+function parseMathOperator(input, start) {
+    var _a, _b, _c;
+    try {
+        let cursor = start;
+        while (/[ \t\u00A0]/.test((_a = input[cursor]) !== null && _a !== void 0 ? _a : "")) {
+            cursor += 1;
+        }
+        const char = (_b = input[cursor]) !== null && _b !== void 0 ? _b : "";
+        if (!isMathOperatorChar(char)) {
+            return null;
+        }
+        if (char === "-" && input[cursor + 1] === ">") {
+            return null;
+        }
+        cursor += 1;
+        while (/[ \t\u00A0]/.test((_c = input[cursor]) !== null && _c !== void 0 ? _c : "")) {
+            cursor += 1;
+        }
+        return {
+            end: cursor,
+            text: normalizeMathOperator(char),
+        };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to parse math operator", error);
+        throw error;
+    }
+}
+function isMathOperatorChar(char) {
+    try {
+        return char === "+" || char === "=" || char === "/" || char === "÷" || char === "*" || char === "×" || char === "x" || char === "X" || char === "х" || char === "Х" || isMinusLike(char);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check math operator char", error);
+        throw error;
+    }
+}
+function normalizeMathOperator(char) {
+    try {
+        if (char === "*" || char === "x" || char === "X" || char === "х" || char === "Х") {
+            return "×";
+        }
+        if (isMinusLike(char)) {
+            return MINUS;
+        }
+        return char;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to normalize math operator", error);
+        throw error;
+    }
+}
+function isMinusLike(char) {
+    try {
+        return char === "-" || char === EN_DASH || char === EM_DASH || char === MINUS;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check minus-like char", error);
+        throw error;
+    }
+}
+function hasMathExpressionContext(firstNumber, operators) {
+    try {
+        if (firstNumber.hasUnaryMinus || operators.length > 1) {
+            return true;
+        }
+        return operators.some((operator) => operator.text !== MINUS);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check math expression context", error);
+        throw error;
+    }
+}
+function hasMathNumberBoundaryBefore(input, start) {
+    var _a;
+    try {
+        const previous = (_a = input[start - 1]) !== null && _a !== void 0 ? _a : "";
+        return !/[A-Za-zА-Яа-яЁё\d.,]/.test(previous);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check math number boundary before", error);
+        throw error;
+    }
+}
+function hasMathNumberBoundaryAfter(input, end) {
+    var _a;
+    try {
+        const next = (_a = input[end]) !== null && _a !== void 0 ? _a : "";
+        return !/[A-Za-zА-Яа-яЁё\d.,]/.test(next);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check math number boundary after", error);
+        throw error;
+    }
+}
+function isInsideProtectedToken(input, start, end) {
+    try {
+        if (isInsidePhoneNumberCandidate(input, start, end)) {
+            return true;
+        }
+        const bounds = getLooseTokenBounds(input, start, end);
+        const token = input.slice(bounds.start, bounds.end);
+        if (/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(token) || /^www\./i.test(token) || token.includes("@")) {
+            return true;
+        }
+        if (/^\d{1,4}[-–—]\d{1,2}[-–—]\d{1,4}$/.test(token)) {
+            return true;
+        }
+        if (token.includes("_") || hasProtectedTokenLetters(token)) {
+            return true;
+        }
+        if (/^[A-Za-zА-Яа-яЁё]+[\w.-]*[-–—]\d/.test(token) || /\d[-–—][\w.-]*[A-Za-zА-Яа-яЁё]/.test(token)) {
+            return true;
+        }
+        return false;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check protected token", error);
+        throw error;
+    }
+}
+function hasProtectedTokenLetters(token) {
+    try {
+        for (const char of token) {
+            if (isLetter(char) && char !== "x" && char !== "X" && char !== "х" && char !== "Х") {
+                return true;
+            }
+        }
+        return false;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check protected token letters", error);
+        throw error;
+    }
+}
+function isInsidePhoneNumberCandidate(input, start, end) {
+    try {
+        const bounds = getPhoneLikeTokenBounds(input, start, end);
+        const token = input.slice(bounds.start, bounds.end);
+        const digits = token.replace(/\D/g, "");
+        return digits.length === 11 && (digits[0] === "7" || digits[0] === "8");
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check phone number candidate", error);
+        throw error;
+    }
+}
+function getPhoneLikeTokenBounds(input, start, end) {
+    try {
+        let tokenStart = start;
+        let tokenEnd = end;
+        while (tokenStart > 0 && /[\d+()[\] \t\u00A0.\-–—‑]/.test(input[tokenStart - 1])) {
+            tokenStart -= 1;
+        }
+        while (tokenEnd < input.length && /[\d+()[\] \t\u00A0.\-–—‑]/.test(input[tokenEnd])) {
+            tokenEnd += 1;
+        }
+        return { start: tokenStart, end: tokenEnd };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get phone-like token bounds", error);
+        throw error;
+    }
+}
+function getLooseTokenBounds(input, start, end) {
+    try {
+        let tokenStart = start;
+        let tokenEnd = end;
+        while (tokenStart > 0 && !/[ \t\u00A0\n\r()[\]{}<>«»"']/.test(input[tokenStart - 1])) {
+            tokenStart -= 1;
+        }
+        while (tokenEnd < input.length && !/[ \t\u00A0\n\r()[\]{}<>«»"']/.test(input[tokenEnd])) {
+            tokenEnd += 1;
+        }
+        return { start: tokenStart, end: tokenEnd };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get loose token bounds", error);
         throw error;
     }
 }

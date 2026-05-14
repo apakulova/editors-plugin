@@ -55,8 +55,9 @@ module.exports = {
       title: "Тире и&nbsp;дефисы",
       points: [
         "Длинное тире между словами: <span class=\"rule-example\">слово&nbsp;— слово</span>",
-        "Среднее тире в&nbsp;диапазонах: <span class=\"rule-example\">10–20</span>",
-        "Неразрывный дефис внутри слов: <span class=\"rule-example\">кто‑то</span>",
+        "Диапазоны чисел: <span class=\"rule-example\">10-20, 10&nbsp;– 20 <span class=\"rule-arrow\">→</span> 10–20</span>",
+        "Римские диапазоны в&nbsp;контексте: <span class=\"rule-example\">X-XI век <span class=\"rule-arrow\">→</span> X–XI век, главы I-III <span class=\"rule-arrow\">→</span> главы I–III</span>",
+        "Неразрывный дефис внутри слов на&nbsp;кириллице и&nbsp;латинице: <span class=\"rule-example\">кто‑то, X‑ray</span>",
         "Тире в&nbsp;начале строки",
         "Неразрывный пробел перед длинным тире",
       ],
@@ -118,7 +119,11 @@ module.exports = {
     {
       title: "Математика и&nbsp;символы",
       points: [
-        "Знак умножения: <span class=\"rule-example\">10x20 <span class=\"rule-arrow\">→</span> 10×20</span>",
+        "Математические примеры пишутся с&nbsp;неразрывными пробелами: <span class=\"rule-example\">10 x 20 = 200 <span class=\"rule-arrow\">→</span> 10&nbsp;×&nbsp;20&nbsp;=&nbsp;200</span>",
+        "Умножение: <span class=\"rule-example\">2*2 и&nbsp;2 x 2 <span class=\"rule-arrow\">→</span> 2&nbsp;×&nbsp;2</span>",
+        "Сложение, деление и&nbsp;равенство: <span class=\"rule-example\">5&nbsp;+&nbsp;5, 6&nbsp;/&nbsp;2&nbsp;=&nbsp;3</span>",
+        "Вычитание только в&nbsp;математическом контексте: <span class=\"rule-example\">10 - 5 = 5 <span class=\"rule-arrow\">→</span> 10&nbsp;−&nbsp;5&nbsp;=&nbsp;5</span>",
+        "Отрицательные числа пишутся слитно со&nbsp;знаком минус: <span class=\"rule-example\">-10 <span class=\"rule-arrow\">→</span> −10</span>",
         "Типографские дроби: <span class=\"rule-example\">1/2 <span class=\"rule-arrow\">→</span> ½, 1/4 <span class=\"rule-arrow\">→</span> ¼</span>",
         "Температура: <span class=\"rule-example\">20 C <span class=\"rule-arrow\">→</span> 20&nbsp;°C, 100F <span class=\"rule-arrow\">→</span> 100&nbsp;°F</span>",
         "Символы: <span class=\"rule-example\">(c) <span class=\"rule-arrow\">→</span> ©, (tm) <span class=\"rule-arrow\">→</span> ™, (r) <span class=\"rule-arrow\">→</span> ®</span>",
