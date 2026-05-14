@@ -19,6 +19,11 @@ vm.runInContext(source, context);
 
 const cleanTypography = context.globalThis.cleanTypography;
 const cleanTypographyWithMetadata = context.globalThis.cleanTypographyWithMetadata;
+const developmentOptions = {
+  mode: "development",
+  processHiddenNodes: false,
+  processLockedNodes: false,
+};
 
 function expectClean(input, expected) {
   const actual = cleanTypography(input);
@@ -27,12 +32,26 @@ function expectClean(input, expected) {
   assert.strictEqual(cleanTypography(actual), expected, `${input} should be idempotent`);
 }
 
+function expectDevelopmentIdempotent(input, expected) {
+  const first = cleanTypographyWithMetadata(input, developmentOptions);
+  const secondWithMarkers = cleanTypographyWithMetadata(first.text, developmentOptions, first.developmentMarkerIndexes);
+  const secondWithoutMarkers = cleanTypographyWithMetadata(first.text, developmentOptions);
+
+  assert.strictEqual(first.text, expected, `${input} first development run`);
+  assert.strictEqual(secondWithMarkers.text, expected, `${input} second development run with marker indexes`);
+  assert.strictEqual(secondWithoutMarkers.text, expected, `${input} second development run without marker indexes`);
+}
+
 expectClean(
   "Она спросила \"как дела?\". Я подумала \"ну всё... приехали!\". \"Она сказала: \"Я приду завтра!\"\".",
   `Она спросила «как дела?» Я${NBSP}подумала «ну${NBSP}всё… приехали!» «Она сказала: „Я${NBSP}приду завтра!“»`
 );
 expectClean("The word \"привет\" means hello.", 'The word "привет" means hello.');
+expectClean("The word «привет» means hello.", 'The word "привет" means hello.');
 expectClean("Что?? Да!! Правда!?", "Что? Да! Правда?!");
+expectDevelopmentIdempotent("«Она сказала: „Я приду завтра!“»", "«Она сказала: „Я*приду завтра!“»");
+expectDevelopmentIdempotent("«Ты правда спросил „зачем??“»", "«Ты*правда спросил „зачем?“»");
+expectDevelopmentIdempotent("«„Как это скучно!“ — воскликнул я невольно».", "«„Как это скучно!“*— воскликнул я*невольно».");
 
 expectClean("10-20", `10${EN_DASH}20`);
 expectClean("10 - 20", `10${EN_DASH}20`);
@@ -95,12 +114,12 @@ expectClean("Вес 5 кг. товара.", `Вес 5${NBSP}кг товара.`)
 expectClean("100 руб", `100${NBSP}руб.`);
 expectClean("20 коп", `20${NBSP}коп.`);
 expectClean("Стоимость 100 руб. Оплата завтра.", `Стоимость 100${NBSP}руб. Оплата завтра.`);
+expectClean("Выручка 10 млн", `Выручка 10${NBSP}млн`);
+expectClean("Выручка 10 млн.\nНужно увеличить на 5%", `Выручка 10${NBSP}млн\nНужно увеличить на${NBSP}5%`);
+expectClean("Выручка 10 млн. Нужно увеличить на 5%", `Выручка 10${NBSP}млн. Нужно увеличить на${NBSP}5%`);
+expectDevelopmentIdempotent(`Цена 2${NBSP}000,35${NBSP}₽.`, "Цена 2*000,35*₽.");
 
-const development = cleanTypographyWithMetadata("2 * 2 = 4", {
-  mode: "development",
-  processHiddenNodes: false,
-  processLockedNodes: false,
-});
+const development = cleanTypographyWithMetadata("2 * 2 = 4", developmentOptions);
 
 assert.strictEqual(development.text, "2*\u00D7*2*=*4");
 assert.deepStrictEqual(Array.from(development.developmentMarkerIndexes), [1, 3, 5, 7]);

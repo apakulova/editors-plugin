@@ -93,6 +93,7 @@ module.exports = {
         "Площадь и&nbsp;объём: <span class=\"rule-example\">кв.&nbsp;м, куб.&nbsp;м</span>",
         "Месяцы: <span class=\"rule-example\">6&nbsp;мес.</span>, но&nbsp;<span class=\"rule-example\">₽/мес</span>",
         "Все правила сокращений действуют в&nbsp;середине предложения, в&nbsp;конце всегда ставится точка",
+        "Перенос строки сам по&nbsp;себе не&nbsp;считается новым предложением",
       ],
     },
     {

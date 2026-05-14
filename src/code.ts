@@ -674,7 +674,7 @@ function cleanTypographyWithMetadata(input: string, options: PluginRunOptions = 
   try {
     const normalizedInput = normalizeInputNonBreakingSpaces(input);
     const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, existingDevelopmentMarkerIndexes);
-    const beautyInput = options.mode === "development" ? inputWithKnownMarkers : restoreTypographicDevelopmentMarkers(inputWithKnownMarkers);
+    const beautyInput = restoreTypographicDevelopmentMarkers(inputWithKnownMarkers);
     const beautyText = cleanTypographyForBeauty(beautyInput);
 
     if (options.mode !== "development") {
@@ -1619,7 +1619,7 @@ function isSentenceEndingPeriod(fullText: string, periodIndex: number): boolean 
   try {
     const after = fullText.slice(periodIndex + 1);
 
-    return after.length === 0 || /^[ \t\u00A0]*$/.test(after) || /^[ \t\u00A0]*\r?\n/.test(after) || /^[ \t\u00A0]+[A-ZА-ЯЁ]/.test(after);
+    return after.length === 0 || /^[ \t\u00A0]*$/.test(after) || /^[ \t\u00A0]+[A-ZА-ЯЁ]/.test(after);
   } catch (error) {
     console.error("[Чистовик] Failed to check sentence-ending period", error);
     throw error;
