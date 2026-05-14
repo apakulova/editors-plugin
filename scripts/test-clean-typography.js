@@ -27,6 +27,13 @@ function expectClean(input, expected) {
   assert.strictEqual(cleanTypography(actual), expected, `${input} should be idempotent`);
 }
 
+expectClean(
+  "Она спросила \"как дела?\". Я подумала \"ну всё... приехали!\". \"Она сказала: \"Я приду завтра!\"\".",
+  `Она спросила «как дела?» Я${NBSP}подумала «ну${NBSP}всё… приехали!» «Она сказала: „Я${NBSP}приду завтра!“»`
+);
+expectClean("The word \"привет\" means hello.", 'The word "привет" means hello.');
+expectClean("Что?? Да!! Правда!?", "Что? Да! Правда?!");
+
 expectClean("10-20", `10${EN_DASH}20`);
 expectClean("10 - 20", `10${EN_DASH}20`);
 expectClean("10 – 20", `10${EN_DASH}20`);
@@ -61,6 +68,7 @@ expectClean("2x2", `2${NBSP}${MULTIPLY}${NBSP}2`);
 expectClean("2 х 2", `2${NBSP}${MULTIPLY}${NBSP}2`);
 expectClean("2/2", `2${NBSP}/${NBSP}2`);
 expectClean("1/2", "\u00BD");
+expectClean("Формула: 2 * 2 = 4.", `Формула: 2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4.`);
 
 expectClean("2026-05-14", "2026-05-14");
 expectClean("10.04.2025", "10.04.2025");
@@ -73,6 +81,20 @@ expectClean("var_1+2", "var_1+2");
 expectClean("SALE-2026", "SALE-2026");
 expectClean("PROMO-10-20", "PROMO-10-20");
 expectClean("+7 (900) 123-45-67", `+7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67`);
+expectClean("Подписка 5000 ₽/мес. Следующий платёж завтра.", `Подписка 5${NBSP}000${NBSP}₽/мес. Следующий платёж завтра.`);
+expectClean("Вес 1.5 кг. Доставим завтра.", `Вес 1,5${NBSP}кг. Доставим завтра.`);
+expectClean("Длина 10.04 м. Это стандартный размер.", `Длина 10,04${NBSP}м. Это стандартный размер.`);
+expectClean("Доход 100 млн. Компания растёт.", `Доход 100${NBSP}млн. Компания растёт.`);
+expectClean("Выручка 5 млрд. Это прогноз.", `Выручка 5${NBSP}млрд. Это прогноз.`);
+expectClean("Срок 6 мес. Потом продлим.", `Срок 6${NBSP}мес. Потом продлим.`);
+expectClean("Подписка 5000 ₽/мес доступна всем.", `Подписка 5${NBSP}000${NBSP}₽/мес доступна всем.`);
+expectClean("Доход 100 млн. рублей.", `Доход 100${NBSP}млн рублей.`);
+expectClean("Выручка 5 млрд. рублей.", `Выручка 5${NBSP}млрд рублей.`);
+expectClean("Размер 10 см. в ширину.", `Размер 10${NBSP}см в${NBSP}ширину.`);
+expectClean("Вес 5 кг. товара.", `Вес 5${NBSP}кг товара.`);
+expectClean("100 руб", `100${NBSP}руб.`);
+expectClean("20 коп", `20${NBSP}коп.`);
+expectClean("Стоимость 100 руб. Оплата завтра.", `Стоимость 100${NBSP}руб. Оплата завтра.`);
 
 const development = cleanTypographyWithMetadata("2 * 2 = 4", {
   mode: "development",

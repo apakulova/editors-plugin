@@ -706,10 +706,12 @@ function cleanupQuotesAndPunctuation(input) {
         const text = input
             .replace(/\.{3}/g, "…")
             .replace(/!{2,}/g, "!")
+            .replace(/\?{2,}/g, "?")
             .replace(/!\?/g, "?!");
         return formatQuotes(text)
             .replace(/([»“"'])([?!])/g, "$2$1")
             .replace(/([.,;:…])([»“"'])/g, "$2$1")
+            .replace(/([?!](?:[»“"']+))\./g, "$1")
             .replace(/[ \t\u00A0]+([.,;:?!…])/g, "$1");
     }
     catch (error) {
@@ -806,7 +808,7 @@ function isOpeningQuote(input, index, stack, lastQuoteWasOpening) {
 }
 function detectTextQuoteScript(input) {
     try {
-        const textOutsideQuotes = getTextOutsideQuotes(input);
+        const textOutsideQuotes = getTextOutsideQuotesForScriptDetection(input);
         if (/[А-Яа-яЁё]/.test(textOutsideQuotes)) {
             return "cyrillic";
         }
@@ -817,6 +819,57 @@ function detectTextQuoteScript(input) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to detect text quote script", error);
+        throw error;
+    }
+}
+function getTextOutsideQuotesForScriptDetection(input) {
+    try {
+        let result = "";
+        let quoteDepth = 0;
+        for (let index = 0; index < input.length; index += 1) {
+            const char = input[index];
+            if (!isQuoteChar(char) || isApostropheInsideWord(input, index)) {
+                if (quoteDepth === 0) {
+                    result += char;
+                }
+                continue;
+            }
+            if (quoteDepth === 0 && isLikelyOpeningQuoteForScriptDetection(input, index)) {
+                quoteDepth += 1;
+                continue;
+            }
+            if (quoteDepth > 0) {
+                quoteDepth -= 1;
+                continue;
+            }
+            result += char;
+        }
+        return result;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get text outside quotes for script detection", error);
+        throw error;
+    }
+}
+function isLikelyOpeningQuoteForScriptDetection(input, index) {
+    var _a;
+    try {
+        const char = input[index];
+        if (char === "»" || char === "“" || char === "”" || char === "’") {
+            return false;
+        }
+        if (char === "«" || char === "„" || char === "‘") {
+            return true;
+        }
+        const previous = (_a = input[index - 1]) !== null && _a !== void 0 ? _a : "";
+        const next = nextVisibleChar(input, index);
+        if (next === null) {
+            return false;
+        }
+        return previous === "" || /[ \t\u00A0\n\r([{<—–-]/.test(previous);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to detect quote direction for script detection", error);
         throw error;
     }
 }
@@ -1288,7 +1341,19 @@ function groupLongNumber(value) {
 function normalizeAbbreviations(input) {
     try {
         let text = input;
-        text = text.replace(/([₽$€])[ \t\u00A0]*\/[ \t\u00A0]*мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, "$1/мес");
+        text = text.replace(/([₽$€])[ \t\u00A0]*\/[ \t\u00A0]*мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, currency, offset, fullText) => {
+            try {
+                const periodIndex = match.lastIndexOf(".");
+                if (periodIndex !== -1 && isSentenceEndingPeriod(fullText, offset + periodIndex)) {
+                    return `${currency}/мес.`;
+                }
+                return `${currency}/мес`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize currency per month", error);
+                return match;
+            }
+        });
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*д\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}т.${NBSP}д.`);
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*п\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}т.${NBSP}п.`);
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+др\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}др.`);
@@ -1304,7 +1369,11 @@ function normalizeAbbreviations(input) {
                 const start = offset + prefix.length;
                 const previous = previousNonSpace(fullText, start);
                 const next = nextNonSpace(fullText, offset + match.length);
+                const periodIndex = match.lastIndexOf(".");
                 if (previous === "/" || previous === "₽" || previous === "$" || previous === "€" || next === "/") {
+                    if (periodIndex !== -1 && isSentenceEndingPeriod(fullText, offset + periodIndex)) {
+                        return `${prefix}мес.`;
+                    }
                     return `${prefix}мес`;
                 }
                 return `${prefix}мес.`;
@@ -1314,12 +1383,46 @@ function normalizeAbbreviations(input) {
                 return match;
             }
         });
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(млн|млрд|трлн)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, "$1$2");
-        text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?[ \t\u00A0]+)(км|кг|м|с)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, "$1$2");
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(млн|млрд|трлн)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, prefix, abbreviation, offset, fullText) => {
+            try {
+                const periodIndex = offset + match.length - 1;
+                if (isSentenceEndingPeriod(fullText, periodIndex)) {
+                    return `${prefix}${abbreviation}.`;
+                }
+                return `${prefix}${abbreviation}`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize large number abbreviation period", error);
+                return match;
+            }
+        });
+        text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?[ \t\u00A0]+)(км|кг|м|с|мм|см|л|мл)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, numberWithSpace, unit, offset, fullText) => {
+            try {
+                const periodIndex = offset + match.length - 1;
+                if (isSentenceEndingPeriod(fullText, periodIndex)) {
+                    return `${numberWithSpace}${unit}.`;
+                }
+                return `${numberWithSpace}${unit}`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize unit period", error);
+                return match;
+            }
+        });
         return text;
     }
     catch (error) {
         console.error("[Чистовик] Failed to normalize abbreviations", error);
+        throw error;
+    }
+}
+function isSentenceEndingPeriod(fullText, periodIndex) {
+    try {
+        const after = fullText.slice(periodIndex + 1);
+        return after.length === 0 || /^[ \t\u00A0]*$/.test(after) || /^[ \t\u00A0]*\r?\n/.test(after) || /^[ \t\u00A0]+[A-ZА-ЯЁ]/.test(after);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check sentence-ending period", error);
         throw error;
     }
 }
@@ -1343,6 +1446,7 @@ function applyNonBreakingSpaces(input) {
                 return match;
             }
         });
+        text = restoreSpacesAfterMeasurementUnits(text);
         return text;
     }
     catch (error) {
@@ -1360,10 +1464,19 @@ function applyShortWordNonBreakingSpaces(input) {
             shortWordPattern.lastIndex = 0;
             text = text.replace(shortWordPattern, `$1$2${NBSP}`);
         }
-        return text;
+        return restoreSpacesAfterMeasurementUnits(text);
     }
     catch (error) {
         console.error("[Чистовик] Failed to apply short word non-breaking spaces", error);
+        throw error;
+    }
+}
+function restoreSpacesAfterMeasurementUnits(input) {
+    try {
+        return input.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?\u00A0(?:г|кг|м|км|мм|см|л|мл|с))\u00A0(?=[A-Za-zА-Яа-яЁё])/gi, "$1 ");
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore spaces after measurement units", error);
         throw error;
     }
 }
@@ -1584,9 +1697,12 @@ function hasMathNumberBoundaryBefore(input, start) {
     }
 }
 function hasMathNumberBoundaryAfter(input, end) {
-    var _a;
+    var _a, _b;
     try {
         const next = (_a = input[end]) !== null && _a !== void 0 ? _a : "";
+        if (next === "." && !/\d/.test((_b = input[end + 1]) !== null && _b !== void 0 ? _b : "")) {
+            return true;
+        }
         return !/[A-Za-zА-Яа-яЁё\d.,]/.test(next);
     }
     catch (error) {

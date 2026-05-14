@@ -43,11 +43,11 @@ module.exports = {
       points: [
         "В&nbsp;русском тексте кавычки первого уровня «ёлочки», а&nbsp;второго „лапки“: <span class=\"rule-example\">«Он&nbsp;сказал „привет“»</span>",
         "В&nbsp;текстах на&nbsp;латинице кавычки первого уровня <span class=\"rule-example\">\"двойные\"</span>, а&nbsp;второго <span class=\"rule-example\">'одинарные'</span>",
-        "В&nbsp;смешанных текстах кавычки зависят от&nbsp;письма вне кавычек: <span class=\"rule-example\">Он&nbsp;сказал «hello» и&nbsp;ушёл</span>, но&nbsp;<span class=\"rule-example\">He said \"привет\" and left</span>",
+        "В&nbsp;смешанных текстах кавычки зависят от&nbsp;письма вне кавычек: <span class=\"rule-example\">Он&nbsp;сказал «hello» и&nbsp;ушёл</span>, но&nbsp;<span class=\"rule-example\">The word \"привет\" means hello</span>",
         "Точка, запятая, точка с&nbsp;запятой, двоеточие и&nbsp;многоточие после кавычек: <span class=\"rule-example\">Он&nbsp;сказал «привет».</span>",
-        "Вопрос и&nbsp;восклицание внутри кавычек: <span class=\"rule-example\">«Как дела?»</span>",
+        "Вопрос и&nbsp;восклицание внутри кавычек, после них точка не&nbsp;ставится: <span class=\"rule-example\">«Как дела?» или Она сказала «Да!»</span>",
         "Три точки меняются на&nbsp;многоточие: <span class=\"rule-example\">... <span class=\"rule-arrow\">→</span> …</span>",
-        "Повторные восклицательные знаки: <span class=\"rule-example\">!! <span class=\"rule-arrow\">→</span> !</span>",
+        "Повторные знаки: <span class=\"rule-example\">!! <span class=\"rule-arrow\">→</span> !, ?? <span class=\"rule-arrow\">→</span> ?</span>",
         "Сочетание !?: <span class=\"rule-example\">!? <span class=\"rule-arrow\">→</span> ?!</span>",
       ],
     },
@@ -89,9 +89,10 @@ module.exports = {
       title: "Сокращения",
       points: [
         "С&nbsp;точкой: <span class=\"rule-example\">тыс., мин., д., кв., г., рис., стр., им., руб., коп., т.&nbsp;д., т.&nbsp;е., т.&nbsp;к., т.&nbsp;п., и&nbsp;т.&nbsp;д., и&nbsp;др., и&nbsp;т.&nbsp;п.</span>",
-        "Без точки: <span class=\"rule-example\">млн, млрд, трлн</span>; после числа&nbsp;— <span class=\"rule-example\">с, м, км, кг</span>",
+        "Без точки: <span class=\"rule-example\">млн, млрд, трлн</span>; после числа&nbsp;— <span class=\"rule-example\">с, м, км, кг, мм, см, л, мл</span>",
         "Площадь и&nbsp;объём: <span class=\"rule-example\">кв.&nbsp;м, куб.&nbsp;м</span>",
         "Месяцы: <span class=\"rule-example\">6&nbsp;мес.</span>, но&nbsp;<span class=\"rule-example\">₽/мес</span>",
+        "Все правила сокращений действуют в&nbsp;середине предложения, в&nbsp;конце всегда ставится точка",
       ],
     },
     {
