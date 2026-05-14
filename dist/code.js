@@ -723,30 +723,26 @@ function formatQuotes(input) {
     var _a;
     try {
         const stack = [];
-        const textScript = detectTextQuoteScript(input);
         let result = "";
-        let lastQuoteWasOpening = false;
         for (let index = 0; index < input.length; index += 1) {
             const char = input[index];
             if (!isQuoteChar(char) || isApostropheInsideWord(input, index)) {
                 result += char;
-                lastQuoteWasOpening = false;
                 continue;
             }
-            const opening = isOpeningQuote(input, index, stack, lastQuoteWasOpening);
+            const opening = getQuoteRole(input, index, stack) === "opening";
             if (opening) {
+                const script = stack.length === 0 ? detectTopLevelQuoteScript(input, index) : stack[stack.length - 1].script;
                 const level = stack.length;
-                stack.push({ script: textScript, level });
-                result += getOpeningQuote(textScript, level);
-                lastQuoteWasOpening = true;
+                stack.push({ script, level });
+                result += getOpeningQuote(script, level);
             }
             else {
                 const state = (_a = stack.pop()) !== null && _a !== void 0 ? _a : {
-                    script: textScript,
+                    script: detectTopLevelQuoteScript(input, index),
                     level: 0,
                 };
                 result += getClosingQuote(state.script, state.level);
-                lastQuoteWasOpening = false;
             }
         }
         return result;
@@ -779,70 +775,115 @@ function isApostropheInsideWord(input, index) {
         throw error;
     }
 }
-function isOpeningQuote(input, index, stack, lastQuoteWasOpening) {
+function getQuoteRole(input, index, stack) {
     var _a;
     try {
         const prev = (_a = input[index - 1]) !== null && _a !== void 0 ? _a : "";
         const next = nextVisibleChar(input, index);
         if (!next) {
-            return false;
+            return "closing";
         }
-        if (!prev) {
-            return true;
+        if (stack.length > 0 && isQuoteClosingContext(input, index)) {
+            return "closing";
         }
-        if (isQuoteChar(prev) && lastQuoteWasOpening && stack.length > 0) {
-            return true;
+        if (isQuoteOpeningContext(prev)) {
+            return "opening";
         }
-        if (/[ \t\u00A0\n\r([{<«„“‘]|[-–—]/.test(prev)) {
-            return true;
+        if (isQuoteClosingContext(input, index)) {
+            return "closing";
         }
-        if (stack.length > 0) {
-            return false;
-        }
-        return !/[A-Za-zА-Яа-яЁё\d.!?…)\]}»“"']/.test(prev);
+        return "opening";
     }
     catch (error) {
-        console.error("[Чистовик] Failed to detect quote direction", error);
+        console.error("[Чистовик] Failed to detect quote role", error);
         throw error;
     }
 }
-function detectTextQuoteScript(input) {
+function isQuoteOpeningContext(previous) {
     try {
-        const textOutsideQuotes = getTextOutsideQuotesForScriptDetection(input);
-        if (/[А-Яа-яЁё]/.test(textOutsideQuotes)) {
-            return "cyrillic";
-        }
-        if (/[A-Za-z]/.test(textOutsideQuotes)) {
-            return "latin";
-        }
-        return /[А-Яа-яЁё]/.test(input) ? "cyrillic" : "latin";
+        return previous === "" || /[ \t\u00A0\n\r*([{<«„“‘"'—–-]/.test(previous);
     }
     catch (error) {
-        console.error("[Чистовик] Failed to detect text quote script", error);
+        console.error("[Чистовик] Failed to check quote opening context", error);
+        throw error;
+    }
+}
+function isQuoteClosingContext(input, index) {
+    var _a;
+    try {
+        const previous = previousVisibleChar(input, index);
+        const next = (_a = input[index + 1]) !== null && _a !== void 0 ? _a : "";
+        if (previous === null) {
+            return false;
+        }
+        return next === "" || /[ \t\u00A0\n\r*.,;:?!…)\]}»“"']/.test(next);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check quote closing context", error);
+        throw error;
+    }
+}
+function detectTopLevelQuoteScript(input, index) {
+    var _a;
+    try {
+        const line = getLineAtIndex(input, index);
+        const textOutsideQuotes = getTextOutsideQuotesForScriptDetection(line);
+        const outsideScript = detectDominantQuoteScript(textOutsideQuotes);
+        if (outsideScript !== null) {
+            return outsideScript;
+        }
+        return (_a = detectDominantQuoteScript(line)) !== null && _a !== void 0 ? _a : "latin";
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to detect top-level quote script", error);
+        throw error;
+    }
+}
+function getLineAtIndex(input, index) {
+    try {
+        const lineStart = input.lastIndexOf("\n", index - 1) + 1;
+        const nextLineBreak = input.indexOf("\n", index);
+        const lineEnd = nextLineBreak === -1 ? input.length : nextLineBreak;
+        return input.slice(lineStart, lineEnd);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get line at index", error);
+        throw error;
+    }
+}
+function detectDominantQuoteScript(input) {
+    try {
+        const latinCount = countMatches(input, /[A-Za-z]/g);
+        const cyrillicCount = countMatches(input, /[А-Яа-яЁё]/g);
+        if (latinCount === 0 && cyrillicCount === 0) {
+            return null;
+        }
+        return latinCount > cyrillicCount ? "latin" : "cyrillic";
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to detect dominant quote script", error);
         throw error;
     }
 }
 function getTextOutsideQuotesForScriptDetection(input) {
     try {
+        const stack = [];
         let result = "";
-        let quoteDepth = 0;
         for (let index = 0; index < input.length; index += 1) {
             const char = input[index];
             if (!isQuoteChar(char) || isApostropheInsideWord(input, index)) {
-                if (quoteDepth === 0) {
+                if (stack.length === 0) {
                     result += char;
                 }
                 continue;
             }
-            if (quoteDepth === 0 && isLikelyOpeningQuoteForScriptDetection(input, index)) {
-                quoteDepth += 1;
-                continue;
+            const opening = getQuoteRole(input, index, stack) === "opening";
+            if (opening) {
+                stack.push({ script: "latin", level: stack.length });
             }
-            if (quoteDepth > 0) {
-                quoteDepth -= 1;
-                continue;
+            else {
+                stack.pop();
             }
-            result += char;
         }
         return result;
     }
@@ -851,50 +892,24 @@ function getTextOutsideQuotesForScriptDetection(input) {
         throw error;
     }
 }
-function isLikelyOpeningQuoteForScriptDetection(input, index) {
-    var _a;
-    try {
-        const char = input[index];
-        if (char === "»" || char === "“" || char === "”" || char === "’") {
-            return false;
-        }
-        if (char === "«" || char === "„" || char === "‘") {
-            return true;
-        }
-        const previous = (_a = input[index - 1]) !== null && _a !== void 0 ? _a : "";
-        const next = nextVisibleChar(input, index);
-        if (next === null) {
-            return false;
-        }
-        return previous === "" || /[ \t\u00A0\n\r([{<—–-]/.test(previous);
-    }
-    catch (error) {
-        console.error("[Чистовик] Failed to detect quote direction for script detection", error);
-        throw error;
-    }
-}
 function getTextOutsideQuotes(input) {
     try {
         const stack = [];
         let result = "";
-        let lastQuoteWasOpening = false;
         for (let index = 0; index < input.length; index += 1) {
             const char = input[index];
             if (!isQuoteChar(char) || isApostropheInsideWord(input, index)) {
                 if (stack.length === 0) {
                     result += char;
                 }
-                lastQuoteWasOpening = false;
                 continue;
             }
-            const opening = isOpeningQuote(input, index, stack, lastQuoteWasOpening);
+            const opening = getQuoteRole(input, index, stack) === "opening";
             if (opening) {
                 stack.push({ script: "cyrillic", level: stack.length });
-                lastQuoteWasOpening = true;
             }
             else {
                 stack.pop();
-                lastQuoteWasOpening = false;
             }
         }
         return result;

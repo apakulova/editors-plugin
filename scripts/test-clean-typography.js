@@ -46,12 +46,25 @@ expectClean(
   "Она спросила \"как дела?\". Я подумала \"ну всё... приехали!\". \"Она сказала: \"Я приду завтра!\"\".",
   `Она спросила «как дела?» Я${NBSP}подумала «ну${NBSP}всё… приехали!» «Она сказала: „Я${NBSP}приду завтра!“»`
 );
+expectClean("«Она сказала: „Я приду завтра!“»", `«Она сказала: „Я${NBSP}приду завтра!“»`);
+expectClean("»Она сказала: „Я приду завтра!“»", `«Она сказала: „Я${NBSP}приду завтра!“»`);
+expectClean("«Она сказала: “Я приду завтра!“»", `«Она сказала: „Я${NBSP}приду завтра!“»`);
+expectClean("«Она сказала: „Я приду завтра!„»", `«Она сказала: „Я${NBSP}приду завтра!“»`);
+expectClean("\"Она сказала: \"Я приду завтра!\"\"", `«Она сказала: „Я${NBSP}приду завтра!“»`);
 expectClean("The word \"привет\" means hello.", 'The word "привет" means hello.');
 expectClean("The word «привет» means hello.", 'The word "привет" means hello.');
+expectClean("Кнопка называется \"Start\".", "Кнопка называется «Start».");
+expectClean('Он сказал "Use \'clean typography\' mode".', `Он${NBSP}сказал «Use „clean typography“ mode».`);
+expectClean('He said "Use "clean typography" mode".', 'He said "Use \'clean typography\' mode".');
+expectClean('He said "Use \'clean typography\' mode".', 'He said "Use \'clean typography\' mode".');
+expectClean('He said "The word "привет" means hello".', 'He said "The word \'привет\' means hello".');
 expectClean("Что?? Да!! Правда!?", "Что? Да! Правда?!");
 expectDevelopmentIdempotent("«Она сказала: „Я приду завтра!“»", "«Она сказала: „Я*приду завтра!“»");
 expectDevelopmentIdempotent("«Ты правда спросил „зачем??“»", "«Ты*правда спросил „зачем?“»");
 expectDevelopmentIdempotent("«„Как это скучно!“ — воскликнул я невольно».", "«„Как это скучно!“*— воскликнул я*невольно».");
+expectDevelopmentIdempotent(`Он*сказал "Use 'clean typography' mode".`, `Он*сказал «Use „clean typography“ mode».`);
+expectDevelopmentIdempotent(`Он*сказал*"Use*'clean typography'*mode".`, `Он*сказал*«Use*„clean typography“*mode».`);
+expectDevelopmentIdempotent(`He*said*"Use*'clean typography'*mode".`, `He*said*"Use*'clean typography'*mode".`);
 
 expectClean("10-20", `10${EN_DASH}20`);
 expectClean("10 - 20", `10${EN_DASH}20`);
