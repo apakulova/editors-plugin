@@ -373,7 +373,6 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
           changed += 1;
         } else if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
           applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
-          changed += 1;
         }
       } catch (error) {
         failed += 1;
@@ -674,7 +673,7 @@ function cleanTypographyWithMetadata(input: string, options: PluginRunOptions = 
   try {
     const normalizedInput = normalizeInputNonBreakingSpaces(input);
     const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, existingDevelopmentMarkerIndexes);
-    const beautyInput = restoreTypographicDevelopmentMarkers(inputWithKnownMarkers);
+    const beautyInput = restoreStableDevelopmentPatternMarkers(inputWithKnownMarkers);
     const beautyText = cleanTypographyForBeauty(beautyInput);
 
     if (options.mode !== "development") {
@@ -691,35 +690,116 @@ function cleanTypographyWithMetadata(input: string, options: PluginRunOptions = 
   }
 }
 
-function restoreTypographicDevelopmentMarkers(input: string): string {
+function restoreStableDevelopmentPatternMarkers(input: string): string {
   try {
     if (!input.includes(DEVELOPMENT_NBSP_MARKER)) {
       return input;
     }
 
     const chars = input.split("");
-
-    for (let index = 0; index < chars.length; index += 1) {
-      if (chars[index] === DEVELOPMENT_NBSP_MARKER && isTypographicDevelopmentMarker(input, index)) {
-        chars[index] = " ";
-      }
-    }
+    restoreDevelopmentCopyrightYearMarkers(chars, input);
+    restoreDevelopmentPhoneMarkers(chars, input);
+    restoreDevelopmentGroupedNumberMarkers(chars, input);
 
     return chars.join("");
   } catch (error) {
-    console.error("[Чистовик] Failed to restore typographic development markers", error);
+    console.error("[Чистовик] Failed to restore stable development pattern markers", error);
     throw error;
   }
 }
 
-function isTypographicDevelopmentMarker(input: string, index: number): boolean {
+function restoreDevelopmentCopyrightYearMarkers(chars: string[], input: string): void {
   try {
-    const candidate = `${input.slice(0, index)} ${input.slice(index + 1)}`;
-    const beautyText = cleanTypographyForBeauty(candidate);
+    const copyrightYearCandidate = /(©|\(c\))[\* \t\u00A0]*([12])\*(\d{3})\b/gi;
 
-    return beautyText[index] === NBSP;
+    input.replace(copyrightYearCandidate, (match: string, _copyright: string, _thousand: string, _rest: string, offset: number) => {
+      try {
+        restoreStarsInRange(chars, offset, offset + match.length);
+        return match;
+      } catch (error) {
+        console.error("[Чистовик] Failed to restore development copyright year markers", error);
+        return match;
+      }
+    });
   } catch (error) {
-    console.error("[Чистовик] Failed to check typographic development marker", error);
+    console.error("[Чистовик] Failed to restore development copyright year markers", error);
+    throw error;
+  }
+}
+
+function restoreDevelopmentPhoneMarkers(chars: string[], input: string): void {
+  try {
+    const phoneCandidate = /(^|[^\d])(\+?[78](?:[\* \t\u00A0().\-–—‑]*\d){10})(?![\* \t\u00A0().\-–—‑]*\d)(?![\* \t\u00A0]*[₽$€])/g;
+
+    input.replace(phoneCandidate, (match, prefix: string, candidate: string, offset: number, fullText: string) => {
+      try {
+        const candidateStart = offset + prefix.length;
+
+        if (previousNonSpaceSkippingDevelopmentMarker(fullText, candidateStart) === "№") {
+          return match;
+        }
+
+        const digits = candidate.replace(/\D/g, "");
+
+        if (digits.length !== 11 || (digits[0] !== "7" && digits[0] !== "8")) {
+          return match;
+        }
+
+        restoreStarsInRange(chars, candidateStart, candidateStart + candidate.length);
+        return match;
+      } catch (error) {
+        console.error("[Чистовик] Failed to restore development phone markers", error);
+        return match;
+      }
+    });
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore development phone markers", error);
+    throw error;
+  }
+}
+
+function restoreDevelopmentGroupedNumberMarkers(chars: string[], input: string): void {
+  try {
+    const groupedNumberCandidate = /(^|[^\d])(\d{1,3}(?:\*\d{3})+(?:,\d+)?)(\*[₽$€])?/g;
+
+    input.replace(groupedNumberCandidate, (match, prefix: string, number: string, currency: string | undefined, offset: number, fullText: string) => {
+      try {
+        const numberStart = offset + prefix.length;
+
+        const previous = previousNonSpaceSkippingDevelopmentMarker(fullText, numberStart);
+
+        if (previous === "№" || previous === "§" || isNumberAfterSignNumberPrefix(fullText, numberStart)) {
+          return match;
+        }
+
+        const groupCount = countMatches(number, /\*/g);
+
+        if (groupCount < 2 && currency === undefined) {
+          return match;
+        }
+
+        restoreStarsInRange(chars, numberStart, numberStart + number.length + (currency?.length ?? 0));
+        return match;
+      } catch (error) {
+        console.error("[Чистовик] Failed to restore development grouped number markers", error);
+        return match;
+      }
+    });
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore development grouped number markers", error);
+    throw error;
+  }
+}
+
+function restoreStarsInRange(chars: string[], start: number, end: number): void {
+  try {
+    for (let index = start; index < end; index += 1) {
+      if (chars[index] === DEVELOPMENT_NBSP_MARKER) {
+        chars[index] = " ";
+      }
+    }
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore stars in range", error);
     throw error;
   }
 }
@@ -1218,7 +1298,7 @@ function formatPhoneNumbers(input: string): string {
       try {
         const candidateStart = offset + prefix.length;
 
-        if (previousNonSpace(fullText, candidateStart) === "№") {
+        if (previousNonSpaceSkippingDevelopmentMarker(fullText, candidateStart) === "№") {
           return match;
         }
 
@@ -1472,13 +1552,13 @@ function normalizeSpacedYears(input: string): string {
 
 function shouldSkipNumberGrouping(fullText: string, start: number, end: number, integerPart: string): boolean {
   try {
-    if (isNumberPartOfCodeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end)) {
+    if (isNumberPartOfCodeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end) || isNumberPartOfMaskedSecret(fullText, start)) {
       return true;
     }
 
-    const previous = previousNonSpace(fullText, start);
+    const previous = previousNonSpaceSkippingDevelopmentMarker(fullText, start);
 
-    if (previous === "№" || previous === "§") {
+    if (previous === "№" || previous === "§" || isNumberAfterSignNumberPrefix(fullText, start)) {
       return true;
     }
 
@@ -1495,9 +1575,77 @@ function shouldSkipNumberGrouping(fullText: string, start: number, end: number, 
     const before = fullText.slice(Math.max(0, start - 16), start).toLowerCase();
     const after = fullText.slice(end, Math.min(fullText.length, end + 16)).toLowerCase();
 
-    return /(?:^|[\s\u00A0])(в|с|по)[\s\u00A0]*$/.test(before) || /(?:©|\(c\))[\s\u00A0]*$/i.test(before) || /^[\s\u00A0]*(г\.?|год|году)(?=$|[^A-Za-zА-Яа-яЁё])/.test(after);
+    return /(?:^|[\s\u00A0*])(в|с|по)[\s\u00A0*]*$/.test(before) || /(?:©|\(c\))[\s\u00A0*]*$/i.test(before) || /^[\s\u00A0*]*(г\.?|год|году)(?=$|[^A-Za-zА-Яа-яЁё])/.test(after);
   } catch (error) {
     console.error("[Чистовик] Failed to check number grouping exception", error);
+    throw error;
+  }
+}
+
+function previousNonSpaceSkippingDevelopmentMarker(input: string, index: number): string | null {
+  try {
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (/[ \t\u00A0]/.test(input[cursor]) || input[cursor] === DEVELOPMENT_NBSP_MARKER) {
+        continue;
+      }
+
+      return input[cursor];
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find previous non-space char skipping development marker", error);
+    throw error;
+  }
+}
+
+function isNumberAfterSignNumberPrefix(input: string, index: number): boolean {
+  try {
+    const previous = previousNonSpaceSkippingDevelopmentMarker(input, index);
+
+    if (previous !== "+") {
+      return false;
+    }
+
+    const plusIndex = findPreviousNonSpaceSkippingDevelopmentMarkerIndex(input, index);
+
+    if (plusIndex === -1) {
+      return false;
+    }
+
+    const beforePlus = previousNonSpaceSkippingDevelopmentMarker(input, plusIndex);
+
+    return beforePlus === "№" || beforePlus === "§";
+  } catch (error) {
+    console.error("[Чистовик] Failed to check number after sign number prefix", error);
+    throw error;
+  }
+}
+
+function findPreviousNonSpaceSkippingDevelopmentMarkerIndex(input: string, index: number): number {
+  try {
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (/[ \t\u00A0]/.test(input[cursor]) || input[cursor] === DEVELOPMENT_NBSP_MARKER) {
+        continue;
+      }
+
+      return cursor;
+    }
+
+    return -1;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find previous non-space index skipping development marker", error);
+    throw error;
+  }
+}
+
+function isNumberPartOfMaskedSecret(fullText: string, start: number): boolean {
+  try {
+    const before = fullText.slice(Math.max(0, start - 24), start);
+
+    return /(?:^|[\s\u00A0:])\*{2,}[\s\u00A0]*$/.test(before);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check masked secret number", error);
     throw error;
   }
 }
@@ -1548,7 +1696,7 @@ function normalizeAbbreviations(input: string): string {
       try {
         const periodIndex = match.lastIndexOf(".");
 
-        if (periodIndex !== -1 && isSentenceEndingPeriod(fullText, offset + periodIndex)) {
+        if (periodIndex !== -1 && isSameLineSentenceContinuation(fullText, offset + periodIndex)) {
           return `${currency}/мес.`;
         }
 
@@ -1576,7 +1724,7 @@ function normalizeAbbreviations(input: string): string {
         const periodIndex = match.lastIndexOf(".");
 
         if (previous === "/" || previous === "₽" || previous === "$" || previous === "€" || next === "/") {
-          if (periodIndex !== -1 && isSentenceEndingPeriod(fullText, offset + periodIndex)) {
+          if (periodIndex !== -1 && isSameLineSentenceContinuation(fullText, offset + periodIndex)) {
             return `${prefix}мес.`;
           }
 
@@ -1593,7 +1741,7 @@ function normalizeAbbreviations(input: string): string {
       try {
         const periodIndex = offset + match.length - 1;
 
-        if (isSentenceEndingPeriod(fullText, periodIndex)) {
+        if (isSameLineSentenceContinuation(fullText, periodIndex)) {
           return `${prefix}${abbreviation}.`;
         }
 
@@ -1607,7 +1755,7 @@ function normalizeAbbreviations(input: string): string {
       try {
         const periodIndex = offset + match.length - 1;
 
-        if (isSentenceEndingPeriod(fullText, periodIndex)) {
+        if (isSameLineSentenceContinuation(fullText, periodIndex)) {
           return `${numberWithSpace}${unit}.`;
         }
 
@@ -1636,6 +1784,17 @@ function isSentenceEndingPeriod(fullText: string, periodIndex: number): boolean 
   }
 }
 
+function isSameLineSentenceContinuation(fullText: string, periodIndex: number): boolean {
+  try {
+    const after = fullText.slice(periodIndex + 1);
+
+    return /^[ \t\u00A0]+[A-ZА-ЯЁ]/.test(after);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check same-line sentence continuation", error);
+    throw error;
+  }
+}
+
 function applyNonBreakingSpaces(input: string): string {
   try {
     let text = input;
@@ -1645,13 +1804,19 @@ function applyNonBreakingSpaces(input: string): string {
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}$3.${NBSP}`);
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`);
     text = text.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`);
-    text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+(?=[A-Za-zА-Яа-яЁё])/g, (match: string, number: string, offset: number, fullText: string) => {
+    text = text.replace(/(©)[ \t\u00A0]*(?=[12]\d{3}\b)/g, `$1${NBSP}`);
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(д|стр|кв)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`);
+    text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+([A-Za-zА-Яа-яЁё]+\.?)/g, (match: string, number: string, followingWord: string, offset: number, fullText: string) => {
       try {
         if (isNumberPartOfDate(fullText, offset, offset + number.length)) {
           return match;
         }
 
-        return `${number}${NBSP}`;
+        if (!shouldKeepNumberWithNextWord(followingWord)) {
+          return match;
+        }
+
+        return `${number}${NBSP}${followingWord}`;
       } catch (error) {
         console.error("[Чистовик] Failed to apply number non-breaking space", error);
         return match;
@@ -1662,6 +1827,17 @@ function applyNonBreakingSpaces(input: string): string {
     return text;
   } catch (error) {
     console.error("[Чистовик] Failed to apply non-breaking spaces", error);
+    throw error;
+  }
+}
+
+function shouldKeepNumberWithNextWord(word: string): boolean {
+  try {
+    const normalized = word.toLowerCase().replace(/\.$/, "");
+
+    return /^(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря|сент|км|кг|м|с|мм|см|л|мл|г|сек|мин|мес|руб|коп|тыс|млн|млрд|трлн|шт|кв|куб)$/.test(normalized);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check number follower", error);
     throw error;
   }
 }
@@ -2024,11 +2200,11 @@ function getPhoneLikeTokenBounds(input: string, start: number, end: number): { s
     let tokenStart = start;
     let tokenEnd = end;
 
-    while (tokenStart > 0 && /[\d+()[\] \t\u00A0.\-–—‑]/.test(input[tokenStart - 1])) {
+    while (tokenStart > 0 && /[\d+()[\] \t\u00A0.\-–—‑*]/.test(input[tokenStart - 1])) {
       tokenStart -= 1;
     }
 
-    while (tokenEnd < input.length && /[\d+()[\] \t\u00A0.\-–—‑]/.test(input[tokenEnd])) {
+    while (tokenEnd < input.length && /[\d+()[\] \t\u00A0.\-–—‑*]/.test(input[tokenEnd])) {
       tokenEnd += 1;
     }
 

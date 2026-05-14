@@ -99,12 +99,13 @@ module.exports = {
     {
       title: "Неразрывные пробелы",
       points: [
-        "Перед длинным тире: <span class=\"rule-example\">Москва&nbsp;— столица</span>",
-        "После <span class=\"rule-example\">№</span> и&nbsp;<span class=\"rule-example\">§</span> перед числом",
-        "Между числом и&nbsp;единицей: <span class=\"rule-example\">5&nbsp;кг, 20&nbsp;°C</span>",
-        "В&nbsp;датах: <span class=\"rule-example\">30&nbsp;сентября</span>",
-        "В&nbsp;инициалах: <span class=\"rule-example\">И.&nbsp;И.&nbsp;Иванов</span>",
-        "После любых слов из&nbsp;1–2 букв на&nbsp;кириллице",
+        "Перед длинным тире: <span class=\"rule-example\">Москва<span style=\"color:#FF4053\">*</span>— столица</span>",
+        "После <span class=\"rule-example\">№</span> и&nbsp;<span class=\"rule-example\">§</span> перед числом: <span class=\"rule-example\">№<span style=\"color:#FF4053\">*</span>5, §<span style=\"color:#FF4053\">*</span>12</span>",
+        "Между <span class=\"rule-example\">©</span> и&nbsp;годом: <span class=\"rule-example\">©<span style=\"color:#FF4053\">*</span>2025</span>",
+        "Между числом и&nbsp;единицей: <span class=\"rule-example\">5<span style=\"color:#FF4053\">*</span>кг, 20<span style=\"color:#FF4053\">*</span>°C</span>",
+        "В&nbsp;датах: <span class=\"rule-example\">30<span style=\"color:#FF4053\">*</span>сентября</span>",
+        "В&nbsp;инициалах: <span class=\"rule-example\">И.<span style=\"color:#FF4053\">*</span>И.<span style=\"color:#FF4053\">*</span>Иванов</span>",
+        "После любых слов из&nbsp;1–2 букв на&nbsp;кириллице: <span class=\"rule-example\">в<span style=\"color:#FF4053\">*</span>дом, на<span style=\"color:#FF4053\">*</span>сайт</span>",
       ],
     },
     {

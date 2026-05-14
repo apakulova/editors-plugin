@@ -24,6 +24,11 @@ const developmentOptions = {
   processHiddenNodes: false,
   processLockedNodes: false,
 };
+const beautyOptions = {
+  mode: "beauty",
+  processHiddenNodes: false,
+  processLockedNodes: false,
+};
 
 function expectClean(input, expected) {
   const actual = cleanTypography(input);
@@ -35,11 +40,15 @@ function expectClean(input, expected) {
 function expectDevelopmentIdempotent(input, expected) {
   const first = cleanTypographyWithMetadata(input, developmentOptions);
   const secondWithMarkers = cleanTypographyWithMetadata(first.text, developmentOptions, first.developmentMarkerIndexes);
-  const secondWithoutMarkers = cleanTypographyWithMetadata(first.text, developmentOptions);
 
   assert.strictEqual(first.text, expected, `${input} first development run`);
   assert.strictEqual(secondWithMarkers.text, expected, `${input} second development run with marker indexes`);
-  assert.strictEqual(secondWithoutMarkers.text, expected, `${input} second development run without marker indexes`);
+}
+
+function expectDevelopmentStableWithoutMarkers(input, expected = input) {
+  const actual = cleanTypographyWithMetadata(input, developmentOptions);
+
+  assert.strictEqual(actual.text, expected, `${input} development run without marker indexes`);
 }
 
 expectClean(
@@ -101,6 +110,10 @@ expectClean("2 х 2", `2${NBSP}${MULTIPLY}${NBSP}2`);
 expectClean("2/2", `2${NBSP}/${NBSP}2`);
 expectClean("1/2", "\u00BD");
 expectClean("Формула: 2 * 2 = 4.", `Формула: 2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4.`);
+expectClean("Формула: 2*2=4.", `Формула: 2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4.`);
+expectClean("Обязательное поле *.", "Обязательное поле *.");
+expectClean("Сноска * см. ниже.", "Сноска * см. ниже.");
+expectClean("Пароль: **** 1234.", "Пароль: **** 1234.");
 
 expectClean("2026-05-14", "2026-05-14");
 expectClean("10.04.2025", "10.04.2025");
@@ -113,9 +126,22 @@ expectClean("var_1+2", "var_1+2");
 expectClean("SALE-2026", "SALE-2026");
 expectClean("PROMO-10-20", "PROMO-10-20");
 expectClean("+7 (900) 123-45-67", `+7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67`);
+expectClean("Встреча 15 завтра.", "Встреча 15 завтра.");
+expectClean("30 сентября", `30${NBSP}сентября`);
+expectClean("№ 12 345 изменился.", `№${NBSP}12 345 изменился.`);
+expectClean("Номер заказа № 79001234567.", `Номер заказа №${NBSP}79001234567.`);
+expectClean("§ 12 применяется.", `§${NBSP}12 применяется.`);
+expectClean("№, это не номер.", `№, это не${NBSP}номер.`);
+expectClean("Дом № 5 стоит рядом.", `Дом №${NBSP}5 стоит рядом.`);
+expectClean("См. § 100 000.", `См. §${NBSP}100 000.`);
+expectClean("© 2025 по 2026 год идёт тест.", `©${NBSP}2025 по${NBSP}2026 год идёт тест.`);
+expectClean("©2025", `©${NBSP}2025`);
 expectClean("Подписка 5000 ₽/мес. Следующий платёж завтра.", `Подписка 5${NBSP}000${NBSP}₽/мес. Следующий платёж завтра.`);
+expectClean("Подписка 5000 ₽/мес.", `Подписка 5${NBSP}000${NBSP}₽/мес`);
 expectClean("Вес 1.5 кг. Доставим завтра.", `Вес 1,5${NBSP}кг. Доставим завтра.`);
+expectClean("Вес 1.5 кг.", `Вес 1,5${NBSP}кг`);
 expectClean("Длина 10.04 м. Это стандартный размер.", `Длина 10,04${NBSP}м. Это стандартный размер.`);
+expectClean("Длина 10.04 м.", `Длина 10,04${NBSP}м`);
 expectClean("Доход 100 млн. Компания растёт.", `Доход 100${NBSP}млн. Компания растёт.`);
 expectClean("Выручка 5 млрд. Это прогноз.", `Выручка 5${NBSP}млрд. Это прогноз.`);
 expectClean("Срок 6 мес. Потом продлим.", `Срок 6${NBSP}мес. Потом продлим.`);
@@ -124,17 +150,44 @@ expectClean("Доход 100 млн. рублей.", `Доход 100${NBSP}млн
 expectClean("Выручка 5 млрд. рублей.", `Выручка 5${NBSP}млрд рублей.`);
 expectClean("Размер 10 см. в ширину.", `Размер 10${NBSP}см в${NBSP}ширину.`);
 expectClean("Вес 5 кг. товара.", `Вес 5${NBSP}кг товара.`);
+expectClean("Объём 5 мл.", `Объём 5${NBSP}мл`);
+expectClean("Время 10 с.", `Время 10${NBSP}с`);
 expectClean("100 руб", `100${NBSP}руб.`);
 expectClean("20 коп", `20${NBSP}коп.`);
 expectClean("Стоимость 100 руб. Оплата завтра.", `Стоимость 100${NBSP}руб. Оплата завтра.`);
+expectClean("д. 5, стр. 10, кв. 7", `д.${NBSP}5, стр.${NBSP}10, кв.${NBSP}7`);
+expectClean("Дом д 5, страница стр 10, квартира кв 7", `Дом д.${NBSP}5, страница стр.${NBSP}10, квартира кв.${NBSP}7`);
+expectClean("Площадь 20 кв м", `Площадь 20${NBSP}кв.${NBSP}м`);
 expectClean("Выручка 10 млн", `Выручка 10${NBSP}млн`);
+expectClean("Доход 100 млн и 5 млрд.", `Доход 100${NBSP}млн и${NBSP}5${NBSP}млрд`);
 expectClean("Выручка 10 млн.\nНужно увеличить на 5%", `Выручка 10${NBSP}млн\nНужно увеличить на${NBSP}5%`);
 expectClean("Выручка 10 млн. Нужно увеличить на 5%", `Выручка 10${NBSP}млн. Нужно увеличить на${NBSP}5%`);
 expectDevelopmentIdempotent(`Цена 2${NBSP}000,35${NBSP}₽.`, "Цена 2*000,35*₽.");
+expectDevelopmentIdempotent("Доход 100 млн и 5 млрд.", "Доход 100*млн и*5*млрд");
+expectDevelopmentIdempotent("Формула: 2 * 2 = 4.", `Формула: 2*${MULTIPLY}*2*=*4.`);
+expectDevelopmentIdempotent("Формула: 2*2=4.", `Формула: 2*${MULTIPLY}*2*=*4.`);
+expectDevelopmentStableWithoutMarkers("Цена 1*000*₽.");
+expectDevelopmentStableWithoutMarkers(`Позвоните: +7*900*123${NB_HYPHEN}45${NB_HYPHEN}67.`);
+expectDevelopmentStableWithoutMarkers(`Или так: 8*900*123${NB_HYPHEN}45${NB_HYPHEN}67.`);
+expectDevelopmentStableWithoutMarkers("Цена не*телефон: 79*001*234*567*₽.");
+expectDevelopmentStableWithoutMarkers("Длинное число: 812*345*678*901*234.");
+expectDevelopmentStableWithoutMarkers("№*12 345 изменился.", "№*12 345 изменился.");
+expectDevelopmentIdempotent("Номер заказа № 79001234567.", "Номер заказа №*79001234567.");
+expectDevelopmentStableWithoutMarkers("Номер заказа №*79001234567.", "Номер заказа №*79001234567.");
+expectDevelopmentStableWithoutMarkers("§*12 применяется.", "§*12 применяется.");
+expectDevelopmentStableWithoutMarkers("Дом №*5 стоит рядом.", "Дом №*5 стоит рядом.");
+expectDevelopmentStableWithoutMarkers("©*2025 по*2026 год идёт тест.", "©*2025 по*2026 год идёт тест.");
+expectDevelopmentStableWithoutMarkers("©*2*025 по*2026 год идёт тест.", "©*2025 по*2026 год идёт тест.");
+expectDevelopmentStableWithoutMarkers(`Номер заказа №*+7*900*123${NB_HYPHEN}45${NB_HYPHEN}67.`, `Номер заказа №*+7*900*123${NB_HYPHEN}45${NB_HYPHEN}67.`);
+expectDevelopmentStableWithoutMarkers("Номер заказа №*+79001234567.", "Номер заказа №*+79001234567.");
 
 const development = cleanTypographyWithMetadata("2 * 2 = 4", developmentOptions);
+const developmentToBeauty = cleanTypographyWithMetadata(development.text, beautyOptions, development.developmentMarkerIndexes);
+const developmentWithoutMarkers = cleanTypographyWithMetadata("Формула: 2*×*2*=*4.", developmentOptions);
 
 assert.strictEqual(development.text, "2*\u00D7*2*=*4");
 assert.deepStrictEqual(Array.from(development.developmentMarkerIndexes), [1, 3, 5, 7]);
+assert.strictEqual(developmentToBeauty.text, `2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4`);
+assert.strictEqual(developmentWithoutMarkers.text, "Формула: 2*×*2*=*4.");
 
 console.log("cleanTypography tests passed");
