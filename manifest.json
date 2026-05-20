@@ -1,8 +1,11 @@
 {
-  "name": "Чистовик",
-  "id": "chistovik",
+  "name": "Чистовик — Internal Beta",
+  "id": "1638816840468168578",
   "api": "1.0.0",
   "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["none"]
+  },
   "main": "dist/code.js",
   "ui": "src/ui.html",
   "menu": [
