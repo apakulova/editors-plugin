@@ -1575,7 +1575,12 @@ function shouldSkipNumberGrouping(fullText: string, start: number, end: number, 
     const before = fullText.slice(Math.max(0, start - 16), start).toLowerCase();
     const after = fullText.slice(end, Math.min(fullText.length, end + 16)).toLowerCase();
 
-    return /(?:^|[\s\u00A0*])(в|с|по)[\s\u00A0*]*$/.test(before) || /(?:©|\(c\))[\s\u00A0*]*$/i.test(before) || /^[\s\u00A0*]*(г\.?|год|году)(?=$|[^A-Za-zА-Яа-яЁё])/.test(after);
+    const hasYearWordAfter = /^[\s\u00A0*]*(г\.?|год|году)(?=$|[^A-Za-zА-Яа-яЁё])/.test(after);
+    const hasCopyrightBefore = /(?:©|\(c\))[\s\u00A0*]*$/i.test(before);
+    const hasYearPrepositionBefore = /(?:^|[\s\u00A0*])(в|с)[\s\u00A0*]*$/.test(before);
+    const hasRangeYearPrepositionBefore = /(?:^|[\s\u00A0*])по[\s\u00A0*]*$/.test(before) && !/^[\s\u00A0*]+[A-Za-zА-Яа-яЁё]/.test(after);
+
+    return hasYearWordAfter || hasCopyrightBefore || hasYearPrepositionBefore || hasRangeYearPrepositionBefore;
   } catch (error) {
     console.error("[Чистовик] Failed to check number grouping exception", error);
     throw error;
@@ -1805,14 +1810,13 @@ function applyNonBreakingSpaces(input: string): string {
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`);
     text = text.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`);
     text = text.replace(/(©)[ \t\u00A0]*(?=[12]\d{3}\b)/g, `$1${NBSP}`);
-    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(д|стр|кв)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`);
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(д|г|стр|кв)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`);
     text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+([A-Za-zА-Яа-яЁё]+\.?)/g, (match: string, number: string, followingWord: string, offset: number, fullText: string) => {
       try {
-        if (isNumberPartOfDate(fullText, offset, offset + number.length)) {
-          return match;
-        }
+        const numberStart = offset;
+        const numberEnd = numberStart + number.length;
 
-        if (!shouldKeepNumberWithNextWord(followingWord)) {
+        if (!shouldKeepNumberWithNextWord(fullText, numberStart, numberEnd, number)) {
           return match;
         }
 
@@ -1831,13 +1835,34 @@ function applyNonBreakingSpaces(input: string): string {
   }
 }
 
-function shouldKeepNumberWithNextWord(word: string): boolean {
+function shouldKeepNumberWithNextWord(fullText: string, start: number, end: number, number: string): boolean {
   try {
-    const normalized = word.toLowerCase().replace(/\.$/, "");
+    if (isNumberPartOfDate(fullText, start, end) || isInsideProtectedToken(fullText, start, end)) {
+      return false;
+    }
 
-    return /^(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря|сент|км|кг|м|с|мм|см|л|мл|г|сек|мин|мес|руб|коп|тыс|млн|млрд|трлн|шт|кв|куб)$/.test(normalized);
+    const previous = previousNonSpaceSkippingDevelopmentMarker(fullText, start);
+
+    if (previous === "№" || previous === "§" || isNumberAfterSignNumberPrefix(fullText, start) || hasPreviousNumberBindingAbbreviation(fullText, start)) {
+      return false;
+    }
+
+    const integerPart = number.split(",")[0].replace(/[ \t\u00A0]/g, "");
+
+    return !shouldSkipNumberGrouping(fullText, start, end, integerPart);
   } catch (error) {
     console.error("[Чистовик] Failed to check number follower", error);
+    throw error;
+  }
+}
+
+function hasPreviousNumberBindingAbbreviation(fullText: string, index: number): boolean {
+  try {
+    const before = fullText.slice(Math.max(0, index - 16), index);
+
+    return /(?:^|[^A-Za-zА-Яа-яЁё])(д|г|стр|кв)\.[ \t\u00A0]*$/i.test(before);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check number-binding abbreviation", error);
     throw error;
   }
 }
