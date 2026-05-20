@@ -43,7 +43,7 @@ async function run() {
 function openSettingsUI() {
     try {
         figma.showUI(__html__, {
-            height: 340,
+            height: 360,
             themeColors: true,
             width: 360,
         });
@@ -1697,7 +1697,7 @@ function normalizeMathAndSymbols(input) {
             .replace(/\(c\)/gi, "©")
             .replace(/\(tm\)/gi, "™")
             .replace(/\(r\)/gi, "®")
-            .replace(/->/g, "→");
+            .replace(/(?:->|=>)/g, "→");
     }
     catch (error) {
         console.error("[Чистовик] Failed to normalize math and symbols", error);

@@ -109,6 +109,8 @@ expectClean("2x2", `2${NBSP}${MULTIPLY}${NBSP}2`);
 expectClean("2 х 2", `2${NBSP}${MULTIPLY}${NBSP}2`);
 expectClean("2/2", `2${NBSP}/${NBSP}2`);
 expectClean("1/2", "\u00BD");
+expectClean("Статус => готово", "Статус → готово");
+expectClean("Назад -> вперёд", "Назад → вперёд");
 expectClean("Формула: 2 * 2 = 4.", `Формула: 2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4.`);
 expectClean("Формула: 2*2=4.", `Формула: 2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4.`);
 expectClean("Обязательное поле *.", "Обязательное поле *.");
