@@ -1857,6 +1857,7 @@ function applyNonBreakingSpaces(input: string): string {
     let text = input;
 
     text = text.replace(/[ \t\u00A0]+—/g, `${NBSP}${EM_DASH}`);
+    text = applyParticleNonBreakingSpaces(text);
     text = applyShortWordNonBreakingSpaces(text);
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}$3.${NBSP}`);
     text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`);
@@ -1919,9 +1920,20 @@ function hasPreviousNumberBindingAbbreviation(fullText: string, index: number): 
   }
 }
 
+function applyParticleNonBreakingSpaces(input: string): string {
+  try {
+    const particlePattern = new RegExp(`(^|\\S)[ \\t]+(ли|же|бы)(?=$|[^${LETTERS}])`, "gi");
+
+    return input.replace(particlePattern, `$1${NBSP}$2`);
+  } catch (error) {
+    console.error("[Чистовик] Failed to apply particle non-breaking spaces", error);
+    throw error;
+  }
+}
+
 function applyShortWordNonBreakingSpaces(input: string): string {
   try {
-    const shortWordPattern = new RegExp(`(^|[^${LETTERS}\\d\\-${NB_HYPHEN}])([А-Яа-яЁё]{1,2})[ \\t]+(?=\\S)`, "g");
+    const shortWordPattern = new RegExp(`(^|[^${LETTERS}\\d\\-${NB_HYPHEN}])(?!(?:ли|же|бы)[ \\t]+)([А-Яа-яЁё]{1,2})[ \\t]+(?=\\S)`, "gi");
     let text = input;
     let previous = "";
 

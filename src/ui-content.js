@@ -105,6 +105,7 @@ module.exports = {
         "Между числом и&nbsp;единицей: <span class=\"rule-example\">5<span style=\"color:#FF4053\">*</span>кг, 20<span style=\"color:#FF4053\">*</span>°C</span>",
         "В&nbsp;датах: <span class=\"rule-example\">30<span style=\"color:#FF4053\">*</span>сентября</span>",
         "В&nbsp;инициалах: <span class=\"rule-example\">И.<span style=\"color:#FF4053\">*</span>И.<span style=\"color:#FF4053\">*</span>Иванов</span>",
+        "Перед <span class=\"rule-example\">ли</span>, <span class=\"rule-example\">же</span>, <span class=\"rule-example\">бы</span>: <span class=\"rule-example\">далеко<span style=\"color:#FF4053\">*</span>ли, он<span style=\"color:#FF4053\">*</span>же, сказал<span style=\"color:#FF4053\">*</span>бы</span>",
         "После любых слов из&nbsp;1–2 букв на&nbsp;кириллице: <span class=\"rule-example\">в<span style=\"color:#FF4053\">*</span>дом, на<span style=\"color:#FF4053\">*</span>сайт</span>",
       ],
     },
