@@ -197,11 +197,14 @@ expectDevelopmentStableWithoutMarkers("Номер заказа №*+79001234567.
 
 const development = cleanTypographyWithMetadata("2 * 2 = 4", developmentOptions);
 const developmentToBeauty = cleanTypographyWithMetadata(development.text, beautyOptions, development.developmentMarkerIndexes);
+const textDevelopment = cleanTypographyWithMetadata("В базе 10000 клиентов.", developmentOptions);
+const textDevelopmentToBeauty = cleanTypographyWithMetadata(textDevelopment.text, beautyOptions, textDevelopment.developmentMarkerIndexes);
 const developmentWithoutMarkers = cleanTypographyWithMetadata("Формула: 2*×*2*=*4.", developmentOptions);
 
 assert.strictEqual(development.text, "2*\u00D7*2*=*4");
 assert.deepStrictEqual(Array.from(development.developmentMarkerIndexes), [1, 3, 5, 7]);
 assert.strictEqual(developmentToBeauty.text, `2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4`);
+assert.strictEqual(textDevelopmentToBeauty.text, `В${NBSP}базе 10${NBSP}000${NBSP}клиентов.`);
 assert.strictEqual(developmentWithoutMarkers.text, "Формула: 2*×*2*=*4.");
 
 console.log("cleanTypography tests passed");

@@ -5,6 +5,9 @@ const DEVELOPMENT_NBSP_FILL = {
     type: "SOLID",
     color: { r: 1, g: 64 / 255, b: 83 / 255 },
 };
+const DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY = "developmentMarkerIndexes";
+const DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY = "developmentMarkerText";
+const DEVELOPMENT_MARKER_COLOR_TOLERANCE = 0.001;
 const NB_HYPHEN = "\u2011";
 const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
@@ -297,6 +300,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 else if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
                     applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
                 }
+                syncDevelopmentMarkerPluginData(textNode, options, cleanResult.developmentMarkerIndexes);
             }
             catch (error) {
                 failed += 1;
@@ -517,7 +521,11 @@ function isDevelopmentMarkerFills(fills) {
 function isDevelopmentMarkerFill(fill) {
     var _a;
     try {
-        return fill.type === "SOLID" && fill.color.r === DEVELOPMENT_NBSP_FILL.color.r && fill.color.g === DEVELOPMENT_NBSP_FILL.color.g && fill.color.b === DEVELOPMENT_NBSP_FILL.color.b && ((_a = fill.opacity) !== null && _a !== void 0 ? _a : 1) === 1;
+        return fill.type === "SOLID" &&
+            Math.abs(fill.color.r - DEVELOPMENT_NBSP_FILL.color.r) <= DEVELOPMENT_MARKER_COLOR_TOLERANCE &&
+            Math.abs(fill.color.g - DEVELOPMENT_NBSP_FILL.color.g) <= DEVELOPMENT_MARKER_COLOR_TOLERANCE &&
+            Math.abs(fill.color.b - DEVELOPMENT_NBSP_FILL.color.b) <= DEVELOPMENT_MARKER_COLOR_TOLERANCE &&
+            ((_a = fill.opacity) !== null && _a !== void 0 ? _a : 1) === 1;
     }
     catch (error) {
         console.error("[Чистовик] Failed to check development marker fill", error);
@@ -542,20 +550,56 @@ function createDevelopmentMarkerFill() {
 }
 function getExistingDevelopmentMarkerIndexes(textNode) {
     try {
-        const indexes = [];
+        const indexes = new Set(getStoredDevelopmentMarkerIndexes(textNode));
         const text = textNode.characters;
         let index = text.indexOf(DEVELOPMENT_NBSP_MARKER);
         while (index !== -1) {
             const fills = textNode.getRangeFills(index, index + 1);
             if (fills !== figma.mixed && isDevelopmentMarkerFills(fills)) {
-                indexes.push(index);
+                indexes.add(index);
             }
             index = text.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
         }
-        return indexes;
+        return Array.from(indexes).sort((first, second) => first - second);
     }
     catch (error) {
         console.error(`[Чистовик] Failed to get existing development marker indexes for text node ${textNode.id}`, error);
+        throw error;
+    }
+}
+function getStoredDevelopmentMarkerIndexes(textNode) {
+    try {
+        const text = textNode.characters;
+        if (textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY) !== text) {
+            return [];
+        }
+        const rawIndexes = textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY);
+        if (rawIndexes === "") {
+            return [];
+        }
+        const parsedIndexes = JSON.parse(rawIndexes);
+        if (!Array.isArray(parsedIndexes)) {
+            return [];
+        }
+        return parsedIndexes.filter((index) => Number.isInteger(index) && index >= 0 && index < text.length && text[index] === DEVELOPMENT_NBSP_MARKER);
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to get stored development marker indexes for text node ${textNode.id}`, error);
+        return [];
+    }
+}
+function syncDevelopmentMarkerPluginData(textNode, options, markerIndexes) {
+    try {
+        if (options.mode === "development" && markerIndexes.length > 0) {
+            textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, textNode.characters);
+            textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, JSON.stringify(markerIndexes));
+            return;
+        }
+        textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, "");
+        textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, "");
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to sync development marker plugin data for text node ${textNode.id}`, error);
         throw error;
     }
 }
