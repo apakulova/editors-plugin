@@ -755,6 +755,7 @@
       const tabs = Array.from(document.querySelectorAll("[data-tab]"));
       const panels = Array.from(document.querySelectorAll("[data-panel]"));
       const actions = document.querySelector(".actions");
+      const channelLinks = Array.from(document.querySelectorAll(".about-link"));
 
       function selectTab(selectedTab) {
         tabs.forEach((item) => {
@@ -798,6 +799,19 @@
           },
           "*"
         );
+      });
+
+      channelLinks.forEach((link) => {
+        link.addEventListener("click", () => {
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: "channel-link-clicked",
+              },
+            },
+            "*"
+          );
+        });
       });
     </script>
   </body>

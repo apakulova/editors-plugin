@@ -13,6 +13,12 @@ const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
 const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
+const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
+const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
+const ANALYTICS_SCHEMA_VERSION = 1;
+const ANALYTICS_PLUGIN_VERSION = "1.0.0";
+const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
+const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 1000;
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const STYLE_FIELDS = [
     "fontName",
@@ -23,6 +29,7 @@ const STYLE_FIELDS = [
     "letterSpacing",
     "lineHeight",
 ];
+const pendingAnalyticsEvents = [];
 async function run() {
     let shouldClosePlugin = true;
     try {
@@ -31,7 +38,7 @@ async function run() {
             openSettingsUI();
             return;
         }
-        await runTypograph(getDefaultRunOptions());
+        await runTypograph(getDefaultRunOptions(), "quick_run");
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean typography", error);
@@ -39,6 +46,7 @@ async function run() {
     }
     finally {
         if (shouldClosePlugin) {
+            await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
             figma.closePlugin();
         }
     }
@@ -50,14 +58,23 @@ function openSettingsUI() {
             themeColors: true,
             width: 360,
         });
+        queueAnalyticsEvent("settings_opened", { source: "settings" });
         figma.ui.onmessage = async (message) => {
             try {
                 if (message.type === "close") {
                     figma.closePlugin();
                     return;
                 }
+                if (message.type === "channel-link-clicked") {
+                    queueAnalyticsEvent("channel_link_clicked", {
+                        link: "channel",
+                        source: "about_tab",
+                    });
+                    return;
+                }
                 if (message.type === "run-typograph") {
-                    await runTypograph(getRunOptionsFromMessage(message));
+                    await runTypograph(getRunOptionsFromMessage(message), "settings");
+                    await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
                     figma.closePlugin();
                 }
             }
@@ -72,22 +89,235 @@ function openSettingsUI() {
         throw error;
     }
 }
-async function runTypograph(options) {
+async function runTypograph(options, source) {
+    var _a, _b;
+    const analyticsContext = createAnalyticsRunContext(options, source);
+    let analyticsStage = "unknown";
+    let result = null;
+    queueAnalyticsEvent("plugin_run_started", getRunAnalyticsProperties(analyticsContext));
     try {
         figma.skipInvisibleInstanceChildren = !options.processHiddenNodes;
+        analyticsStage = "collect_nodes";
         const collection = await collectTargetTextNodes({
             processHidden: options.processHiddenNodes,
             processLocked: options.processLockedNodes,
         });
-        const result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
+        analyticsStage = "apply_text";
+        result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
         if (result.failed > 0) {
             throw new Error(`Failed to process ${result.failed} text node(s)`);
         }
         notifyCleanResult(result);
+        queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_nodes_count: result.changed, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_nodes_count: result.failed, found_text_nodes_count: result.processed + result.skippedHidden + result.skippedLocked, processed_text_nodes_count: result.processed, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked }));
     }
     catch (error) {
         console.error("[Чистовик] Failed to run typograph", error);
+        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_fingerprint: createErrorFingerprint(error), error_name: getErrorName(error), failed_text_nodes_count: (_a = result === null || result === void 0 ? void 0 : result.failed) !== null && _a !== void 0 ? _a : null, found_text_nodes_count: result === null ? null : result.processed + result.skippedHidden + result.skippedLocked, processed_text_nodes_count: (_b = result === null || result === void 0 ? void 0 : result.processed) !== null && _b !== void 0 ? _b : null, stage: analyticsStage }));
         throw error;
+    }
+}
+function createAnalyticsRunContext(options, source) {
+    try {
+        return {
+            mode: getAnalyticsRunMode(options, source),
+            options,
+            selection: getSelectionAnalyticsSummary(figma.currentPage.selection),
+            source,
+            startedAt: Date.now(),
+        };
+    }
+    catch (_a) {
+        return {
+            mode: getAnalyticsRunMode(options, source),
+            options,
+            selection: {
+                scope: "page",
+                selectedNodesCount: 0,
+                selectedTextNodesCount: 0,
+            },
+            source,
+            startedAt: Date.now(),
+        };
+    }
+}
+function getAnalyticsRunMode(options, source) {
+    try {
+        return source === "quick_run" ? "default" : options.mode;
+    }
+    catch (_a) {
+        return "default";
+    }
+}
+function getSelectionAnalyticsSummary(selection) {
+    try {
+        if (selection.length === 0) {
+            return {
+                scope: "page",
+                selectedNodesCount: 0,
+                selectedTextNodesCount: 0,
+            };
+        }
+        const selectedTextNodesCount = selection.filter((node) => node.type === "TEXT").length;
+        if (selection.length > 1) {
+            return {
+                scope: "multi_selection",
+                selectedNodesCount: selection.length,
+                selectedTextNodesCount,
+            };
+        }
+        return {
+            scope: selection[0].type === "TEXT" ? "single_text" : "container",
+            selectedNodesCount: 1,
+            selectedTextNodesCount,
+        };
+    }
+    catch (_a) {
+        return {
+            scope: "page",
+            selectedNodesCount: 0,
+            selectedTextNodesCount: 0,
+        };
+    }
+}
+function getRunAnalyticsProperties(context) {
+    try {
+        return {
+            mode: context.mode,
+            process_hidden_nodes: context.options.processHiddenNodes,
+            process_locked_nodes: context.options.processLockedNodes,
+            selected_nodes_count: context.selection.selectedNodesCount,
+            selected_text_nodes_count: context.selection.selectedTextNodesCount,
+            selection_scope: context.selection.scope,
+            source: context.source,
+        };
+    }
+    catch (_a) {
+        return {};
+    }
+}
+function getAnalyticsDuration(context) {
+    try {
+        return Math.max(0, Date.now() - context.startedAt);
+    }
+    catch (_a) {
+        return 0;
+    }
+}
+function queueAnalyticsEvent(event, properties = {}) {
+    try {
+        const promise = trackAnalyticsEvent(event, properties);
+        pendingAnalyticsEvents.push(promise);
+        void promise.finally(() => {
+            const index = pendingAnalyticsEvents.indexOf(promise);
+            if (index !== -1) {
+                pendingAnalyticsEvents.splice(index, 1);
+            }
+        });
+    }
+    catch (_a) {
+        // Analytics must never affect plugin behavior.
+    }
+}
+async function waitForPendingAnalyticsEvents(timeoutMs) {
+    try {
+        if (pendingAnalyticsEvents.length === 0) {
+            return;
+        }
+        await Promise.race([
+            Promise.all(pendingAnalyticsEvents.slice()).then(() => undefined),
+            delay(timeoutMs),
+        ]);
+    }
+    catch (_a) {
+        // Analytics must never affect plugin behavior.
+    }
+}
+function delay(timeoutMs) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, timeoutMs);
+    });
+}
+async function trackAnalyticsEvent(event, properties = {}) {
+    try {
+        const identity = await getAnalyticsIdentity();
+        const payload = {
+            api_key: ANALYTICS_PROJECT_TOKEN,
+            distinct_id: identity.distinctId,
+            event,
+            properties: Object.assign(Object.assign({}, properties), { $geoip_disable: true, analytics_schema_version: ANALYTICS_SCHEMA_VERSION, identity_type: identity.identityType, plugin_version: ANALYTICS_PLUGIN_VERSION }),
+        };
+        await fetch(`${ANALYTICS_API_HOST}/capture/`, {
+            body: JSON.stringify(payload),
+            headers: {
+                "Content-Type": "application/json",
+            },
+            method: "POST",
+        });
+    }
+    catch (_a) {
+        // Analytics must never affect plugin behavior.
+    }
+}
+async function getAnalyticsIdentity() {
+    try {
+        const storedAnonymousId = await figma.clientStorage.getAsync(ANALYTICS_ANONYMOUS_ID_KEY);
+        const anonymousId = typeof storedAnonymousId === "string" && storedAnonymousId !== "" ? storedAnonymousId : createAnalyticsAnonymousId();
+        if (anonymousId !== storedAnonymousId) {
+            await figma.clientStorage.setAsync(ANALYTICS_ANONYMOUS_ID_KEY, anonymousId);
+        }
+        return {
+            anonymousId,
+            distinctId: anonymousId,
+            identityType: "anonymous",
+            userId: null,
+        };
+    }
+    catch (_a) {
+        const anonymousId = createAnalyticsAnonymousId();
+        return {
+            anonymousId,
+            distinctId: anonymousId,
+            identityType: "anonymous",
+            userId: null,
+        };
+    }
+}
+function createAnalyticsAnonymousId() {
+    try {
+        return `anon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}_${Math.random().toString(36).slice(2, 12)}`;
+    }
+    catch (_a) {
+        return "anon_fallback";
+    }
+}
+function getErrorName(error) {
+    try {
+        return error instanceof Error && error.name !== "" ? error.name : "UnknownError";
+    }
+    catch (_a) {
+        return "UnknownError";
+    }
+}
+function createErrorFingerprint(error) {
+    try {
+        const name = getErrorName(error);
+        const message = error instanceof Error ? error.message : String(error);
+        return hashAnalyticsString(`${name}:${message}`);
+    }
+    catch (_a) {
+        return "unknown";
+    }
+}
+function hashAnalyticsString(input) {
+    try {
+        let hash = 0;
+        for (let index = 0; index < input.length; index += 1) {
+            hash = (hash * 31 + input.charCodeAt(index)) | 0;
+        }
+        return Math.abs(hash).toString(36);
+    }
+    catch (_a) {
+        return "unknown";
     }
 }
 function getDefaultRunOptions() {
