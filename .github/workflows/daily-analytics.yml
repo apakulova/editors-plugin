@@ -12,6 +12,7 @@ jobs:
     env:
       POSTHOG_HOST: https://eu.posthog.com
       POSTHOG_PROJECT_ID: "184090"
+      POSTHOG_DASHBOARD_URL: https://eu.posthog.com/project/184090/dashboard/695809
       POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

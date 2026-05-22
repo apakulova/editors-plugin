@@ -77,8 +77,31 @@
 
 - `POSTHOG_HOST: https://eu.posthog.com`;
 - `POSTHOG_PROJECT_ID: "184090"`.
+- `POSTHOG_DASHBOARD_URL: https://eu.posthog.com/project/184090/dashboard/695809`.
 
-Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, отдельно показывает запуски без финального статуса и мультивыбор, а затем отправляет сообщение через Telegram Bot API.
+Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он использует общую логику из `scripts/lib/analytics-report.js`: исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, отдельно показывает запуски без финального статуса и мультивыбор, добавляет ссылку `Полный дашборд с графиками (открывается только с vpn)`, а затем отправляет сообщение через Telegram Bot API.
+
+## Telegram-команда `/today`
+
+В проекте есть Vercel endpoint `api/telegram.js` для команды `/today`. Он принимает webhook от Telegram, проверяет секретный заголовок Telegram, проверяет `TELEGRAM_CHAT_ID`, игнорирует чужие сообщения и по команде `/today` отправляет отчет за текущий день по Москве.
+
+Для Vercel нужно добавить Environment Variables:
+
+- `POSTHOG_PERSONAL_API_KEY` — PostHog Personal API key для чтения аналитики;
+- `POSTHOG_HOST` — `https://eu.posthog.com`;
+- `POSTHOG_PROJECT_ID` — `184090`;
+- `POSTHOG_DASHBOARD_URL` — `https://eu.posthog.com/project/184090/dashboard/695809`;
+- `TELEGRAM_BOT_TOKEN` — токен Telegram-бота;
+- `TELEGRAM_CHAT_ID` — id разрешенного чата;
+- `TELEGRAM_WEBHOOK_SECRET` — длинная случайная строка для проверки webhook.
+
+После деплоя Vercel webhook нужно привязать к Telegram:
+
+```text
+https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<VERCEL_URL>/api/telegram&secret_token=<TELEGRAM_WEBHOOK_SECRET>
+```
+
+После этого команда `/today` в Telegram должна присылать отчет за текущий день. GitHub Actions продолжает отправлять ежедневный отчет за вчера.
 
 ## Beta-публикация и будущее
 
@@ -347,6 +370,8 @@ npm run dev
 - `src/ui.html` — готовый HTML для Figma. В нем есть размеченные блоки `chistovik-content:*`, которые обновляет скрипт синхронизации.
 - `scripts/sync-ui-content.js` — генератор, который переносит данные из `src/ui-content.js` в `src/ui.html`.
 - `scripts/send-daily-analytics.js` — скрипт ежедневного Telegram-отчета по PostHog-аналитике.
+- `scripts/lib/analytics-report.js` — общая логика PostHog-запросов, форматирования Telegram-сообщений и отправки сообщений.
+- `api/telegram.js` — Vercel endpoint для Telegram webhook и команды `/today`.
 
 Важный технический нюанс: Figma-плагин не читает отдельные локальные файлы контента во время работы. Поэтому контент хранится отдельно для удобного редактирования, но встраивается в `src/ui.html` перед сборкой. Команды `npm run build` и `npm run dev` сначала запускают `npm run sync-ui`.
 
@@ -427,6 +452,7 @@ npm run dev
 - Рабочая типографика должна оставаться отделенной от UI.
 - Аналитика должна оставаться отделенной от правил типографики и не должна менять поведение `cleanTypography`.
 - Ежедневный Telegram-отчет должен жить отдельно от Figma-плагина: через GitHub Actions и `scripts/send-daily-analytics.js`, без влияния на запуск плагина в Figma.
+- Telegram-команды должны жить отдельно от Figma-плагина: через Vercel endpoint `api/telegram.js`, без изменений `src/code.ts`, `dist/code.js`, `src/ui.html`, `src/ui-content.js` и `manifest.json`.
 - Быстрый запуск не должен зависеть от состояния открытого интерфейса.
 - UI должен передавать настройки в основную логику сообщением, а не дублировать правила обработки.
 - Тексты вкладок должны храниться в `src/ui-content.js`, отдельно от ядра типографики.

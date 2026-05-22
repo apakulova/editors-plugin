@@ -4,6 +4,14 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
+- `TBD` — `Добавить команду today для Telegram-бота`.
+  Добавлена основа для Telegram-команды `/today` через Vercel endpoint `api/telegram.js`. Endpoint принимает webhook от Telegram, проверяет `x-telegram-bot-api-secret-token`, разрешает ответы только для `TELEGRAM_CHAT_ID`, игнорирует чужие сообщения и неизвестные команды, а на `/today` отправляет отчет за текущий день по Москве.
+  Общая логика PostHog-запросов, расчета периода по Москве, форматирования сообщения и отправки в Telegram вынесена в `scripts/lib/analytics-report.js`. Ежедневный GitHub Actions отчет теперь использует тот же модуль через тонкий скрипт `scripts/send-daily-analytics.js`.
+  В ежедневный отчет и отчет по `/today` добавлена ссылка: `Полный дашборд с графиками (открывается только с vpn)` и URL `https://eu.posthog.com/project/184090/dashboard/695809`. Для GitHub Actions ссылка задана через обычный env `POSTHOG_DASHBOARD_URL`; в общем модуле есть такой же дефолт.
+  README дополнен инструкциями для Vercel: переменные окружения `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_HOST`, `POSTHOG_PROJECT_ID`, `POSTHOG_DASHBOARD_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET`, а также шаблон ссылки `setWebhook`.
+  Код Figma-плагина не менялся: `src/code.ts`, `dist/code.js`, `src/ui.html`, `src/ui-content.js`, `manifest.json`, правила типографики, UI и уведомления не затронуты.
+  Затронуты `api/telegram.js`, `scripts/lib/analytics-report.js`, `scripts/send-daily-analytics.js`, `.github/workflows/daily-analytics.yml`, README и `docs/commit-log.md`.
+  Проверки: `node --check scripts/lib/analytics-report.js`, `node --check scripts/send-daily-analytics.js`, `node --check api/telegram.js`, `npm test`, `git diff --check`. После push нужно задеплоить проект на Vercel, добавить env vars, установить Telegram webhook и проверить команду `/today`.
 - `b7672ba` — `Уточнить ежедневный Telegram-отчет`.
   В ежедневный Telegram-отчет добавлены две строки: `Без финального статуса` и `— мультивыбор` в блоке `Область`.
   `Без финального статуса` считается как `plugin_run_started - plugin_run_completed - plugin_run_failed`, чтобы было видно, сколько запусков получили стартовое событие, но не получили финальное событие успеха или ошибки. Это помогает не путать потерянные финальные события аналитики с ошибками типографа.
