@@ -19,7 +19,21 @@ const ANALYTICS_PLUGIN_VERSION = "1.0.0";
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 1000;
 const LETTERS = "A-Za-zА-Яа-яЁё";
-const STYLE_FIELDS: Array<"fontName" | "fontSize" | "fills" | "textCase" | "textDecoration" | "letterSpacing" | "lineHeight"> = [
+type PreservedStyleField =
+  | "fontName"
+  | "fontSize"
+  | "fills"
+  | "textCase"
+  | "textDecoration"
+  | "letterSpacing"
+  | "lineHeight"
+  | "listOptions"
+  | "listSpacing"
+  | "indentation"
+  | "paragraphIndent"
+  | "paragraphSpacing";
+
+const STYLE_FIELDS: PreservedStyleField[] = [
   "fontName",
   "fontSize",
   "fills",
@@ -27,6 +41,11 @@ const STYLE_FIELDS: Array<"fontName" | "fontSize" | "fills" | "textCase" | "text
   "textDecoration",
   "letterSpacing",
   "lineHeight",
+  "listOptions",
+  "listSpacing",
+  "indentation",
+  "paragraphIndent",
+  "paragraphSpacing",
 ];
 
 type TypographMode = "beauty" | "development";
@@ -111,7 +130,7 @@ interface MathOperatorParseResult {
   text: string;
 }
 
-type StyleSegment = Pick<StyledTextSegment, "fontName" | "fontSize" | "fills" | "textCase" | "textDecoration" | "letterSpacing" | "lineHeight" | "characters" | "start" | "end">;
+type StyleSegment = Pick<StyledTextSegment, PreservedStyleField | "characters" | "start" | "end">;
 
 const pendingAnalyticsEvents: Promise<void>[] = [];
 
@@ -868,6 +887,13 @@ function applyStyleSegment(textNode: TextNode, start: number, end: number, style
     textNode.setRangeTextDecoration(start, end, style.textDecoration);
     textNode.setRangeLetterSpacing(start, end, style.letterSpacing);
     textNode.setRangeLineHeight(start, end, style.lineHeight);
+    textNode.setRangeListOptions(start, end, style.listOptions);
+    if (style.listOptions.type !== "NONE") {
+      textNode.setRangeListSpacing(start, end, style.listSpacing);
+    }
+    textNode.setRangeIndentation(start, end, style.indentation);
+    textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
+    textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
   } catch (error) {
     console.error("[Чистовик] Failed to apply style segment", error);
     throw error;

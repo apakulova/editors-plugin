@@ -28,6 +28,11 @@ const STYLE_FIELDS = [
     "textDecoration",
     "letterSpacing",
     "lineHeight",
+    "listOptions",
+    "listSpacing",
+    "indentation",
+    "paragraphIndent",
+    "paragraphSpacing",
 ];
 const pendingAnalyticsEvents = [];
 async function run() {
@@ -702,6 +707,13 @@ function applyStyleSegment(textNode, start, end, style) {
         textNode.setRangeTextDecoration(start, end, style.textDecoration);
         textNode.setRangeLetterSpacing(start, end, style.letterSpacing);
         textNode.setRangeLineHeight(start, end, style.lineHeight);
+        textNode.setRangeListOptions(start, end, style.listOptions);
+        if (style.listOptions.type !== "NONE") {
+            textNode.setRangeListSpacing(start, end, style.listSpacing);
+        }
+        textNode.setRangeIndentation(start, end, style.indentation);
+        textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
+        textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
     }
     catch (error) {
         console.error("[Чистовик] Failed to apply style segment", error);

@@ -10,7 +10,11 @@ const MULTIPLY = "\u00D7";
 
 const source = fs.readFileSync("dist/code.js", "utf8").replace(
   "void run();",
-  "globalThis.cleanTypography = cleanTypography; globalThis.cleanTypographyWithMetadata = cleanTypographyWithMetadata;"
+  [
+    "globalThis.cleanTypography = cleanTypography;",
+    "globalThis.cleanTypographyWithMetadata = cleanTypographyWithMetadata;",
+    "globalThis.restoreTextStyles = restoreTextStyles;",
+  ].join(" ")
 );
 const context = { console, globalThis: {} };
 
@@ -19,6 +23,7 @@ vm.runInContext(source, context);
 
 const cleanTypography = context.globalThis.cleanTypography;
 const cleanTypographyWithMetadata = context.globalThis.cleanTypographyWithMetadata;
+const restoreTextStyles = context.globalThis.restoreTextStyles;
 const developmentOptions = {
   mode: "development",
   processHiddenNodes: false,
@@ -212,5 +217,49 @@ assert.deepStrictEqual(Array.from(development.developmentMarkerIndexes), [1, 3, 
 assert.strictEqual(developmentToBeauty.text, `2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4`);
 assert.strictEqual(textDevelopmentToBeauty.text, `В${NBSP}базе 10${NBSP}000${NBSP}клиентов.`);
 assert.strictEqual(developmentWithoutMarkers.text, "Формула: 2*×*2*=*4.");
+
+{
+  const calls = [];
+  const textNode = {
+    characters: "Пункт списка",
+    setRangeFills: (start, end, value) => calls.push(["fills", start, end, value]),
+    setRangeFontName: (start, end, value) => calls.push(["fontName", start, end, value]),
+    setRangeFontSize: (start, end, value) => calls.push(["fontSize", start, end, value]),
+    setRangeIndentation: (start, end, value) => calls.push(["indentation", start, end, value]),
+    setRangeLetterSpacing: (start, end, value) => calls.push(["letterSpacing", start, end, value]),
+    setRangeLineHeight: (start, end, value) => calls.push(["lineHeight", start, end, value]),
+    setRangeListOptions: (start, end, value) => calls.push(["listOptions", start, end, value]),
+    setRangeListSpacing: (start, end, value) => calls.push(["listSpacing", start, end, value]),
+    setRangeParagraphIndent: (start, end, value) => calls.push(["paragraphIndent", start, end, value]),
+    setRangeParagraphSpacing: (start, end, value) => calls.push(["paragraphSpacing", start, end, value]),
+    setRangeTextCase: (start, end, value) => calls.push(["textCase", start, end, value]),
+    setRangeTextDecoration: (start, end, value) => calls.push(["textDecoration", start, end, value]),
+  };
+  const listStyle = {
+    characters: "Пункт списка",
+    end: 12,
+    fills: [],
+    fontName: { family: "Inter", style: "Regular" },
+    fontSize: 16,
+    indentation: 2,
+    letterSpacing: { unit: "PERCENT", value: 0 },
+    lineHeight: { unit: "AUTO" },
+    listOptions: { type: "ORDERED" },
+    listSpacing: 8,
+    paragraphIndent: 4,
+    paragraphSpacing: 12,
+    start: 0,
+    textCase: "ORIGINAL",
+    textDecoration: "NONE",
+  };
+
+  restoreTextStyles(textNode, new Array(textNode.characters.length).fill(0), [listStyle]);
+
+  assert.deepStrictEqual(calls.find(([name]) => name === "listOptions"), ["listOptions", 0, 12, { type: "ORDERED" }]);
+  assert.deepStrictEqual(calls.find(([name]) => name === "listSpacing"), ["listSpacing", 0, 12, 8]);
+  assert.deepStrictEqual(calls.find(([name]) => name === "indentation"), ["indentation", 0, 12, 2]);
+  assert.deepStrictEqual(calls.find(([name]) => name === "paragraphIndent"), ["paragraphIndent", 0, 12, 4]);
+  assert.deepStrictEqual(calls.find(([name]) => name === "paragraphSpacing"), ["paragraphSpacing", 0, 12, 12]);
+}
 
 console.log("cleanTypography tests passed");
