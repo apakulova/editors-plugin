@@ -4,6 +4,11 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
+- `TBD` — `Добавить public output для Vercel`.
+  Добавлена минимальная страница `public/index.html` и в `vercel.json` указан `outputDirectory: "public"`, потому что Vercel с preset `Other` отклонял deploy после `buildCommand: echo "No build needed"` с ошибкой отсутствующей папки `public`.
+  Serverless endpoint `api/telegram.js` остается рабочей частью проекта для Telegram webhook; `public/index.html` нужен только как статический output для успешного деплоя Vercel.
+  Код Figma-плагина не менялся: `src/code.ts`, `dist/code.js`, `src/ui.html`, `src/ui-content.js`, `manifest.json`, правила типографики, UI и уведомления не затронуты.
+  Проверки: валидность `vercel.json` через `JSON.parse`, `npm test`, `git diff --check`. После push нужно повторить deploy в Vercel.
 - `4354ddd` — `Упростить Vercel-конфиг endpoint`.
   Из `vercel.json` убрано явное поле `functions.api/telegram.js.runtime`, потому что Vercel отклонил значение `nodejs20.x` с ошибкой `Function Runtimes must have a valid version`. Vercel должен сам определить runtime для `api/telegram.js` как Node.js serverless function.
   В `vercel.json` оставлен только `buildCommand: echo "No build needed"`, чтобы Vercel не запускал сборку Figma-плагина и не искал статическую папку `public`.
