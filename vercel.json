@@ -1,8 +1,3 @@
 {
-  "buildCommand": "echo \"No build needed\"",
-  "functions": {
-    "api/telegram.js": {
-      "runtime": "nodejs20.x"
-    }
-  }
+  "buildCommand": "echo \"No build needed\""
 }
