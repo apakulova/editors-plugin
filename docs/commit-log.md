@@ -4,7 +4,7 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
-- `TBD` — `Настроить Vercel для Telegram endpoint`.
+- `819e082` — `Настроить Vercel для Telegram endpoint`.
   Добавлен `vercel.json`, чтобы Vercel не запускал сборку Figma-плагина и не искал статическую папку `public` при деплое проекта, который нужен только для serverless endpoint `api/telegram.js`.
   В конфиге задан `buildCommand: echo "No build needed"` и runtime `nodejs20.x` для `api/telegram.js`.
   Код Figma-плагина не менялся: `src/code.ts`, `dist/code.js`, `src/ui.html`, `src/ui-content.js`, `manifest.json`, правила типографики, UI и уведомления не затронуты.
