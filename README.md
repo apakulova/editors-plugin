@@ -61,6 +61,25 @@
 
 Рабочий план внедрения и будущего развития аналитики хранится в `docs/analytics-plan.md`.
 
+## Ежедневный Telegram-отчет
+
+В проекте есть GitHub Actions workflow `.github/workflows/daily-analytics.yml`. Он каждый день в `09:00` по Москве отправляет в Telegram сводку по аналитике PostHog за предыдущий календарный день по Москве. Workflow также можно запустить вручную через `workflow_dispatch`.
+
+Сообщение отправляется на русском языке. Если за день нет событий, отчет все равно отправляется с нулями.
+
+Для работы workflow в GitHub Actions должны быть добавлены secrets:
+
+- `POSTHOG_PERSONAL_API_KEY` — PostHog Personal API key для чтения аналитики;
+- `TELEGRAM_BOT_TOKEN` — токен Telegram-бота;
+- `TELEGRAM_CHAT_ID` — id чата, куда бот отправляет отчет.
+
+Обычные настройки workflow не являются секретами и зафиксированы в `.github/workflows/daily-analytics.yml`:
+
+- `POSTHOG_HOST: https://eu.posthog.com`;
+- `POSTHOG_PROJECT_ID: "184090"`.
+
+Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, а затем отправляет сообщение через Telegram Bot API.
+
 ## Beta-публикация и будущее
 
 Эта версия готовится как private organization beta для внутреннего тестирования. В `manifest.json` название временно указано как `Чистовик — Internal Beta`, чтобы beta-версия не смешивалась с будущей публичной версией.
@@ -327,6 +346,7 @@ npm run dev
 - `src/ui-content.js` — единый источник текстов вкладок, пунктов правил, подписей режимов и кнопок.
 - `src/ui.html` — готовый HTML для Figma. В нем есть размеченные блоки `chistovik-content:*`, которые обновляет скрипт синхронизации.
 - `scripts/sync-ui-content.js` — генератор, который переносит данные из `src/ui-content.js` в `src/ui.html`.
+- `scripts/send-daily-analytics.js` — скрипт ежедневного Telegram-отчета по PostHog-аналитике.
 
 Важный технический нюанс: Figma-плагин не читает отдельные локальные файлы контента во время работы. Поэтому контент хранится отдельно для удобного редактирования, но встраивается в `src/ui.html` перед сборкой. Команды `npm run build` и `npm run dev` сначала запускают `npm run sync-ui`.
 
@@ -406,6 +426,7 @@ npm run dev
 
 - Рабочая типографика должна оставаться отделенной от UI.
 - Аналитика должна оставаться отделенной от правил типографики и не должна менять поведение `cleanTypography`.
+- Ежедневный Telegram-отчет должен жить отдельно от Figma-плагина: через GitHub Actions и `scripts/send-daily-analytics.js`, без влияния на запуск плагина в Figma.
 - Быстрый запуск не должен зависеть от состояния открытого интерфейса.
 - UI должен передавать настройки в основную логику сообщением, а не дублировать правила обработки.
 - Тексты вкладок должны храниться в `src/ui-content.js`, отдельно от ядра типографики.

@@ -1,0 +1,29 @@
+name: Daily analytics report
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-daily-analytics:
+    name: Send daily analytics to Telegram
+    runs-on: ubuntu-latest
+    env:
+      POSTHOG_HOST: https://eu.posthog.com
+      POSTHOG_PROJECT_ID: "184090"
+      POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Send report
+        run: node scripts/send-daily-analytics.js

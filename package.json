@@ -7,6 +7,7 @@
     "sync-ui": "node scripts/sync-ui-content.js",
     "dev": "npm run sync-ui && tsc -p tsconfig.json --watch",
     "build": "npm run sync-ui && tsc -p tsconfig.json",
+    "send-daily-analytics": "node scripts/send-daily-analytics.js",
     "test": "npm run build && node scripts/test-clean-typography.js"
   },
   "devDependencies": {

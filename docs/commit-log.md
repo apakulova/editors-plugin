@@ -4,6 +4,15 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
+- `TBD` — `Добавить ежедневный Telegram-отчет`.
+  Добавлен ежедневный отчет по PostHog-аналитике в Telegram через GitHub Actions. Workflow `.github/workflows/daily-analytics.yml` запускается каждый день в `06:00 UTC`, что соответствует `09:00` по Москве, и поддерживает ручной запуск через `workflow_dispatch`.
+  Добавлен скрипт `scripts/send-daily-analytics.js`: он считает предыдущий календарный день по `Europe/Moscow`, запрашивает PostHog Query API/HogQL, исключает тестовые события с `is_test_event: true`, подставляет нули при отсутствии данных и отправляет русское сообщение в Telegram через Bot API.
+  Отчет включает уникальных пользователей, запуски типографа, успешные обработки, ошибки, разбивку по режимам (`default`, `beauty`, `development`), область запуска (`single_text`, `container`, `page`), опции скрытых и заблокированных слоев, открытия настроек и переходы в канал.
+  Секреты не хранятся в коде: workflow ожидает `POSTHOG_PERSONAL_API_KEY`, `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` из GitHub Actions Secrets. Обычные настройки `POSTHOG_HOST: https://eu.posthog.com` и `POSTHOG_PROJECT_ID: "184090"` зафиксированы в workflow.
+  В `package.json` добавлена команда `npm run send-daily-analytics`, README дополнен разделом `Ежедневный Telegram-отчет`.
+  Правила типографики и код Figma-плагина не менялись: `src/code.ts`, `dist/code.js`, `src/ui.html`, `src/ui-content.js`, уведомления и тестовые ожидания не затронуты.
+  Затронуты `.github/workflows/daily-analytics.yml`, `scripts/send-daily-analytics.js`, `package.json`, README и `docs/commit-log.md`.
+  Проверки: `node --check scripts/send-daily-analytics.js`, `npm test`, `git diff --check`. После push нужно открыть GitHub Actions, вручную запустить workflow `Daily analytics report` через `Run workflow` и проверить сообщение в Telegram.
 - `1dc7c2a` — `Добавить анонимную аналитику запусков`.
   Добавлена анонимная техническая аналитика через PostHog Cloud EU. Плагин отправляет события `settings_opened`, `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed` и `channel_link_clicked`.
   Для событий запуска передаются источник запуска (`quick_run` или `settings`), режим (`default`, `beauty`, `development`), флаги обработки замочков и скрытых слоев, тип области запуска (`single_text`, `container`, `page`, `multi_selection`), счетчики найденных, обработанных, измененных, пропущенных и упавших текстовых нод, длительность обработки, версия плагина и версия схемы аналитики.
