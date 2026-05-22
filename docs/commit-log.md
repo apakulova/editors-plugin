@@ -4,6 +4,11 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
+- `TBD` — `Настроить Vercel для Telegram endpoint`.
+  Добавлен `vercel.json`, чтобы Vercel не запускал сборку Figma-плагина и не искал статическую папку `public` при деплое проекта, который нужен только для serverless endpoint `api/telegram.js`.
+  В конфиге задан `buildCommand: echo "No build needed"` и runtime `nodejs20.x` для `api/telegram.js`.
+  Код Figma-плагина не менялся: `src/code.ts`, `dist/code.js`, `src/ui.html`, `src/ui-content.js`, `manifest.json`, правила типографики, UI и уведомления не затронуты.
+  Проверки: валидность `vercel.json` через `JSON.parse`, `npm test`, `git diff --check`. После push нужно повторить deploy в Vercel.
 - `7fe2121` — `Добавить команду today для Telegram-бота`.
   Добавлена основа для Telegram-команды `/today` через Vercel endpoint `api/telegram.js`. Endpoint принимает webhook от Telegram, проверяет `x-telegram-bot-api-secret-token`, разрешает ответы только для `TELEGRAM_CHAT_ID`, игнорирует чужие сообщения и неизвестные команды, а на `/today` отправляет отчет за текущий день по Москве.
   Общая логика PostHog-запросов, расчета периода по Москве, форматирования сообщения и отправки в Telegram вынесена в `scripts/lib/analytics-report.js`. Ежедневный GitHub Actions отчет теперь использует тот же модуль через тонкий скрипт `scripts/send-daily-analytics.js`.
