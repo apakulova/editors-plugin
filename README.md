@@ -103,6 +103,8 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<VERCEL_
 
 После этого команда `/today` в Telegram должна присылать отчет за текущий день. GitHub Actions продолжает отправлять ежедневный отчет за вчера.
 
+Рабочие инструкции по Telegram Bot API, webhook, командам меню, проверкам и сбросу настроек лежат в `docs/telegram-bot-guide.md`.
+
 ## Beta-публикация и будущее
 
 Эта версия готовится как private organization beta для внутреннего тестирования. В `manifest.json` название временно указано как `Чистовик — Internal Beta`, чтобы beta-версия не смешивалась с будущей публичной версией.
@@ -347,6 +349,7 @@ npm run dev
 - `tsconfig.json` — настройки TypeScript. Используется `target: ES2017`, `module: none` и `outFile: dist/code.js`, чтобы собранный файл был совместим с рантаймом Figma Plugin API.
 - `assets/plugin-icon.svg` — иконка плагина для публикации и локального предпросмотра. В `manifest.json` она не подключается: Figma задает иконку плагина через окно публикации или обновления ресурса.
 - `docs/analytics-plan.md` — согласованный план внедрения аналитики, список событий, требования к приватности и жесткое ограничение не менять типографские правила.
+- `docs/telegram-bot-guide.md` — рабочий гайд по Telegram-боту, webhook, командам Bot API и проверкам.
 
 ## План развития
 

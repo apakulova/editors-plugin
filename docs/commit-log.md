@@ -4,6 +4,11 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
+- `TBD` — `Добавить гайд по Telegram-боту`.
+  Добавлен `docs/telegram-bot-guide.md` с рабочими инструкциями по Telegram-боту: где лежит код, какие GitHub Secrets и Vercel Environment Variables нужны, как узнать `TELEGRAM_CHAT_ID`, как сгенерировать `TELEGRAM_WEBHOOK_SECRET`, как установить/проверить/удалить webhook, как добавить команду `/today` в меню бота, как посмотреть и очистить команды, как вручную проверить ежедневный отчет и что делать, если `/today` не отвечает.
+  README дополнен ссылкой на новый гайд и строкой в структуре проекта.
+  Код Figma-плагина, Vercel endpoint, GitHub Actions workflow и логика отчетов не менялись.
+  Проверки: `git diff --check`. После push гайд будет доступен в репозитории как рабочая памятка для будущих настроек Telegram-бота.
 - `1aaca25` — `Добавить public output для Vercel`.
   Добавлена минимальная страница `public/index.html` и в `vercel.json` указан `outputDirectory: "public"`, потому что Vercel с preset `Other` отклонял deploy после `buildCommand: echo "No build needed"` с ошибкой отсутствующей папки `public`.
   Serverless endpoint `api/telegram.js` остается рабочей частью проекта для Telegram webhook; `public/index.html` нужен только как статический output для успешного деплоя Vercel.
