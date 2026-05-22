@@ -116,6 +116,7 @@ SELECT
   countIf(event = 'plugin_run_started' AND properties.selection_scope = 'single_text') AS scope_single_text,
   countIf(event = 'plugin_run_started' AND properties.selection_scope = 'container') AS scope_container,
   countIf(event = 'plugin_run_started' AND properties.selection_scope = 'page') AS scope_page,
+  countIf(event = 'plugin_run_started' AND properties.selection_scope = 'multi_selection') AS scope_multi_selection,
   countIf(event = 'plugin_run_started' AND properties.process_hidden_nodes = true) AS runs_with_hidden_nodes,
   countIf(event = 'plugin_run_started' AND properties.process_locked_nodes = true) AS runs_with_locked_nodes,
   countIf(event = 'settings_opened') AS settings_opened,
@@ -168,6 +169,7 @@ async function fetchPostHogSummary(start, end) {
     "scopeSingleText",
     "scopeContainer",
     "scopePage",
+    "scopeMultiSelection",
     "runsWithHiddenNodes",
     "runsWithLockedNodes",
     "settingsOpened",
@@ -178,6 +180,8 @@ async function fetchPostHogSummary(start, end) {
 }
 
 function formatDailyMessage(dateRange, summary) {
+  const runsWithoutFinalStatus = Math.max(0, summary.typographRuns - summary.successfulRuns - summary.failedRuns);
+
   return [
     `Чистовик за ${formatRussianDate(dateRange)}`,
     "",
@@ -185,6 +189,7 @@ function formatDailyMessage(dateRange, summary) {
     `Запуски типографа: ${summary.typographRuns}`,
     `Успешные обработки: ${summary.successfulRuns}`,
     `Ошибки: ${summary.failedRuns}`,
+    `Без финального статуса: ${runsWithoutFinalStatus}`,
     "",
     "Режимы:",
     `— Быстрый запуск: ${summary.modeDefault}`,
@@ -195,6 +200,7 @@ function formatDailyMessage(dateRange, summary) {
     `— текстовый слой: ${summary.scopeSingleText}`,
     `— фрейм: ${summary.scopeContainer}`,
     `— страница: ${summary.scopePage}`,
+    `— мультивыбор: ${summary.scopeMultiSelection}`,
     "",
     "Опции:",
     `— со скрытыми слоями: ${summary.runsWithHiddenNodes}`,

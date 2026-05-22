@@ -78,7 +78,7 @@
 - `POSTHOG_HOST: https://eu.posthog.com`;
 - `POSTHOG_PROJECT_ID: "184090"`.
 
-Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, а затем отправляет сообщение через Telegram Bot API.
+Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, отдельно показывает запуски без финального статуса и мультивыбор, а затем отправляет сообщение через Telegram Bot API.
 
 ## Beta-публикация и будущее
 
