@@ -4,7 +4,7 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
-- `TBD` — `Добавить команду today для Telegram-бота`.
+- `7fe2121` — `Добавить команду today для Telegram-бота`.
   Добавлена основа для Telegram-команды `/today` через Vercel endpoint `api/telegram.js`. Endpoint принимает webhook от Telegram, проверяет `x-telegram-bot-api-secret-token`, разрешает ответы только для `TELEGRAM_CHAT_ID`, игнорирует чужие сообщения и неизвестные команды, а на `/today` отправляет отчет за текущий день по Москве.
   Общая логика PostHog-запросов, расчета периода по Москве, форматирования сообщения и отправки в Telegram вынесена в `scripts/lib/analytics-report.js`. Ежедневный GitHub Actions отчет теперь использует тот же модуль через тонкий скрипт `scripts/send-daily-analytics.js`.
   В ежедневный отчет и отчет по `/today` добавлена ссылка: `Полный дашборд с графиками (открывается только с vpn)` и URL `https://eu.posthog.com/project/184090/dashboard/695809`. Для GitHub Actions ссылка задана через обычный env `POSTHOG_DASHBOARD_URL`; в общем модуле есть такой же дефолт.
