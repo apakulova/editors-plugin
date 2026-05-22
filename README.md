@@ -79,7 +79,7 @@
 - `POSTHOG_PROJECT_ID: "184090"`.
 - `POSTHOG_DASHBOARD_URL: https://eu.posthog.com/project/184090/dashboard/695809`.
 
-Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он использует общую логику из `scripts/lib/analytics-report.js`: исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, отдельно показывает запуски без финального статуса и мультивыбор, добавляет ссылку `Полный дашборд с графиками (открывается только с vpn)`, а затем отправляет сообщение через Telegram Bot API.
+Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он использует общую логику из `scripts/lib/analytics-report.js`: исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, отдельно показывает запуски без финального статуса и мультивыбор, добавляет кликабельную ссылку `Полный дашборд с графиками (открывается только с vpn)`, а затем отправляет сообщение через Telegram Bot API. Заголовок отчета отправляется жирным через HTML-разметку Telegram.
 
 ## Telegram-команда `/today`
 

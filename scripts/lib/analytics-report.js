@@ -117,6 +117,14 @@ function formatHogqlDateTime(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function getAnalyticsQuery(start, end) {
   const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
   const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
@@ -203,7 +211,7 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
 function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   const runsWithoutFinalStatus = Math.max(0, summary.typographRuns - summary.successfulRuns - summary.failedRuns);
   const lines = [
-    `Чистовик ${dateRange.label}`,
+    `<b>✦ Чистовик ${escapeHtml(dateRange.label)}</b>`,
     "",
     `Уникальные пользователи: ${summary.uniqueUsers}`,
     `Запуски типографа: ${summary.typographRuns}`,
@@ -233,7 +241,7 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   const dashboardUrl = env.POSTHOG_DASHBOARD_URL || DEFAULT_POSTHOG_DASHBOARD_URL;
 
   if (dashboardUrl) {
-    lines.push("", "Полный дашборд с графиками (открывается только с vpn)", dashboardUrl);
+    lines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с vpn)`);
   }
 
   return lines.join("\n");
@@ -250,6 +258,7 @@ async function sendTelegramMessage(text, env = process.env, chatId = env.TELEGRA
     body: JSON.stringify({
       chat_id: chatId,
       disable_web_page_preview: true,
+      parse_mode: "HTML",
       text,
     }),
     headers: {
