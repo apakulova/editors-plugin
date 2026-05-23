@@ -4,6 +4,13 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
+- `TBD` — `Перенести ежедневный отчет на Vercel Cron`.
+  Добавлен Vercel endpoint `api/daily-analytics.js`: он принимает `GET` от Vercel Cron, проверяет заголовок `Authorization: Bearer <CRON_SECRET>`, собирает отчет за вчера через общую функцию `createAnalyticsMessage("yesterday")` и отправляет сообщение в Telegram.
+  В `vercel.json` добавлен cron `/api/daily-analytics` с расписанием `0 6 * * *`, что соответствует `09:00` по Москве. На Hobby-тарифе Vercel может выполнить cron в пределах часа.
+  Из `.github/workflows/daily-analytics.yml` убрано расписание `schedule`; `workflow_dispatch` оставлен как ручной резервный запуск, чтобы не получать дубли ежедневных сообщений.
+  README и `docs/telegram-bot-guide.md` обновлены: ежедневный отчет теперь описан как Vercel Cron, добавлен `CRON_SECRET` и инструкция по генерации секрета.
+  Код Figma-плагина не менялся: правила типографики, UI и логика обработки не затрагивались. Отдельно важно: в рабочем дереве до этой задачи уже были незакоммиченные изменения в `src/code.ts`, `dist/code.js`, README, `docs/telegram-bot-guide.md` и `scripts/lib/analytics-report.js`; эта запись описывает только Vercel Cron-часть.
+  Проверки: `node --check api/daily-analytics.js`, `node --check api/telegram.js`, `node --check scripts/lib/analytics-report.js`, `node --check scripts/send-daily-analytics.js`, `npm test`, `git diff --check`.
 - `2d2788e` — `Сохранять списки при обработке текста`.
   Исправлено сохранение форматирования списков после замены `textNode.characters`: плагин теперь сохраняет и восстанавливает по диапазонам `listOptions`, `listSpacing`, `indentation`, `paragraphIndent` и `paragraphSpacing`, поэтому маркированные и нумерованные списки не должны превращаться в обычный текст после типографики.
   README уточнен: в списке сохраняемого форматирования теперь явно указаны списки, отступы и абзацные интервалы.

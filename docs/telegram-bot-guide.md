@@ -4,7 +4,13 @@
 
 ## Что уже настроено
 
-- Бот отправляет ежедневный отчет через GitHub Actions в `09:00` по Москве.
+- Бот отправляет ежедневный отчет через Vercel Cron около `09:00` по Москве.
+- Ежедневный cron вызывает Vercel endpoint:
+
+```text
+https://chistovik-plugin.vercel.app/api/daily-analytics
+```
+
 - Команда `/today` работает через Vercel endpoint:
 
 ```text
@@ -21,10 +27,11 @@ https://eu.posthog.com/project/184090/dashboard/695809
 
 ## Где лежит код
 
-- `scripts/send-daily-analytics.js` — ежедневный отчет за вчера через GitHub Actions.
+- `api/daily-analytics.js` — Vercel endpoint для ежедневного отчета за вчера.
+- `scripts/send-daily-analytics.js` — резервный ручной отчет за вчера через GitHub Actions.
 - `scripts/lib/analytics-report.js` — общая логика PostHog-запросов, форматирования сообщений и отправки в Telegram.
 - `api/telegram.js` — Vercel endpoint для Telegram webhook и команды `/today`.
-- `.github/workflows/daily-analytics.yml` — расписание ежедневного отчета.
+- `.github/workflows/daily-analytics.yml` — ручной резервный запуск ежедневного отчета.
 - `vercel.json` — конфиг Vercel.
 - `public/index.html` — минимальный static output для Vercel.
 
@@ -32,7 +39,7 @@ https://eu.posthog.com/project/184090/dashboard/695809
 
 ### GitHub Actions Secrets
 
-Нужны для ежедневного отчета:
+Нужны только для ручного резервного запуска ежедневного отчета:
 
 ```text
 POSTHOG_PERSONAL_API_KEY
@@ -42,7 +49,7 @@ TELEGRAM_CHAT_ID
 
 ### Vercel Environment Variables
 
-Нужны для команды `/today`:
+Нужны для команды `/today` и ежедневного отчета через Vercel Cron:
 
 ```text
 POSTHOG_PERSONAL_API_KEY
@@ -52,9 +59,10 @@ POSTHOG_DASHBOARD_URL=https://eu.posthog.com/project/184090/dashboard/695809
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
 TELEGRAM_WEBHOOK_SECRET
+CRON_SECRET
 ```
 
-Токены, API-ключи и `TELEGRAM_WEBHOOK_SECRET` не хранить в коде и не публиковать.
+Токены, API-ключи, `TELEGRAM_WEBHOOK_SECRET` и `CRON_SECRET` не хранить в коде и не публиковать.
 
 ## Как узнать chat_id
 
@@ -106,6 +114,22 @@ TELEGRAM_WEBHOOK_SECRET
 ```
 
 Эта же строка нужна при установке webhook.
+
+## Как сгенерировать CRON_SECRET
+
+`CRON_SECRET` защищает endpoint ежедневного отчета. Vercel Cron будет отправлять его в заголовке `Authorization: Bearer <CRON_SECRET>`, а `api/daily-analytics.js` проверит этот заголовок перед отправкой сообщения.
+
+Сгенерировать можно так:
+
+```bash
+openssl rand -hex 32
+```
+
+Результат сохранить в Vercel как Environment Variable:
+
+```text
+CRON_SECRET
+```
 
 ## Как установить webhook
 
@@ -193,11 +217,15 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteMyCommands
 
 ## Как вручную проверить ежедневный отчет
 
+Основной ежедневный отчет теперь отправляет Vercel Cron. Для быстрой ручной проверки без ожидания cron можно использовать резервный GitHub Actions workflow:
+
 1. Открыть GitHub repository.
 2. Перейти в `Actions`.
 3. Выбрать workflow `Daily analytics report`.
 4. Нажать `Run workflow`.
 5. Проверить сообщение в Telegram.
+
+После деплоя Vercel отдельно проверить, что в проекте появился cron `/api/daily-analytics`. На Hobby-тарифе он может сработать не ровно в `09:00`, а в пределах часа.
 
 ## Как проверить команду /today
 

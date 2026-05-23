@@ -63,21 +63,23 @@
 
 ## Ежедневный Telegram-отчет
 
-В проекте есть GitHub Actions workflow `.github/workflows/daily-analytics.yml`. Он каждый день в `09:00` по Москве отправляет в Telegram сводку по аналитике PostHog за предыдущий календарный день по Москве. Workflow также можно запустить вручную через `workflow_dispatch`.
+Ежедневная отправка работает через Vercel Cron и endpoint `api/daily-analytics.js`. Vercel один раз в день вызывает `/api/daily-analytics`, endpoint проверяет `CRON_SECRET`, собирает сводку PostHog за предыдущий календарный день по Москве и отправляет ее в Telegram.
+
+В `vercel.json` задан cron `0 6 * * *`, то есть `09:00` по Москве. На бесплатном Hobby-тарифе Vercel может выполнить cron не ровно в указанную минуту, а в пределах часа.
 
 Сообщение отправляется на русском языке. Если за день нет событий, отчет все равно отправляется с нулями.
 
-Для работы workflow в GitHub Actions должны быть добавлены secrets:
+Для ежедневного отчета во Vercel должны быть добавлены Environment Variables:
 
 - `POSTHOG_PERSONAL_API_KEY` — PostHog Personal API key для чтения аналитики;
+- `POSTHOG_HOST` — `https://eu.posthog.com`;
+- `POSTHOG_PROJECT_ID` — `184090`;
+- `POSTHOG_DASHBOARD_URL` — `https://eu.posthog.com/project/184090/dashboard/695809`;
 - `TELEGRAM_BOT_TOKEN` — токен Telegram-бота;
-- `TELEGRAM_CHAT_ID` — id чата, куда бот отправляет отчет.
+- `TELEGRAM_CHAT_ID` — id чата, куда бот отправляет отчет;
+- `CRON_SECRET` — длинная случайная строка для защиты cron endpoint.
 
-Обычные настройки workflow не являются секретами и зафиксированы в `.github/workflows/daily-analytics.yml`:
-
-- `POSTHOG_HOST: https://eu.posthog.com`;
-- `POSTHOG_PROJECT_ID: "184090"`.
-- `POSTHOG_DASHBOARD_URL: https://eu.posthog.com/project/184090/dashboard/695809`.
+GitHub Actions workflow `.github/workflows/daily-analytics.yml` оставлен только для ручного резервного запуска через `workflow_dispatch`; расписание из него отключено, чтобы ежедневные сообщения не дублировались.
 
 Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он использует общую логику из `scripts/lib/analytics-report.js`: исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, отдельно показывает запуски без финального статуса и мультивыбор, добавляет кликабельную ссылку `Полный дашборд с графиками (открывается только с vpn)`, а затем отправляет сообщение через Telegram Bot API. Заголовок отчета отправляется жирным через HTML-разметку Telegram.
 
@@ -101,7 +103,7 @@
 https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<VERCEL_URL>/api/telegram&secret_token=<TELEGRAM_WEBHOOK_SECRET>
 ```
 
-После этого команда `/today` в Telegram должна присылать отчет за текущий день. GitHub Actions продолжает отправлять ежедневный отчет за вчера.
+После этого команда `/today` в Telegram должна присылать отчет за текущий день. Ежедневный отчет за вчера отправляет Vercel Cron.
 
 Рабочие инструкции по Telegram Bot API, webhook, командам меню, проверкам и сбросу настроек лежат в `docs/telegram-bot-guide.md`.
 
@@ -375,6 +377,7 @@ npm run dev
 - `scripts/send-daily-analytics.js` — скрипт ежедневного Telegram-отчета по PostHog-аналитике.
 - `scripts/lib/analytics-report.js` — общая логика PostHog-запросов, форматирования Telegram-сообщений и отправки сообщений.
 - `api/telegram.js` — Vercel endpoint для Telegram webhook и команды `/today`.
+- `api/daily-analytics.js` — Vercel endpoint для ежедневного Telegram-отчета за вчера.
 
 Важный технический нюанс: Figma-плагин не читает отдельные локальные файлы контента во время работы. Поэтому контент хранится отдельно для удобного редактирования, но встраивается в `src/ui.html` перед сборкой. Команды `npm run build` и `npm run dev` сначала запускают `npm run sync-ui`.
 
@@ -454,7 +457,7 @@ npm run dev
 
 - Рабочая типографика должна оставаться отделенной от UI.
 - Аналитика должна оставаться отделенной от правил типографики и не должна менять поведение `cleanTypography`.
-- Ежедневный Telegram-отчет должен жить отдельно от Figma-плагина: через GitHub Actions и `scripts/send-daily-analytics.js`, без влияния на запуск плагина в Figma.
+- Ежедневный Telegram-отчет должен жить отдельно от Figma-плагина: через Vercel Cron и `api/daily-analytics.js`, без влияния на запуск плагина в Figma.
 - Telegram-команды должны жить отдельно от Figma-плагина: через Vercel endpoint `api/telegram.js`, без изменений `src/code.ts`, `dist/code.js`, `src/ui.html`, `src/ui-content.js` и `manifest.json`.
 - Быстрый запуск не должен зависеть от состояния открытого интерфейса.
 - UI должен передавать настройки в основную логику сообщением, а не дублировать правила обработки.
