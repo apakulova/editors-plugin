@@ -4,7 +4,7 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
-- `TBD` — `Перенести ежедневный отчет на Vercel Cron`.
+- `a5e3e36` — `Перенести ежедневный отчет на Vercel Cron`.
   Добавлен Vercel endpoint `api/daily-analytics.js`: он принимает `GET` от Vercel Cron, проверяет заголовок `Authorization: Bearer <CRON_SECRET>`, собирает отчет за вчера через общую функцию `createAnalyticsMessage("yesterday")` и отправляет сообщение в Telegram.
   В `vercel.json` добавлен cron `/api/daily-analytics` с расписанием `0 6 * * *`, что соответствует `09:00` по Москве. На Hobby-тарифе Vercel может выполнить cron в пределах часа.
   Из `.github/workflows/daily-analytics.yml` убрано расписание `schedule`; `workflow_dispatch` оставлен как ручной резервный запуск, чтобы не получать дубли ежедневных сообщений.
