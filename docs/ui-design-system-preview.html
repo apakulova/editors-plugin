@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>UI-дизайн-система Чистовика</title>
+    <style>
+      :root {
+        --accent: #065c5b;
+        --accent-hover: #054a49;
+        --bg: #ffffff;
+        --bg-secondary: #f7f7f5;
+        --bg-note: #f0f4f3;
+        --border: #dbdbd9;
+        --text: #141414;
+        --text-secondary: #757575;
+        --text-disabled: #b8b8b8;
+        --text-onbrand: #ffffff;
+        --dev-star: #ff4053;
+        font-family: Manrope, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        margin: 0;
+        padding: 32px;
+      }
+
+      main {
+        display: grid;
+        gap: 28px;
+        max-width: 1180px;
+      }
+
+      h1 {
+        font-size: 24px;
+        line-height: 30px;
+        margin: 0;
+      }
+
+      h2 {
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 20px;
+        margin: 0 0 12px;
+      }
+
+      p {
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 16px;
+        margin: 0;
+      }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        line-height: 16px;
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      code {
+        background: var(--bg-secondary);
+        border-radius: 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        padding: 1px 4px;
+      }
+
+      .section {
+        display: grid;
+        gap: 10px;
+      }
+
+      .swatch {
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        display: inline-block;
+        height: 18px;
+        width: 40px;
+      }
+
+      .screen-title {
+        color: var(--text);
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 20px;
+      }
+
+      .tab,
+      .mode-name {
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 18px;
+      }
+
+      .option-title {
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 400;
+        line-height: 18px;
+      }
+
+      .section-title {
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 16px;
+      }
+
+      .body-secondary {
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 16px;
+      }
+
+      .body-primary {
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 16px;
+      }
+
+      .caption-secondary {
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 400;
+        line-height: 15px;
+      }
+
+      .small-example {
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 15px;
+      }
+
+      .text-link {
+        color: var(--accent);
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .button-sample {
+        align-items: center;
+        background: var(--accent);
+        border-radius: 8px;
+        color: var(--text-onbrand);
+        display: inline-flex;
+        font-size: 14px;
+        font-weight: 500;
+        height: 40px;
+        line-height: 18px;
+        padding: 0 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="section">
+        <h1>UI-дизайн-система «Чистовика»</h1>
+        <p>Визуальная версия документа: цвета, кегли, веса и примеры показаны так, как должны выглядеть в UI.</p>
+      </header>
+
+      <section>
+        <h2>Цвета</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Роль</th>
+              <th>Значение</th>
+              <th>Образец</th>
+              <th>Где используется</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="color: var(--text); font-weight: 700;">Основной текст</td><td><code>#141414</code></td><td><span class="swatch" style="background: #141414;"></span></td><td>заголовки, активные вкладки, основной текст строк</td></tr>
+            <tr><td style="color: var(--text-secondary); font-weight: 700;">Вторичный текст</td><td><code>#757575</code></td><td><span class="swatch" style="background: #757575;"></span></td><td>подписи, пояснения, описания</td></tr>
+            <tr><td style="color: var(--text-disabled); font-weight: 700;">Отключенный текст</td><td><code>#B8B8B8</code></td><td><span class="swatch" style="background: #B8B8B8;"></span></td><td>disabled-состояния</td></tr>
+            <tr><td style="background: var(--accent); color: var(--text-onbrand); font-weight: 700;">Текст на акценте</td><td><code>#FFFFFF</code></td><td><span class="swatch" style="background: #FFFFFF;"></span></td><td>основная кнопка</td></tr>
+            <tr><td style="color: var(--accent); font-weight: 700;">Акцент</td><td><code>#065C5B</code></td><td><span class="swatch" style="background: #065C5B;"></span></td><td>кнопка, активные элементы, маркеры, ссылки</td></tr>
+            <tr><td style="color: var(--accent-hover); font-weight: 700;">Акцент hover</td><td><code>#054A49</code></td><td><span class="swatch" style="background: #054A49;"></span></td><td>hover основной кнопки</td></tr>
+            <tr><td style="background: #757575; color: var(--bg); font-weight: 700;">Фон</td><td><code>#FFFFFF</code></td><td><span class="swatch" style="background: #FFFFFF;"></span></td><td>окно, колонки, строки</td></tr>
+            <tr><td style="background: #757575; color: var(--bg-secondary); font-weight: 700;">Вторичный фон</td><td><code>#F7F7F5</code></td><td><span class="swatch" style="background: #F7F7F5;"></span></td><td>спокойные подложки</td></tr>
+            <tr><td style="background: #757575; color: var(--bg-note); font-weight: 700;">Мягкая акцентная заливка</td><td><code>#F0F4F3</code></td><td><span class="swatch" style="background: #F0F4F3;"></span></td><td>активная строка, заметка</td></tr>
+            <tr><td style="color: var(--border); font-weight: 700;">Граница</td><td><code>#DBDBD9</code></td><td><span class="swatch" style="background: #DBDBD9;"></span></td><td>разделители, рамки</td></tr>
+            <tr><td style="color: var(--dev-star); font-weight: 700;">Development-звездочка</td><td><code>#FF4053</code></td><td><span class="swatch" style="background: #FF4053;"></span></td><td>служебные звездочки режима «Для разработки»</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Текстовая шкала</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Роль</th>
+              <th>Класс</th>
+              <th>Кегль</th>
+              <th>Line-height</th>
+              <th>Вес</th>
+              <th>Цвет</th>
+              <th>Пример</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Заголовок экрана</td><td><code>.group-title</code></td><td>16px</td><td>20px</td><td>700</td><td><code>#141414</code></td><td><span class="screen-title">Как обработать текст?</span></td></tr>
+            <tr><td>Вкладка</td><td><code>.tab</code></td><td>14px</td><td>18px</td><td>700</td><td><code>#141414</code></td><td><span class="tab">Типограф</span></td></tr>
+            <tr><td>Название режима</td><td><code>.mode-name</code></td><td>14px</td><td>18px</td><td>700</td><td><code>#141414</code></td><td><span class="mode-name">Для красоты</span></td></tr>
+            <tr><td>Текст чекбокса</td><td><code>.option-title</code></td><td>13px</td><td>18px</td><td>400</td><td><code>#141414</code></td><td><span class="option-title">Обработать даже скрытые слои</span></td></tr>
+            <tr><td>Подзаголовок</td><td><code>.rule summary</code></td><td>12px</td><td>16px</td><td>700</td><td><code>#141414</code></td><td><span class="section-title">Кавычки и пунктуация</span></td></tr>
+            <tr><td>Основной поясняющий текст</td><td><code>.rule-point</code></td><td>12px</td><td>16px</td><td>400</td><td><code>#757575</code></td><td><span class="body-secondary">С * на месте неразрывных пробелов</span></td></tr>
+            <tr><td>Основной текст строки</td><td><code>.text-preview</code></td><td>12px</td><td>16px</td><td>400</td><td><code>#141414</code></td><td><span class="body-primary">... пункт Умрёшь — начнёшь опять</span></td></tr>
+            <tr><td>Мелкая вторичная подпись</td><td><code>.code</code></td><td>11px</td><td>15px</td><td>400</td><td><code>#757575</code></td><td><span class="caption-secondary">Код: load_fonts</span></td></tr>
+            <tr><td>Мелкий пример</td><td><code>.rule-example</code></td><td>11px</td><td>15px</td><td>700</td><td><code>#141414</code></td><td><span class="small-example">слово — слово</span></td></tr>
+            <tr><td>Ссылка</td><td><code>.about-link</code></td><td>наследует</td><td>наследует</td><td>700</td><td><code>#065C5B</code></td><td><a class="text-link" href="https://t.me/akanna" target="_blank" rel="noreferrer">Заходите в гости →</a></td></tr>
+            <tr><td>Кнопка</td><td><code>.primary</code></td><td>14px</td><td>18px</td><td>500</td><td><code>#FFFFFF</code></td><td><span class="button-sample">Запустить типограф</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </body>
+</html>
