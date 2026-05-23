@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Превью отчета об ошибках Чистовика</title>
+    <style>
+      :root {
+        --accent-color: #065c5b;
+        --accent-color-hover: #054a49;
+        --preview-bg: #f1f2f4;
+        --figma-color-bg: #ffffff;
+        --figma-color-bg-brand: var(--accent-color);
+        --figma-color-bg-brand-hover: var(--accent-color-hover);
+        --figma-color-bg-hover: #f5f5f5;
+        --figma-color-bg-secondary: #f7f7f5;
+        --figma-color-border: #dbdbd9;
+        --figma-color-border-brand: var(--accent-color);
+        --figma-color-icon: #141414;
+        --figma-color-text: #141414;
+        --figma-color-text-disabled: #b8b8b8;
+        --figma-color-text-onbrand: #ffffff;
+        --figma-color-text-secondary: #757575;
+        --figma-color-bg-note: #f0f4f3;
+        color-scheme: light;
+        font-family: Manrope, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--preview-bg);
+        color: var(--figma-color-text);
+        margin: 0;
+        min-height: 100vh;
+        padding: 32px;
+      }
+
+      .preview-grid {
+        display: grid;
+        gap: 28px;
+        grid-template-columns: repeat(2, minmax(0, 640px));
+        justify-content: center;
+      }
+
+      .example {
+        display: grid;
+        gap: 10px;
+      }
+
+      .example-title {
+        color: var(--figma-color-text-secondary);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0;
+        line-height: 18px;
+      }
+
+      .window {
+        background: var(--figma-color-bg);
+        border: 1px solid var(--figma-color-border);
+        border-radius: 14px;
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.14);
+        overflow: hidden;
+        width: 640px;
+      }
+
+      .window-bar {
+        align-items: center;
+        border-bottom: 1px solid var(--figma-color-border);
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 24px 1fr 24px;
+        height: 52px;
+        padding: 0 14px;
+      }
+
+      .window-icon {
+        height: 24px;
+        overflow: hidden;
+        width: 24px;
+      }
+
+      .window-icon img {
+        display: block;
+        height: 100%;
+        width: 100%;
+      }
+
+      .window-title {
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 20px;
+      }
+
+      .window-close {
+        color: var(--figma-color-text);
+        font-size: 30px;
+        font-weight: 300;
+        line-height: 24px;
+        text-align: center;
+      }
+
+      .report {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 480px;
+        min-height: 480px;
+      }
+
+      .report-intro {
+        border-bottom: 1px solid var(--figma-color-border);
+        display: grid;
+        gap: 6px;
+        padding: 16px 16px 14px;
+      }
+
+      .report-title {
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 20px;
+        margin: 0;
+      }
+
+      .report-text {
+        color: var(--figma-color-text-secondary);
+        font-size: 12px;
+        line-height: 17px;
+        margin: 0;
+      }
+
+      .report-layout {
+        display: grid;
+        grid-template-columns: 244px 1fr;
+        min-height: 0;
+      }
+
+      .result-list {
+        background: var(--figma-color-bg);
+        border-right: 1px solid var(--figma-color-border);
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-width: 0;
+      }
+
+      .list-body {
+        overflow: hidden;
+        padding: 0;
+      }
+
+      .result-item {
+        appearance: none;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        color: inherit;
+        cursor: default;
+        display: grid;
+        gap: 3px;
+        min-height: 58px;
+        padding: 7px 10px;
+        text-align: left;
+        width: 100%;
+      }
+
+      .result-item.active {
+        background: var(--figma-color-bg-note);
+      }
+
+      .text-preview {
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        display: -webkit-box;
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 16px;
+        overflow: hidden;
+      }
+
+      .layer-name {
+        color: var(--figma-color-text-secondary);
+        font-size: 11px;
+        line-height: 14px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .detail {
+        display: grid;
+        grid-template-rows: 1fr auto;
+        min-width: 0;
+      }
+
+      .detail-body {
+        align-content: start;
+        display: grid;
+        gap: 8px;
+        overflow: hidden;
+        padding: 12px 16px 8px;
+      }
+
+      .detail-heading {
+        display: grid;
+        gap: 0;
+      }
+
+      .detail-title {
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0;
+        line-height: 17px;
+        margin: 0;
+      }
+
+      .code {
+        color: var(--figma-color-text-secondary);
+        font-size: 10px;
+        line-height: 13px;
+      }
+
+      .section {
+        display: grid;
+        gap: 2px;
+      }
+
+      .section-title {
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 16px;
+      }
+
+      .section-text,
+      .suggestions {
+        color: var(--figma-color-text-secondary);
+        font-size: 12px;
+        line-height: 16px;
+        margin: 0;
+      }
+
+      .suggestions {
+        display: grid;
+        gap: 1px;
+        padding: 0;
+      }
+
+      .suggestions li {
+        list-style: none;
+        padding-left: 16px;
+        position: relative;
+      }
+
+      .suggestions li::before {
+        background: transparent;
+        color: var(--figma-color-bg-brand);
+        content: "✦";
+        font-size: 10px;
+        height: auto;
+        left: 0;
+        line-height: 16px;
+        position: absolute;
+        top: 0;
+        width: auto;
+      }
+
+      .detail-footer {
+        align-items: center;
+        display: flex;
+        justify-content: flex-end;
+        min-height: 54px;
+        padding: 6px 16px 14px;
+      }
+
+      .detail-footer.empty {
+        display: none;
+      }
+
+      .button {
+        appearance: none;
+        background: var(--figma-color-bg-brand);
+        border: 0;
+        border-radius: 8px;
+        color: var(--figma-color-text-onbrand);
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 18px;
+        min-height: 40px;
+        padding: 0 14px;
+        white-space: nowrap;
+      }
+
+      .button.secondary {
+        background: var(--figma-color-bg-note);
+        color: var(--figma-color-bg-brand);
+      }
+
+      @media (max-width: 1380px) {
+        .preview-grid {
+          grid-template-columns: 640px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="preview-grid">
+      <section class="example" aria-label="Общая ошибка запуска">
+        <div class="example-title">Общая ошибка запуска</div>
+        <div class="window">
+          <div class="window-bar">
+            <div class="window-icon">
+              <img src="../assets/plugin-icon.svg" alt="" />
+            </div>
+            <div class="window-title">Чистовик</div>
+            <div class="window-close">×</div>
+          </div>
+
+          <div class="report">
+            <header class="report-intro">
+              <h1 class="report-title">Не удалось запустить типограф</h1>
+              <p class="report-text">Нажмите на строчку, чтобы посмотреть подсказки. Если исправить не выходит, пришлите Ане Акуловой в ТГ (@akanna) скриншот и ссылку на файл — будем разбираться ♡</p>
+            </header>
+
+            <div class="report-layout">
+              <aside class="result-list" aria-label="Список ошибок">
+                <div class="list-body">
+                  <button class="result-item active" type="button">
+                    <span class="text-preview">Общая ошибка запуска</span>
+                    <span class="layer-name">Нет конкретного текстового слоя</span>
+                  </button>
+                </div>
+              </aside>
+
+              <section class="detail" aria-label="Подробности ошибки">
+                <div class="detail-body">
+                  <div class="detail-heading">
+                    <h1 class="detail-title">Поиск текстовых слоёв</h1>
+                    <div class="code">Код: collect_nodes</div>
+                  </div>
+
+                  <div class="section">
+                    <div class="section-title">Что случилось</div>
+                    <p class="section-text">Плагин сломался ещё до обработки текста — не получилось собрать все текстовые слои при обходе выбранного фрейма, страницы, заблокированных или скрытых слоёв.</p>
+                  </div>
+
+                  <div class="section">
+                    <div class="section-title">Что можно попробовать</div>
+                    <ul class="suggestions">
+                      <li>Запустить типограф на одном текстовом слое.</li>
+                      <li>Снять выделение и попробовать обработать страницу.</li>
+                      <li>Проверить скрытые и заблокированные объекты в выделении.</li>
+                      <li>Перезапустить Figma, если ошибка повторяется.</li>
+                    </ul>
+                  </div>
+                </div>
+
+              <footer class="detail-footer empty" aria-hidden="true"></footer>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="example" aria-label="Ошибка текстового слоя">
+        <div class="example-title">Ошибка конкретного текстового слоя</div>
+        <div class="window">
+          <div class="window-bar">
+            <div class="window-icon">
+              <img src="../assets/plugin-icon.svg" alt="" />
+            </div>
+            <div class="window-title">Чистовик</div>
+            <div class="window-close">×</div>
+          </div>
+
+          <div class="report">
+            <header class="report-intro">
+              <h1 class="report-title">Не удалось обработать 3 слоя</h1>
+              <p class="report-text">Нажмите на строчку, чтобы посмотреть подсказки. Если исправить не выходит, пришлите Ане Акуловой в ТГ (@akanna) скриншот и ссылку на файл — будем разбираться ♡</p>
+            </header>
+
+            <div class="report-layout">
+              <aside class="result-list" aria-label="Список ошибок">
+                <div class="list-body">
+                  <button class="result-item active" type="button">
+                    <span class="text-preview">... пункт Умрёшь — начнёшь опять сначала. И повторится всё, как встарь...</span>
+                    <span class="layer-name">hero / quote / line 2</span>
+                  </button>
+                  <button class="result-item" type="button">
+                    <span class="text-preview">Стоимость 1000 руб. в месяц, первые 30 дней бесплатно</span>
+                    <span class="layer-name">pricing / card / caption</span>
+                  </button>
+                  <button class="result-item" type="button">
+                    <span class="text-preview">Он сказал "Use 'clean typography' mode" и улыбнулся</span>
+                    <span class="layer-name">modal / description</span>
+                  </button>
+                </div>
+              </aside>
+
+              <section class="detail" aria-label="Подробности ошибки">
+                <div class="detail-body">
+                  <div class="detail-heading">
+                    <h1 class="detail-title">Загрузка шрифтов</h1>
+                    <div class="code">Код: load_fonts</div>
+                  </div>
+
+                  <div class="section">
+                    <div class="section-title">Что случилось</div>
+                    <p class="section-text">Плагин нашёл текстовый слой, но не смог загрузить один из шрифтов. Figma не разрешает менять текст, пока шрифты слоя не загружены.</p>
+                  </div>
+
+                  <div class="section">
+                    <div class="section-title">Что можно попробовать</div>
+                    <ul class="suggestions">
+                      <li>Проверить, нет ли в слое missing font.</li>
+                      <li>Заменить недоступный шрифт на доступный.</li>
+                      <li>Скопировать текст в новый слой и запустить типограф ещё раз.</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <footer class="detail-footer">
+                  <button class="button" type="button">Показать в макете</button>
+                </footer>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
