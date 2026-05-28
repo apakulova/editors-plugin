@@ -57,7 +57,7 @@ module.exports = {
         "Длинное тире между словами: <span class=\"rule-example\">слово&nbsp;— слово</span>",
         "Диапазоны чисел: <span class=\"rule-example\">10-20, 10&nbsp;– 20 <span class=\"rule-arrow\">→</span> 10–20</span>",
         "Римские диапазоны в&nbsp;контексте: <span class=\"rule-example\">X-XI век <span class=\"rule-arrow\">→</span> X–XI век, главы I-III <span class=\"rule-arrow\">→</span> главы I–III</span>",
-        "Неразрывный дефис внутри слов на&nbsp;кириллице и&nbsp;латинице: <span class=\"rule-example\">кто‑то, X‑ray</span>",
+        "Неразрывный дефис в&nbsp;словах: <span class=\"rule-example\">из-за, из-под, кто-то, что-либо, где-нибудь, кое-как, все-таки, всё-таки</span>",
         "Тире в&nbsp;начале строки",
         "Неразрывный пробел перед длинным тире",
       ],

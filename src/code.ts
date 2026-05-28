@@ -1543,7 +1543,9 @@ function getClosingQuote(script: QuoteScript, level: number): string {
 
 function cleanupDashesAndHyphens(input: string): string {
   try {
-    return input
+    let text = restoreSpacedHyphenatedWords(input);
+
+    return text
       .replace(/^([ \t\u00A0]*)([-–])(?=[ \t\u00A0])/gm, `$1${EM_DASH}`)
       .replace(/([^ \t\u00A0\n\r\d])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
       .replace(/([A-Za-zА-Яа-яЁё])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
@@ -1580,6 +1582,30 @@ function cleanupDashesAndHyphens(input: string): string {
       .replace(/([A-Za-zА-Яа-яЁё])-([A-Za-zА-Яа-яЁё])/g, `$1${NB_HYPHEN}$2`);
   } catch (error) {
     console.error("[Чистовик] Failed to clean dashes and hyphens", error);
+    throw error;
+  }
+}
+
+function restoreSpacedHyphenatedWords(input: string): string {
+  try {
+    const patterns: Array<[RegExp, string]> = [
+      [new RegExp(`(^|[^${LETTERS}])(из)[ \\t\\u00A0]+(за)(?=$|[^${LETTERS}])`, "gi"), "$1$2-$3"],
+      [new RegExp(`(^|[^${LETTERS}])(из)[ \\t\\u00A0]+(под)(?=$|[^${LETTERS}])`, "gi"), "$1$2-$3"],
+      [new RegExp(`(^|[^${LETTERS}])(кто)[ \\t\\u00A0]+(то)(?=$|[^${LETTERS}])`, "gi"), "$1$2-$3"],
+      [new RegExp(`(^|[^${LETTERS}])(что)[ \\t\\u00A0]+(либо)(?=$|[^${LETTERS}])`, "gi"), "$1$2-$3"],
+      [new RegExp(`(^|[^${LETTERS}])(где)[ \\t\\u00A0]+(нибудь)(?=$|[^${LETTERS}])`, "gi"), "$1$2-$3"],
+      [new RegExp(`(^|[^${LETTERS}])(кое)[ \\t\\u00A0]+(как)(?=$|[^${LETTERS}])`, "gi"), "$1$2-$3"],
+      [new RegExp(`(^|[^${LETTERS}])(все|всё)[ \\t\\u00A0]+(таки)(?=$|[^${LETTERS}])`, "gi"), "$1$2-$3"],
+    ];
+    let text = input;
+
+    for (const [pattern, replacement] of patterns) {
+      text = text.replace(pattern, replacement);
+    }
+
+    return text;
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore spaced hyphenated words", error);
     throw error;
   }
 }

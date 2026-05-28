@@ -101,6 +101,14 @@ expectClean("M-Video", `M${NB_HYPHEN}Video`);
 expectClean("X-ray", `X${NB_HYPHEN}ray`);
 expectClean("план B-C", `план B${NB_HYPHEN}C`);
 expectClean("X-X", `X${NB_HYPHEN}X`);
+expectClean("из за угла", `из${NB_HYPHEN}за угла`);
+expectClean("из под стола", `из${NB_HYPHEN}под стола`);
+expectClean("кто то пришёл", `кто${NB_HYPHEN}то пришёл`);
+expectClean("что либо ещё", `что${NB_HYPHEN}либо ещё`);
+expectClean("где нибудь рядом", `где${NB_HYPHEN}нибудь рядом`);
+expectClean("кое как сделали", `кое${NB_HYPHEN}как сделали`);
+expectClean("все таки получилось", `все${NB_HYPHEN}таки получилось`);
+expectClean("всё таки получилось", `всё${NB_HYPHEN}таки получилось`);
 
 expectClean("10 - 5 = 5", `10${NBSP}${MINUS}${NBSP}5${NBSP}=${NBSP}5`);
 expectClean("10 - 5 + 2", `10${NBSP}${MINUS}${NBSP}5${NBSP}+${NBSP}2`);
