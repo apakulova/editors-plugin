@@ -1545,40 +1545,10 @@ function cleanupDashesAndHyphens(input: string): string {
   try {
     let text = restoreSpacedHyphenatedWords(input);
 
-    return text
+    return normalizeEditorialRanges(text)
       .replace(/^([ \t\u00A0]*)([-–])(?=[ \t\u00A0])/gm, `$1${EM_DASH}`)
       .replace(/([^ \t\u00A0\n\r\d])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
       .replace(/([A-Za-zА-Яа-яЁё])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
-      .replace(/(^|[^\d])(\d+(?:[.,]\d+)?)[ \t\u00A0]*[-–—][ \t\u00A0]*(\d+(?:[.,]\d+)?)(?=$|[^\d])/g, (match: string, prefix: string, startNumber: string, endNumber: string, offset: number, fullText: string) => {
-        try {
-          const rangeStart = offset + prefix.length;
-          const rangeEnd = rangeStart + match.length - prefix.length;
-
-          if (isProtectedNumericRange(fullText, rangeStart, rangeEnd)) {
-            return match;
-          }
-
-          return `${prefix}${startNumber}${EN_DASH}${endNumber}`;
-        } catch (error) {
-          console.error("[Чистовик] Failed to normalize numeric range", error);
-          return match;
-        }
-      })
-      .replace(/(^|[^A-Za-zА-Яа-яЁё])([IVXLCDM]+)[ \t\u00A0]*[-–—][ \t\u00A0]*([IVXLCDM]+)(?=$|[^A-Za-zА-Яа-яЁё\d])/g, (match: string, prefix: string, startRoman: string, endRoman: string, offset: number, fullText: string) => {
-        try {
-          const rangeStart = offset + prefix.length;
-          const rangeEnd = rangeStart + match.length - prefix.length;
-
-          if (isProtectedRomanRange(fullText, rangeStart, rangeEnd) || !hasRomanRangeContext(fullText, rangeStart, rangeEnd)) {
-            return match;
-          }
-
-          return `${prefix}${startRoman}${EN_DASH}${endRoman}`;
-        } catch (error) {
-          console.error("[Чистовик] Failed to normalize roman numeral range", error);
-          return match;
-        }
-      })
       .replace(/([A-Za-zА-Яа-яЁё])-([A-Za-zА-Яа-яЁё])/g, `$1${NB_HYPHEN}$2`);
   } catch (error) {
     console.error("[Чистовик] Failed to clean dashes and hyphens", error);
@@ -1610,15 +1580,128 @@ function restoreSpacedHyphenatedWords(input: string): string {
   }
 }
 
+function normalizeEditorialRanges(input: string): string {
+  try {
+    let text = input;
+    const month = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
+    const year = `[12][ \\t\\u00A0]?\\d{3}`;
+    const wordDate = `\\d{1,2}[ \\t\\u00A0]+(?:${month})(?:[ \\t\\u00A0]+${year}(?:[ \\t\\u00A0]+(?:г\\.?|года|году))?)?`;
+    const quarterDate = `[IVXLCDM]+[ \\t\\u00A0]+квартал[ \\t\\u00A0]+${year}`;
+
+    text = text.replace(/(^|[^\d])(\d{1,3}(?:[ \t\u00A0]\d{3})+)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,3}(?:[ \t\u00A0]\d{3})+)(?=$|[^\d])/g, "$1$2 — $3");
+    text = text.replace(/(^|[^\d.])(\d{1,2}\.\d{1,2}\.\d{2,4})[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}\.\d{1,2}\.\d{2,4})(?=$|[^\d])/g, "$1$2 — $3");
+    text = text.replace(new RegExp(`(^|[^${LETTERS}\\d])(${wordDate})[ \\t\\u00A0]*[-–—−][ \\t\\u00A0]*(${wordDate})(?=$|[^${LETTERS}\\d])`, "gi"), (_match: string, prefix: string, start: string, end: string) => `${prefix}${normalizeSpacedYearInRangeBoundary(start)} ${EM_DASH} ${normalizeSpacedYearInRangeBoundary(end)}`);
+    text = text.replace(new RegExp(`(^|[^${LETTERS}\\d])(${quarterDate})[ \\t\\u00A0]*[-–—−][ \\t\\u00A0]*(${quarterDate})(?=$|[^${LETTERS}\\d])`, "gi"), (_match: string, prefix: string, start: string, end: string) => `${prefix}${normalizeSpacedYearInRangeBoundary(start)} ${EM_DASH} ${normalizeSpacedYearInRangeBoundary(end)}`);
+    text = text.replace(/(^|[^\d])(\d{4})[ \t\u00A0]*[-–—−][ \t\u00A0]*(н\.[ \t\u00A0]*в\.|наст\.[ \t\u00A0]*вр\.)(?=$|[^A-Za-zА-Яа-яЁё\d])/gi, (_match: string, prefix: string, start: string, end: string) => `${prefix}${start} ${EM_DASH} ${end.replace(/[ \t\u00A0]+/g, " ")}`);
+
+    text = text.replace(/(^|[^\d,+−-])([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*(?:\.{3}|…|[-–—−])[ \t\u00A0]*([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])(?=$|[^A-Za-zА-Яа-яЁё])/g, (_match: string, prefix: string, start: string, end: string, unit: string) => `${prefix}${normalizeTemperatureSign(start)}…${normalizeTemperatureSign(end)}${NBSP}°${unit === "F" ? "F" : "C"}`);
+    text = text.replace(/(^|[^\d,])(\d+(?:,\d+)?)%[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d+(?:,\d+)?)%(?=$|[^\d,])/g, "$1$2—$3%");
+    text = text.replace(/(^|[^\d:])(\d{1,2}:\d{2})[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}:\d{2})(?=$|[^\d:])/g, "$1$2—$3");
+    text = text.replace(/(^|[^\d.])(\d{1,2}\.\d{1,2})(?!\.\d)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}\.\d{1,2})(?!\.\d)(?=$|[^\d])/g, "$1$2—$3");
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])([IVXLCDM]+)[ \t\u00A0]*[-–—−][ \t\u00A0]*([IVXLCDM]+)(?=$|[^A-Za-zА-Яа-яЁё\d])/g, (match: string, prefix: string, startRoman: string, endRoman: string, offset: number, fullText: string) => {
+      try {
+        const rangeStart = offset + prefix.length;
+        const rangeEnd = rangeStart + match.length - prefix.length;
+
+        if (isProtectedRomanRange(fullText, rangeStart, rangeEnd) || !hasRomanRangeContext(fullText, rangeStart, rangeEnd)) {
+          return match;
+        }
+
+        return `${prefix}${startRoman}${EM_DASH}${endRoman}`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to normalize editorial roman range", error);
+        return match;
+      }
+    });
+    text = text.replace(/(^|[^\d.,:])(\d+(?:[.,]\d+)?)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d+(?:[.,]\d+)?)(?=$|[^\d.,:])/g, (match: string, prefix: string, startNumber: string, endNumber: string, offset: number, fullText: string) => {
+      try {
+        const rangeStart = offset + prefix.length;
+        const rangeEnd = rangeStart + match.length - prefix.length;
+
+        if (isProtectedNumericRange(fullText, rangeStart, rangeEnd) || isGroupedNumberFragment(fullText, rangeStart, rangeEnd)) {
+          return match;
+        }
+
+        return `${prefix}${startNumber}${EM_DASH}${endNumber}`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to normalize editorial numeric range", error);
+        return match;
+      }
+    });
+
+    return text;
+  } catch (error) {
+    console.error("[Чистовик] Failed to normalize editorial ranges", error);
+    throw error;
+  }
+}
+
+function isGroupedNumberFragment(fullText: string, start: number, end: number): boolean {
+  try {
+    const previous = fullText[start - 1] ?? "";
+    const previousPrevious = fullText[start - 2] ?? "";
+    const next = fullText[end] ?? "";
+    const nextNext = fullText[end + 1] ?? "";
+
+    return ((previous === " " || previous === NBSP) && /\d/.test(previousPrevious)) || ((next === " " || next === NBSP) && /\d/.test(nextNext));
+  } catch (error) {
+    console.error("[Чистовик] Failed to check grouped number fragment", error);
+    throw error;
+  }
+}
+
+function normalizeSpacedYearInRangeBoundary(input: string): string {
+  try {
+    return input.replace(/\b([12])[ \t\u00A0](\d{3})\b/g, "$1$2");
+  } catch (error) {
+    console.error("[Чистовик] Failed to normalize spaced year in range boundary", error);
+    throw error;
+  }
+}
+
+function normalizeTemperatureSign(input: string): string {
+  try {
+    return input.replace(/^-/, MINUS);
+  } catch (error) {
+    console.error("[Чистовик] Failed to normalize temperature sign", error);
+    throw error;
+  }
+}
+
 function isProtectedNumericRange(fullText: string, start: number, end: number): boolean {
   try {
     if (isInsideProtectedToken(fullText, start, end)) {
       return true;
     }
 
+    const previous = previousNonSpaceSkippingDevelopmentMarker(fullText, start);
+
+    if (previous === "№" || previous === "§" || isNumberAfterSignNumberPrefix(fullText, start)) {
+      return true;
+    }
+
+    if (isWordDateRangeNumericFragment(fullText, start, end)) {
+      return true;
+    }
+
     return isCodeTokenNeighbor(fullText[start - 1] ?? "") || isCodeTokenNeighbor(fullText[end] ?? "");
   } catch (error) {
     console.error("[Чистовик] Failed to check protected numeric range", error);
+    throw error;
+  }
+}
+
+function isWordDateRangeNumericFragment(fullText: string, start: number, end: number): boolean {
+  try {
+    const month = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
+    const before = fullText.slice(Math.max(0, start - 24), start);
+    const after = fullText.slice(end, Math.min(fullText.length, end + 24));
+    const monthBefore = new RegExp(`(?:${month})[ \\t\\u00A0]+$`, "i");
+    const monthAfter = new RegExp(`^[ \\t\\u00A0]+(?:${month})(?=$|[^${LETTERS}])`, "i");
+
+    return monthBefore.test(before) && monthAfter.test(after);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check word date range numeric fragment", error);
     throw error;
   }
 }
@@ -1947,7 +2030,7 @@ function normalizeSpacedYears(input: string): string {
   try {
     return input
       .replace(/(\b\d{1,2}\.\d{2}\.)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3")
-      .replace(/(^|[^\d])([12])[ \t\u00A0](\d{3})(?=[ \t\u00A0]*(?:г\.?|год|году)(?=$|[^A-Za-zА-Яа-яЁё]))/gi, "$1$2$3")
+      .replace(/(^|[^\d])([12])[ \t\u00A0](\d{3})(?=[ \t\u00A0]*(?:г\.?|год|году|года)(?=$|[^A-Za-zА-Яа-яЁё]))/gi, "$1$2$3")
       .replace(/(©[ \t\u00A0]*)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3");
   } catch (error) {
     console.error("[Чистовик] Failed to normalize spaced years", error);
@@ -1980,12 +2063,15 @@ function shouldSkipNumberGrouping(fullText: string, start: number, end: number, 
     const before = fullText.slice(Math.max(0, start - 16), start).toLowerCase();
     const after = fullText.slice(end, Math.min(fullText.length, end + 16)).toLowerCase();
 
-    const hasYearWordAfter = /^[\s\u00A0*]*(г\.?|год|году)(?=$|[^A-Za-zА-Яа-яЁё])/.test(after);
+    const hasYearWordAfter = /^[\s\u00A0*]*(г\.?|год|году|года)(?=$|[^A-Za-zА-Яа-яЁё])/.test(after);
     const hasCopyrightBefore = /(?:©|\(c\))[\s\u00A0*]*$/i.test(before);
+    const hasMonthBefore = /(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)[\s\u00A0*]*$/i.test(before);
+    const hasQuarterBefore = /квартал[\s\u00A0*]*$/i.test(before);
     const hasYearPrepositionBefore = /(?:^|[\s\u00A0*])(в|с)[\s\u00A0*]*$/.test(before);
     const hasRangeYearPrepositionBefore = /(?:^|[\s\u00A0*])по[\s\u00A0*]*$/.test(before) && !/^[\s\u00A0*]+[A-Za-zА-Яа-яЁё]/.test(after);
+    const hasOpenEndedRangeAfter = /^[\s\u00A0*]*—[\s\u00A0*]*(?:н\.[\s\u00A0*]*в\.|наст\.[\s\u00A0*]*вр\.)(?=$|[^A-Za-zА-Яа-яЁё])/.test(after);
 
-    return hasYearWordAfter || hasCopyrightBefore || hasYearPrepositionBefore || hasRangeYearPrepositionBefore;
+    return hasYearWordAfter || hasCopyrightBefore || hasMonthBefore || hasQuarterBefore || hasYearPrepositionBefore || hasRangeYearPrepositionBefore || hasOpenEndedRangeAfter;
   } catch (error) {
     console.error("[Чистовик] Failed to check number grouping exception", error);
     throw error;
@@ -2053,7 +2139,7 @@ function isNumberPartOfMaskedSecret(fullText: string, start: number): boolean {
   try {
     const before = fullText.slice(Math.max(0, start - 24), start);
 
-    return /(?:^|[\s\u00A0:])\*{2,}[\s\u00A0]*$/.test(before);
+    return /(?:^|[\s\u00A0:])\*{2,}[\* \t\u00A0\-–—−]*$/.test(before);
   } catch (error) {
     console.error("[Чистовик] Failed to check masked secret number", error);
     throw error;
@@ -2120,6 +2206,7 @@ function normalizeAbbreviations(input: string): string {
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*п\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}т.${NBSP}п.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+др\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}др.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])в[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*ч\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1в${NBSP}т.${NBSP}ч.`);
+    text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])н[ \t\u00A0]*\.?[ \t\u00A0]*в\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1н.${NBSP}в.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*е\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}е.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*к\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}к.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*д\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}д.`);
@@ -2248,6 +2335,12 @@ function applyNonBreakingSpaces(input: string): string {
 
 function shouldKeepNumberWithNextWord(fullText: string, start: number, end: number, number: string): boolean {
   try {
+    const followingText = fullText.slice(end, Math.min(fullText.length, end + 24));
+
+    if (isRangeEndBeforeMonth(fullText, start, followingText)) {
+      return true;
+    }
+
     if (isNumberPartOfDate(fullText, start, end) || isInsideProtectedToken(fullText, start, end)) {
       return false;
     }
@@ -2263,6 +2356,21 @@ function shouldKeepNumberWithNextWord(fullText: string, start: number, end: numb
     return !shouldSkipNumberGrouping(fullText, start, end, integerPart);
   } catch (error) {
     console.error("[Чистовик] Failed to check number follower", error);
+    throw error;
+  }
+}
+
+function isRangeEndBeforeMonth(fullText: string, start: number, followingText: string): boolean {
+  try {
+    const previous = previousNonSpaceSkippingDevelopmentMarker(fullText, start);
+
+    if (previous !== EM_DASH) {
+      return false;
+    }
+
+    return /^[ \t\u00A0]+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?=$|[^A-Za-zА-Яа-яЁё])/i.test(followingText);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check range end before month", error);
     throw error;
   }
 }
@@ -2334,6 +2442,14 @@ function normalizeMathAndSymbols(input: string): string {
             return match;
           }
 
+          if (isWordDateRangeDashCandidate(fullText, signIndex)) {
+            return match;
+          }
+
+          if (isMaskedSecretSign(fullText, signIndex)) {
+            return match;
+          }
+
           return `${prefix}${MINUS}${digit}`;
         } catch (error) {
           console.error("[Чистовик] Failed to normalize negative number", error);
@@ -2347,6 +2463,32 @@ function normalizeMathAndSymbols(input: string): string {
       .replace(/(?:->|=>)/g, "→");
   } catch (error) {
     console.error("[Чистовик] Failed to normalize math and symbols", error);
+    throw error;
+  }
+}
+
+function isWordDateRangeDashCandidate(fullText: string, dashIndex: number): boolean {
+  try {
+    const month = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
+    const before = fullText.slice(Math.max(0, dashIndex - 32), dashIndex);
+    const after = fullText.slice(dashIndex + 1, dashIndex + 33);
+    const beforePattern = new RegExp(`\\d{1,2}[ \\t\\u00A0]+(?:${month})[ \\t\\u00A0]*$`, "i");
+    const afterPattern = new RegExp(`^[ \\t\\u00A0]*\\d{1,2}[ \\t\\u00A0]+(?:${month})(?=$|[^${LETTERS}])`, "i");
+
+    return beforePattern.test(before) && afterPattern.test(after);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check word date range dash candidate", error);
+    throw error;
+  }
+}
+
+function isMaskedSecretSign(fullText: string, signIndex: number): boolean {
+  try {
+    const before = fullText.slice(Math.max(0, signIndex - 24), signIndex);
+
+    return /(?:^|[\s\u00A0:])\*{2,}[\* \t\u00A0]*$/.test(before);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check masked secret sign", error);
     throw error;
   }
 }
@@ -2591,6 +2733,10 @@ function isInsideProtectedToken(input: string, start: number, end: number): bool
     const bounds = getLooseTokenBounds(input, start, end);
     const token = input.slice(bounds.start, bounds.end);
 
+    if (isMaskedSecretToken(token)) {
+      return true;
+    }
+
     if (/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(token) || /^www\./i.test(token) || token.includes("@")) {
       return true;
     }
@@ -2610,6 +2756,15 @@ function isInsideProtectedToken(input: string, start: number, end: number): bool
     return false;
   } catch (error) {
     console.error("[Чистовик] Failed to check protected token", error);
+    throw error;
+  }
+}
+
+function isMaskedSecretToken(token: string): boolean {
+  try {
+    return /\*{2,}/.test(token) && /\d/.test(token);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check masked secret token", error);
     throw error;
   }
 }
