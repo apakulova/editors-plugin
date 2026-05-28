@@ -185,7 +185,6 @@ function openSettingsUI(): void {
         if (message.type === "run-typograph") {
           await runTypograph(getRunOptionsFromMessage(message), "settings");
           await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
-          figma.closePlugin();
         }
       } catch (error) {
         console.error("[Чистовик] Failed to handle UI message", error);
