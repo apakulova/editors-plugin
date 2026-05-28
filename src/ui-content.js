@@ -88,8 +88,9 @@ module.exports = {
     {
       title: "Сокращения",
       points: [
-        "С&nbsp;точкой: <span class=\"rule-example\">тыс., мин., д., кв., г., рис., стр., им., руб., коп., т.&nbsp;д., т.&nbsp;е., т.&nbsp;к., т.&nbsp;п., и&nbsp;т.&nbsp;д., и&nbsp;др., и&nbsp;т.&nbsp;п.</span>",
-        "Без точки: <span class=\"rule-example\">млн, млрд, трлн</span>; после числа&nbsp;— <span class=\"rule-example\">с, м, км, кг, мм, см, л, мл</span>",
+        "С&nbsp;точкой: <span class=\"rule-example\">тыс., мин., д., кв., г., гл., илл., ст., п., см., рис., стр., им., обл., кр., пос., пер., пр., просп., пл., бул., наб., ш., туп., оф., комн., под., мкр., уч., вл., влад., корп., эт., пгт., руб., коп.</span>",
+        "Составные: <span class=\"rule-example\">т.&nbsp;д., т.&nbsp;е., т.&nbsp;к., т.&nbsp;п., и&nbsp;т.&nbsp;д., и&nbsp;др., и&nbsp;т.&nbsp;п., в&nbsp;т.&nbsp;ч., P.&nbsp;S., P.&nbsp;P.&nbsp;S.</span>",
+        "Без точки: <span class=\"rule-example\">млн, млрд, трлн, б-р, пр-т</span>; после числа&nbsp;— <span class=\"rule-example\">с, м, км, кг, мм, см, л, мл</span>",
         "Площадь и&nbsp;объём: <span class=\"rule-example\">кв.&nbsp;м, куб.&nbsp;м</span>",
         "Месяцы: <span class=\"rule-example\">6&nbsp;мес.</span>, но&nbsp;<span class=\"rule-example\">₽/мес</span>",
         "Все правила сокращений действуют в&nbsp;середине предложения, в&nbsp;конце всегда ставится точка",
