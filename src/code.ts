@@ -19,6 +19,7 @@ const ANALYTICS_PLUGIN_VERSION = "1.0.0";
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 1000;
 const LETTERS = "A-Za-zА-Яа-яЁё";
+const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
 type PreservedStyleField =
   | "fontName"
@@ -1595,7 +1596,7 @@ function normalizeEditorialRanges(input: string): string {
     text = text.replace(/(^|[^\d])(\d{4})[ \t\u00A0]*[-–—−][ \t\u00A0]*(н\.[ \t\u00A0]*в\.|наст\.[ \t\u00A0]*вр\.)(?=$|[^A-Za-zА-Яа-яЁё\d])/gi, (_match: string, prefix: string, start: string, end: string) => `${prefix}${start} ${EM_DASH} ${end.replace(/[ \t\u00A0]+/g, " ")}`);
 
     text = text.replace(/(^|[^\d,+−-])([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*(?:\.{3}|…|[-–—−])[ \t\u00A0]*([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])(?=$|[^A-Za-zА-Яа-яЁё])/g, (_match: string, prefix: string, start: string, end: string, unit: string) => `${prefix}${normalizeTemperatureSign(start)}…${normalizeTemperatureSign(end)}${NBSP}°${unit === "F" ? "F" : "C"}`);
-    text = text.replace(/(^|[^\d,])(\d+(?:,\d+)?)%[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d+(?:,\d+)?)%(?=$|[^\d,])/g, "$1$2—$3%");
+    text = text.replace(/(^|[^\d,])(\d+(?:,\d+)?)%[-–—−](\d+(?:,\d+)?)%(?=$|[^\d,])/g, "$1$2—$3%");
     text = text.replace(/(^|[^\d:])(\d{1,2}:\d{2})[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}:\d{2})(?=$|[^\d:])/g, "$1$2—$3");
     text = text.replace(/(^|[^\d.])(\d{1,2}\.\d{1,2})(?!\.\d)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}\.\d{1,2})(?!\.\d)(?=$|[^\d])/g, "$1$2—$3");
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])([IVXLCDM]+)[ \t\u00A0]*[-–—−][ \t\u00A0]*([IVXLCDM]+)(?=$|[^A-Za-zА-Яа-яЁё\d])/g, (match: string, prefix: string, startRoman: string, endRoman: string, offset: number, fullText: string) => {
@@ -2309,6 +2310,7 @@ function applyNonBreakingSpaces(input: string): string {
     text = text.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`);
     text = text.replace(/(©)[ \t\u00A0]*(?=[12]\d{3}\b)/g, `$1${NBSP}`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(д|г|стр|кв)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`);
+    text = applyWhitelistedPercentNonBreakingSpaces(text);
     text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+([A-Za-zА-Яа-яЁё]+\.?)/g, (match: string, number: string, followingWord: string, offset: number, fullText: string) => {
       try {
         const numberStart = offset;
@@ -2329,6 +2331,18 @@ function applyNonBreakingSpaces(input: string): string {
     return text;
   } catch (error) {
     console.error("[Чистовик] Failed to apply non-breaking spaces", error);
+    throw error;
+  }
+}
+
+function applyWhitelistedPercentNonBreakingSpaces(input: string): string {
+  try {
+    const percentValue = "\\d+(?:[.,]\\d+)?(?:—\\d+(?:[.,]\\d+)?)?%";
+    const percentWordPattern = new RegExp(`(^|[^${LETTERS}\\d\\-${NB_HYPHEN}])(${PERCENT_WORD_WHITELIST_PATTERN})[ \\t\\u00A0]+(${percentValue})`, "gi");
+
+    return input.replace(percentWordPattern, `$1$2${NBSP}$3`);
+  } catch (error) {
+    console.error("[Чистовик] Failed to apply whitelist percent non-breaking spaces", error);
     throw error;
   }
 }
@@ -2430,7 +2444,8 @@ function normalizeMathAndSymbols(input: string): string {
     const text = input
       .replace(/(^|[^A-Za-zА-Яа-яЁё\d])1\/2($|[^A-Za-zА-Яа-яЁё\d])/g, "$1½$2")
       .replace(/(^|[^A-Za-zА-Яа-яЁё\d])1\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¼$2")
-      .replace(/(^|[^A-Za-zА-Яа-яЁё\d])3\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¾$2");
+      .replace(/(^|[^A-Za-zА-Яа-яЁё\d])3\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¾$2")
+      .replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+[-–−][ \t\u00A0]+(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`);
 
     return normalizeMathExpressions(text)
       .replace(/(^|[^A-Za-zА-Яа-яЁё\d])([-–−])[ \t\u00A0]*(\d)/g, (match: string, prefix: string, _sign: string, digit: string, offset: number, fullText: string) => {
@@ -2456,6 +2471,7 @@ function normalizeMathAndSymbols(input: string): string {
           return match;
         }
       })
+      .replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+−(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`)
       .replace(/(\d(?:[\d \u00A0]*\d)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])\b/g, (_match, number: string, unit: string) => `${number}${NBSP}°${unit === "F" ? "F" : "C"}`)
       .replace(/\(c\)/gi, "©")
       .replace(/\(tm\)/gi, "™")
@@ -2605,6 +2621,10 @@ function parseMathNumber(input: string, start: number, allowSign: boolean): Math
       break;
     }
 
+    if (input[cursor] === "%") {
+      cursor += 1;
+    }
+
     return {
       end: cursor,
       hasUnaryMinus: sign !== "",
@@ -2631,6 +2651,10 @@ function parseMathOperator(input: string, start: number): MathOperatorParseResul
     }
 
     if (char === "-" && input[cursor + 1] === ">") {
+      return null;
+    }
+
+    if (isMinusLike(char) && input[cursor - 1] === "%" && /\d/.test(input[cursor + 1] ?? "")) {
       return null;
     }
 
@@ -2687,7 +2711,7 @@ function isMinusLike(char: string): boolean {
 
 function hasMathExpressionContext(firstNumber: MathNumberParseResult, operators: MathOperatorParseResult[]): boolean {
   try {
-    if (firstNumber.hasUnaryMinus || operators.length > 1) {
+    if (firstNumber.hasUnaryMinus || firstNumber.text.endsWith("%") || operators.length > 1) {
       return true;
     }
 

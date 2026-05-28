@@ -20,6 +20,7 @@ const ANALYTICS_PLUGIN_VERSION = "1.0.0";
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 1000;
 const LETTERS = "A-Za-zА-Яа-яЁё";
+const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
 const STYLE_FIELDS = [
     "fontName",
@@ -1353,7 +1354,7 @@ function normalizeEditorialRanges(input) {
         text = text.replace(new RegExp(`(^|[^${LETTERS}\\d])(${quarterDate})[ \\t\\u00A0]*[-–—−][ \\t\\u00A0]*(${quarterDate})(?=$|[^${LETTERS}\\d])`, "gi"), (_match, prefix, start, end) => `${prefix}${normalizeSpacedYearInRangeBoundary(start)} ${EM_DASH} ${normalizeSpacedYearInRangeBoundary(end)}`);
         text = text.replace(/(^|[^\d])(\d{4})[ \t\u00A0]*[-–—−][ \t\u00A0]*(н\.[ \t\u00A0]*в\.|наст\.[ \t\u00A0]*вр\.)(?=$|[^A-Za-zА-Яа-яЁё\d])/gi, (_match, prefix, start, end) => `${prefix}${start} ${EM_DASH} ${end.replace(/[ \t\u00A0]+/g, " ")}`);
         text = text.replace(/(^|[^\d,+−-])([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*(?:\.{3}|…|[-–—−])[ \t\u00A0]*([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])(?=$|[^A-Za-zА-Яа-яЁё])/g, (_match, prefix, start, end, unit) => `${prefix}${normalizeTemperatureSign(start)}…${normalizeTemperatureSign(end)}${NBSP}°${unit === "F" ? "F" : "C"}`);
-        text = text.replace(/(^|[^\d,])(\d+(?:,\d+)?)%[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d+(?:,\d+)?)%(?=$|[^\d,])/g, "$1$2—$3%");
+        text = text.replace(/(^|[^\d,])(\d+(?:,\d+)?)%[-–—−](\d+(?:,\d+)?)%(?=$|[^\d,])/g, "$1$2—$3%");
         text = text.replace(/(^|[^\d:])(\d{1,2}:\d{2})[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}:\d{2})(?=$|[^\d:])/g, "$1$2—$3");
         text = text.replace(/(^|[^\d.])(\d{1,2}\.\d{1,2})(?!\.\d)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}\.\d{1,2})(?!\.\d)(?=$|[^\d])/g, "$1$2—$3");
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])([IVXLCDM]+)[ \t\u00A0]*[-–—−][ \t\u00A0]*([IVXLCDM]+)(?=$|[^A-Za-zА-Яа-яЁё\d])/g, (match, prefix, startRoman, endRoman, offset, fullText) => {
@@ -1993,6 +1994,7 @@ function applyNonBreakingSpaces(input) {
         text = text.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`);
         text = text.replace(/(©)[ \t\u00A0]*(?=[12]\d{3}\b)/g, `$1${NBSP}`);
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(д|г|стр|кв)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`);
+        text = applyWhitelistedPercentNonBreakingSpaces(text);
         text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+([A-Za-zА-Яа-яЁё]+\.?)/g, (match, number, followingWord, offset, fullText) => {
             try {
                 const numberStart = offset;
@@ -2012,6 +2014,17 @@ function applyNonBreakingSpaces(input) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to apply non-breaking spaces", error);
+        throw error;
+    }
+}
+function applyWhitelistedPercentNonBreakingSpaces(input) {
+    try {
+        const percentValue = "\\d+(?:[.,]\\d+)?(?:—\\d+(?:[.,]\\d+)?)?%";
+        const percentWordPattern = new RegExp(`(^|[^${LETTERS}\\d\\-${NB_HYPHEN}])(${PERCENT_WORD_WHITELIST_PATTERN})[ \\t\\u00A0]+(${percentValue})`, "gi");
+        return input.replace(percentWordPattern, `$1$2${NBSP}$3`);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to apply whitelist percent non-breaking spaces", error);
         throw error;
     }
 }
@@ -2100,7 +2113,8 @@ function normalizeMathAndSymbols(input) {
         const text = input
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d])1\/2($|[^A-Za-zА-Яа-яЁё\d])/g, "$1½$2")
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d])1\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¼$2")
-            .replace(/(^|[^A-Za-zА-Яа-яЁё\d])3\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¾$2");
+            .replace(/(^|[^A-Za-zА-Яа-яЁё\d])3\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¾$2")
+            .replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+[-–−][ \t\u00A0]+(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`);
         return normalizeMathExpressions(text)
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d])([-–−])[ \t\u00A0]*(\d)/g, (match, prefix, _sign, digit, offset, fullText) => {
             try {
@@ -2122,6 +2136,7 @@ function normalizeMathAndSymbols(input) {
                 return match;
             }
         })
+            .replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+−(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`)
             .replace(/(\d(?:[\d \u00A0]*\d)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])\b/g, (_match, number, unit) => `${number}${NBSP}°${unit === "F" ? "F" : "C"}`)
             .replace(/\(c\)/gi, "©")
             .replace(/\(tm\)/gi, "™")
@@ -2246,6 +2261,9 @@ function parseMathNumber(input, start, allowSign) {
             }
             break;
         }
+        if (input[cursor] === "%") {
+            cursor += 1;
+        }
         return {
             end: cursor,
             hasUnaryMinus: sign !== "",
@@ -2258,7 +2276,7 @@ function parseMathNumber(input, start, allowSign) {
     }
 }
 function parseMathOperator(input, start) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     try {
         let cursor = start;
         while (/[ \t\u00A0]/.test((_a = input[cursor]) !== null && _a !== void 0 ? _a : "")) {
@@ -2271,8 +2289,11 @@ function parseMathOperator(input, start) {
         if (char === "-" && input[cursor + 1] === ">") {
             return null;
         }
+        if (isMinusLike(char) && input[cursor - 1] === "%" && /\d/.test((_c = input[cursor + 1]) !== null && _c !== void 0 ? _c : "")) {
+            return null;
+        }
         cursor += 1;
-        while (/[ \t\u00A0]/.test((_c = input[cursor]) !== null && _c !== void 0 ? _c : "")) {
+        while (/[ \t\u00A0]/.test((_d = input[cursor]) !== null && _d !== void 0 ? _d : "")) {
             cursor += 1;
         }
         return {
@@ -2320,7 +2341,7 @@ function isMinusLike(char) {
 }
 function hasMathExpressionContext(firstNumber, operators) {
     try {
-        if (firstNumber.hasUnaryMinus || operators.length > 1) {
+        if (firstNumber.hasUnaryMinus || firstNumber.text.endsWith("%") || operators.length > 1) {
             return true;
         }
         return operators.some((operator) => operator.text !== MINUS);
