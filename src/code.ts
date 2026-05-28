@@ -2248,7 +2248,7 @@ function hasPreviousNumberBindingAbbreviation(fullText: string, index: number): 
 
 function applyParticleNonBreakingSpaces(input: string): string {
   try {
-    const particlePattern = new RegExp(`(^|\\S)[ \\t]+(ли|же|бы)(?=$|[^${LETTERS}])`, "gi");
+    const particlePattern = new RegExp(`(^|\\S)[ \\t]+(ли|же|бы|ль|ж|б)(?=$|[^${LETTERS}])`, "gi");
 
     return input.replace(particlePattern, `$1${NBSP}$2`);
   } catch (error) {
@@ -2259,7 +2259,7 @@ function applyParticleNonBreakingSpaces(input: string): string {
 
 function applyShortWordNonBreakingSpaces(input: string): string {
   try {
-    const shortWordPattern = new RegExp(`(^|[^${LETTERS}\\d\\-${NB_HYPHEN}])(?!(?:ли|же|бы)[ \\t]+)([А-Яа-яЁё]{1,2})[ \\t]+(?=\\S)`, "gi");
+    const shortWordPattern = new RegExp(`(^|[^${LETTERS}\\d\\-${NB_HYPHEN}])(?!(?:ли|же|бы|ль|ж|б)[ \\t]+)([А-Яа-яЁё]{1,2})[ \\t]+(?=\\S)`, "gi");
     let text = input;
     let previous = "";
 
