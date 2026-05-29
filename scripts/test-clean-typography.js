@@ -28,11 +28,19 @@ const developmentOptions = {
   mode: "development",
   processHiddenNodes: false,
   processLockedNodes: false,
+  recolorExistingAsterisks: false,
+};
+const developmentRecolorOptions = {
+  mode: "development",
+  processHiddenNodes: false,
+  processLockedNodes: false,
+  recolorExistingAsterisks: true,
 };
 const beautyOptions = {
   mode: "beauty",
   processHiddenNodes: false,
   processLockedNodes: false,
+  recolorExistingAsterisks: false,
 };
 
 function expectClean(input, expected) {
@@ -69,6 +77,8 @@ expectClean("The word \"привет\" means hello.", 'The word "привет" m
 expectClean("The word «привет» means hello.", 'The word "привет" means hello.');
 expectClean("Кнопка называется \"Start\".", "Кнопка называется «Start».");
 expectClean('Он сказал "Use \'clean typography\' mode".', `Он${NBSP}сказал «Use „clean typography“ mode».`);
+expectClean('Он сказал "привет...".', `Он${NBSP}сказал «привет…».`);
+expectClean('Он сказал "привет"...', `Он${NBSP}сказал «привет»…`);
 expectClean('He said "Use "clean typography" mode".', 'He said "Use \'clean typography\' mode".');
 expectClean('He said "Use \'clean typography\' mode".', 'He said "Use \'clean typography\' mode".');
 expectClean('He said "The word "привет" means hello".', 'He said "The word \'привет\' means hello".');
@@ -186,6 +196,8 @@ expectClean("Пароль: **** 1234.", "Пароль: **** 1234.");
 expectClean("Пароль: ****-1234.", "Пароль: ****-1234.");
 expectClean("Пароль: ****−1*234.", "Пароль: ****−1*234.");
 expectClean("Пароль: ****-1*234.", "Пароль: ****-1*234.");
+expectClean("карта****4444", "карта****4444");
+expectClean("карта ****4444", "карта ****4444");
 
 expectClean("2026-05-14", "2026-05-14");
 expectClean("10.04.2025", "10.04.2025");
@@ -277,6 +289,8 @@ expectDevelopmentIdempotent("Это же не баг, а фича ли?", "Эт�
 expectDevelopmentIdempotent("Доход 100 млн и 5 млрд.", "Доход 100*млн и*5*млрд");
 expectDevelopmentIdempotent("Формула: 2 * 2 = 4.", `Формула: 2*${MULTIPLY}*2*=*4.`);
 expectDevelopmentIdempotent("Формула: 2*2=4.", `Формула: 2*${MULTIPLY}*2*=*4.`);
+expectDevelopmentIdempotent("Формула 2*2=4", `Формула 2*${MULTIPLY}*2*=*4`);
+expectDevelopmentIdempotent("2*2,", `2*${MULTIPLY}*2,`);
 expectDevelopmentStableWithoutMarkers("Цена 1*000*₽.");
 expectDevelopmentStableWithoutMarkers(`Позвоните: +7*900*123${NB_HYPHEN}45${NB_HYPHEN}67.`);
 expectDevelopmentStableWithoutMarkers(`Или так: 8*900*123${NB_HYPHEN}45${NB_HYPHEN}67.`);
@@ -297,12 +311,62 @@ const developmentToBeauty = cleanTypographyWithMetadata(development.text, beauty
 const textDevelopment = cleanTypographyWithMetadata("В базе 10000 клиентов.", developmentOptions);
 const textDevelopmentToBeauty = cleanTypographyWithMetadata(textDevelopment.text, beautyOptions, textDevelopment.developmentMarkerIndexes);
 const developmentWithoutMarkers = cleanTypographyWithMetadata("Формула: 2*×*2*=*4.", developmentOptions);
+const existingAsteriskRecolored = cleanTypographyWithMetadata("в*дом", developmentRecolorOptions);
+const existingAsteriskRecoloredToBeauty = cleanTypographyWithMetadata(existingAsteriskRecolored.text, beautyOptions, existingAsteriskRecolored.developmentMarkerIndexes);
+const existingAsteriskWordSpace = cleanTypographyWithMetadata("слово*слово", developmentRecolorOptions);
+const existingAsteriskDefault = cleanTypographyWithMetadata("в*дом", developmentOptions);
+const existingAsteriskRegularSpace = cleanTypographyWithMetadata("Что*нужно", developmentRecolorOptions);
+const existingAsteriskMixedSpaces = cleanTypographyWithMetadata("или*их*комбинации", developmentRecolorOptions);
+const existingAsteriskNumberAndShortWord = cleanTypographyWithMetadata("7*дней с*момента", developmentRecolorOptions);
+const existingAsteriskDashSpaces = cleanTypographyWithMetadata("Москва*—*столица России. Чистовик*—*плагин.", developmentRecolorOptions);
+const existingAsteriskParentheses = cleanTypographyWithMetadata("Есть блок (новая*настройка), который нужно проверить.", developmentRecolorOptions);
+const existingAsteriskLongWords = cleanTypographyWithMetadata("проверить*макет, Нужно*проверить, поправить*тексты, отправить*результат", developmentRecolorOptions);
+const saleCampaignCode = cleanTypographyWithMetadata("Кампания SALE*2026.", developmentRecolorOptions);
+const saleCampaignCodeWithMarker = cleanTypographyWithMetadata("Кампания SALE*2*026.", developmentRecolorOptions, [15]);
+const unsafeAsterisks = cleanTypographyWithMetadata("**важно**, Тариф*, A*B", developmentRecolorOptions);
+const maskedCardDefault = cleanTypographyWithMetadata("карта****4444", developmentOptions);
+const maskedCardRecolor = cleanTypographyWithMetadata("карта****4444", developmentRecolorOptions);
+const maskedCardWithSpaceDefault = cleanTypographyWithMetadata("карта ****4444", developmentOptions);
+const maskedCardWithSpaceRecolor = cleanTypographyWithMetadata("карта ****4444", developmentRecolorOptions);
 
 assert.strictEqual(development.text, "2*\u00D7*2*=*4");
 assert.deepStrictEqual(Array.from(development.developmentMarkerIndexes), [1, 3, 5, 7]);
 assert.strictEqual(developmentToBeauty.text, `2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4`);
 assert.strictEqual(textDevelopmentToBeauty.text, `В${NBSP}базе 10${NBSP}000${NBSP}клиентов.`);
 assert.strictEqual(developmentWithoutMarkers.text, "Формула: 2*×*2*=*4.");
+assert.strictEqual(existingAsteriskRecolored.text, "в*дом");
+assert.deepStrictEqual(Array.from(existingAsteriskRecolored.developmentMarkerIndexes), [1]);
+assert.strictEqual(existingAsteriskRecoloredToBeauty.text, `в${NBSP}дом`);
+assert.strictEqual(existingAsteriskWordSpace.text, "слово слово");
+assert.deepStrictEqual(Array.from(existingAsteriskWordSpace.developmentMarkerIndexes), []);
+assert.strictEqual(existingAsteriskDefault.text, "в*дом");
+assert.deepStrictEqual(Array.from(existingAsteriskDefault.developmentMarkerIndexes), []);
+assert.strictEqual(existingAsteriskRegularSpace.text, "Что нужно");
+assert.deepStrictEqual(Array.from(existingAsteriskRegularSpace.developmentMarkerIndexes), []);
+assert.strictEqual(existingAsteriskMixedSpaces.text, "или их*комбинации");
+assert.deepStrictEqual(Array.from(existingAsteriskMixedSpaces.developmentMarkerIndexes), [6]);
+assert.strictEqual(existingAsteriskNumberAndShortWord.text, "7*дней с*момента");
+assert.deepStrictEqual(Array.from(existingAsteriskNumberAndShortWord.developmentMarkerIndexes), [1, 8]);
+assert.strictEqual(existingAsteriskDashSpaces.text, "Москва*— столица России. Чистовик*— плагин.");
+assert.deepStrictEqual(Array.from(existingAsteriskDashSpaces.developmentMarkerIndexes), [6, 33]);
+assert.strictEqual(existingAsteriskParentheses.text, "Есть блок (новая настройка), который нужно проверить.");
+assert.deepStrictEqual(Array.from(existingAsteriskParentheses.developmentMarkerIndexes), []);
+assert.strictEqual(existingAsteriskLongWords.text, "проверить макет, Нужно проверить, поправить тексты, отправить результат");
+assert.deepStrictEqual(Array.from(existingAsteriskLongWords.developmentMarkerIndexes), []);
+assert.strictEqual(saleCampaignCode.text, "Кампания SALE*2026.");
+assert.deepStrictEqual(Array.from(saleCampaignCode.developmentMarkerIndexes), []);
+assert.strictEqual(saleCampaignCodeWithMarker.text, "Кампания SALE*2026.");
+assert.deepStrictEqual(Array.from(saleCampaignCodeWithMarker.developmentMarkerIndexes), []);
+assert.strictEqual(unsafeAsterisks.text, "**важно**, Тариф*, A*B");
+assert.deepStrictEqual(Array.from(unsafeAsterisks.developmentMarkerIndexes), []);
+assert.strictEqual(maskedCardDefault.text, "карта****4444");
+assert.deepStrictEqual(Array.from(maskedCardDefault.developmentMarkerIndexes), []);
+assert.strictEqual(maskedCardRecolor.text, "карта****4444");
+assert.deepStrictEqual(Array.from(maskedCardRecolor.developmentMarkerIndexes), []);
+assert.strictEqual(maskedCardWithSpaceDefault.text, "карта ****4444");
+assert.deepStrictEqual(Array.from(maskedCardWithSpaceDefault.developmentMarkerIndexes), []);
+assert.strictEqual(maskedCardWithSpaceRecolor.text, "карта ****4444");
+assert.deepStrictEqual(Array.from(maskedCardWithSpaceRecolor.developmentMarkerIndexes), []);
 
 {
   const calls = [];

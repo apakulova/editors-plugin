@@ -61,7 +61,7 @@ async function run() {
 function openSettingsUI() {
     try {
         figma.showUI(__html__, {
-            height: 360,
+            height: 372,
             themeColors: true,
             width: 360,
         });
@@ -191,6 +191,7 @@ function getRunAnalyticsProperties(context) {
             mode: context.mode,
             process_hidden_nodes: context.options.processHiddenNodes,
             process_locked_nodes: context.options.processLockedNodes,
+            recolor_existing_asterisks: context.options.recolorExistingAsterisks,
             selected_nodes_count: context.selection.selectedNodesCount,
             selected_text_nodes_count: context.selection.selectedTextNodesCount,
             selection_scope: context.selection.scope,
@@ -332,6 +333,7 @@ function getDefaultRunOptions() {
             mode: "beauty",
             processHiddenNodes: false,
             processLockedNodes: false,
+            recolorExistingAsterisks: false,
         };
     }
     catch (error) {
@@ -340,7 +342,7 @@ function getDefaultRunOptions() {
     }
 }
 function getRunOptionsFromMessage(message) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     try {
         const defaults = getDefaultRunOptions();
         const mode = ((_a = message.options) === null || _a === void 0 ? void 0 : _a.mode) === "development" ? "development" : defaults.mode;
@@ -348,6 +350,7 @@ function getRunOptionsFromMessage(message) {
             mode,
             processHiddenNodes: ((_b = message.options) === null || _b === void 0 ? void 0 : _b.processHiddenNodes) === true,
             processLockedNodes: ((_c = message.options) === null || _c === void 0 ? void 0 : _c.processLockedNodes) === true,
+            recolorExistingAsterisks: mode === "development" && ((_d = message.options) === null || _d === void 0 ? void 0 : _d.recolorExistingAsterisks) === true,
         };
     }
     catch (error) {
@@ -858,7 +861,9 @@ function cleanTypography(input, options = getDefaultRunOptions()) {
 function cleanTypographyWithMetadata(input, options = getDefaultRunOptions(), existingDevelopmentMarkerIndexes = []) {
     try {
         const normalizedInput = normalizeInputNonBreakingSpaces(input);
-        const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, existingDevelopmentMarkerIndexes);
+        const asteriskSpaceCandidateIndexes = getExistingAsteriskSpaceCandidateIndexesForRun(normalizedInput, options);
+        const markerIndexes = getDevelopmentMarkerIndexesForRun(normalizedInput, options, existingDevelopmentMarkerIndexes, asteriskSpaceCandidateIndexes);
+        const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, [...markerIndexes, ...asteriskSpaceCandidateIndexes]);
         const beautyInput = restoreStableDevelopmentPatternMarkers(inputWithKnownMarkers);
         const beautyText = cleanTypographyForBeauty(beautyInput);
         if (options.mode !== "development") {
@@ -871,6 +876,125 @@ function cleanTypographyWithMetadata(input, options = getDefaultRunOptions(), ex
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean text with metadata", error);
+        throw error;
+    }
+}
+function getExistingAsteriskSpaceCandidateIndexesForRun(input, options) {
+    try {
+        if (options.mode !== "development" || !options.recolorExistingAsterisks) {
+            return [];
+        }
+        return getExistingAsteriskSpaceCandidateIndexes(input);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get existing asterisk space candidate indexes for run", error);
+        throw error;
+    }
+}
+function getDevelopmentMarkerIndexesForRun(input, options, existingDevelopmentMarkerIndexes, asteriskSpaceCandidateIndexes) {
+    try {
+        const markerIndexes = new Set(existingDevelopmentMarkerIndexes);
+        if (options.mode === "development" && options.recolorExistingAsterisks) {
+            for (const index of getExistingAsteriskIndexesMatchingNonBreakingSpaces(input, asteriskSpaceCandidateIndexes)) {
+                markerIndexes.add(index);
+            }
+        }
+        return Array.from(markerIndexes).sort((first, second) => first - second);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get development marker indexes for run", error);
+        throw error;
+    }
+}
+function getExistingAsteriskIndexesMatchingNonBreakingSpaces(input, asteriskSpaceCandidateIndexes) {
+    try {
+        if (asteriskSpaceCandidateIndexes.length === 0) {
+            return [];
+        }
+        const candidateIndexSet = new Set(asteriskSpaceCandidateIndexes);
+        const candidateInput = input
+            .split("")
+            .map((char, index) => (char === DEVELOPMENT_NBSP_MARKER && candidateIndexSet.has(index) ? " " : char))
+            .join("");
+        const candidateBeautyText = cleanTypographyForBeauty(restoreStableDevelopmentPatternMarkers(candidateInput));
+        const candidateResult = createDevelopmentTypographyResult(candidateBeautyText);
+        const indexes = [];
+        for (const index of candidateResult.developmentMarkerIndexes) {
+            if (candidateIndexSet.has(index) && input[index] === DEVELOPMENT_NBSP_MARKER && candidateResult.text[index] === DEVELOPMENT_NBSP_MARKER) {
+                indexes.push(index);
+            }
+        }
+        return indexes;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get existing asterisk indexes matching non-breaking spaces", error);
+        throw error;
+    }
+}
+function getExistingAsteriskSpaceCandidateIndexes(input) {
+    try {
+        const indexes = [];
+        let index = input.indexOf(DEVELOPMENT_NBSP_MARKER);
+        while (index !== -1) {
+            if (isSafeAsteriskSpaceCandidate(input, index)) {
+                indexes.push(index);
+            }
+            index = input.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
+        }
+        return indexes;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get existing asterisk space candidate indexes", error);
+        throw error;
+    }
+}
+function isSafeAsteriskSpaceCandidate(input, index) {
+    var _a, _b;
+    try {
+        if (!isIsolatedAsterisk(input, index) || isUnsafeAsteriskSpaceCandidate(input, index)) {
+            return false;
+        }
+        const previous = (_a = input[index - 1]) !== null && _a !== void 0 ? _a : "";
+        const next = (_b = input[index + 1]) !== null && _b !== void 0 ? _b : "";
+        if ((isCyrillicLetter(previous) && isDash(next)) || (isDash(previous) && isCyrillicLetter(next))) {
+            return true;
+        }
+        if (/\d/.test(previous) && isCyrillicLetter(next)) {
+            return true;
+        }
+        if (!isCyrillicLetter(previous) || !isCyrillicLetter(next)) {
+            return false;
+        }
+        return true;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check safe asterisk space candidate", error);
+        throw error;
+    }
+}
+function isUnsafeAsteriskSpaceCandidate(input, index) {
+    var _a, _b;
+    try {
+        const previous = (_a = input[index - 1]) !== null && _a !== void 0 ? _a : "";
+        const next = (_b = input[index + 1]) !== null && _b !== void 0 ? _b : "";
+        if (/\d/.test(previous) && /\d/.test(next)) {
+            return true;
+        }
+        const bounds = getLooseTokenBounds(input, index, index + 1);
+        const token = input.slice(bounds.start, bounds.end);
+        return isMaskedSecretToken(token) || /[A-Za-z]/.test(token) || token.includes("@") || token.includes("_");
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check unsafe asterisk space candidate", error);
+        throw error;
+    }
+}
+function isIsolatedAsterisk(input, index) {
+    try {
+        return input[index - 1] !== DEVELOPMENT_NBSP_MARKER && input[index + 1] !== DEVELOPMENT_NBSP_MARKER;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check isolated asterisk", error);
         throw error;
     }
 }
@@ -1071,7 +1195,7 @@ function cleanupQuotesAndPunctuation(input) {
             .replace(/!\?/g, "?!");
         return formatQuotes(text)
             .replace(/([»“"'])([?!])/g, "$2$1")
-            .replace(/([.,;:…])([»“"'])/g, "$2$1")
+            .replace(/([.,;:])([»“"'])/g, "$2$1")
             .replace(/([?!](?:[»“"']+))\./g, "$1")
             .replace(/[ \t\u00A0]+([.,;:?!…])/g, "$1");
     }
@@ -1743,7 +1867,8 @@ function normalizeSpacedYears(input) {
         return input
             .replace(/(\b\d{1,2}\.\d{2}\.)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3")
             .replace(/(^|[^\d])([12])[ \t\u00A0](\d{3})(?=[ \t\u00A0]*(?:г\.?|год|году|года)(?=$|[^A-Za-zА-Яа-яЁё]))/gi, "$1$2$3")
-            .replace(/(©[ \t\u00A0]*)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3");
+            .replace(/(©[ \t\u00A0]*)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3")
+            .replace(/(\b[A-Za-z][A-Za-z\d._-]*\*[12])[ \t\u00A0](\d{3})\b/g, "$1$2");
     }
     catch (error) {
         console.error("[Чистовик] Failed to normalize spaced years", error);
@@ -1833,7 +1958,7 @@ function findPreviousNonSpaceSkippingDevelopmentMarkerIndex(input, index) {
 function isNumberPartOfMaskedSecret(fullText, start) {
     try {
         const before = fullText.slice(Math.max(0, start - 24), start);
-        return /(?:^|[\s\u00A0:])\*{2,}[\* \t\u00A0\-–—−]*$/.test(before);
+        return /\*{2,}[\* \t\u00A0\-–—−]*$/.test(before);
     }
     catch (error) {
         console.error("[Чистовик] Failed to check masked secret number", error);
@@ -1853,7 +1978,15 @@ function isNumberInsideFullDate(fullText, start, end) {
 function isNumberPartOfCodeToken(fullText, start, end) {
     var _a, _b;
     try {
-        return isCodeTokenNeighbor((_a = fullText[start - 1]) !== null && _a !== void 0 ? _a : "") || isCodeTokenNeighbor((_b = fullText[end]) !== null && _b !== void 0 ? _b : "");
+        const previous = (_a = fullText[start - 1]) !== null && _a !== void 0 ? _a : "";
+        if (isCodeTokenNeighbor(previous) || isCodeTokenNeighbor((_b = fullText[end]) !== null && _b !== void 0 ? _b : "")) {
+            return true;
+        }
+        if (previous === DEVELOPMENT_NBSP_MARKER) {
+            const previousSkippingMarker = previousNonSpaceSkippingDevelopmentMarker(fullText, start);
+            return previousSkippingMarker !== null && /[A-Za-z]/.test(previousSkippingMarker);
+        }
+        return false;
     }
     catch (error) {
         console.error("[Чистовик] Failed to check code token number", error);
@@ -2362,10 +2495,13 @@ function hasMathNumberBoundaryBefore(input, start) {
     }
 }
 function hasMathNumberBoundaryAfter(input, end) {
-    var _a, _b;
+    var _a, _b, _c;
     try {
         const next = (_a = input[end]) !== null && _a !== void 0 ? _a : "";
         if (next === "." && !/\d/.test((_b = input[end + 1]) !== null && _b !== void 0 ? _b : "")) {
+            return true;
+        }
+        if (next === "," && !/\d/.test((_c = input[end + 1]) !== null && _c !== void 0 ? _c : "")) {
             return true;
         }
         return !/[A-Za-zА-Яа-яЁё\d.,]/.test(next);
@@ -2545,6 +2681,24 @@ function isLetter(char) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to check letter", error);
+        throw error;
+    }
+}
+function isCyrillicLetter(char) {
+    try {
+        return /^[А-Яа-яЁё]$/.test(char);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check Cyrillic letter", error);
+        throw error;
+    }
+}
+function isDash(char) {
+    try {
+        return char === "-" || char === EN_DASH || char === EM_DASH || char === MINUS;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check dash", error);
         throw error;
     }
 }

@@ -294,6 +294,20 @@
         box-shadow: 0 0 0 2px rgba(47, 127, 122, 0.22);
       }
 
+      .option.option-disabled {
+        cursor: default;
+      }
+
+      .option input:disabled {
+        background: var(--figma-color-bg-secondary);
+        border-color: var(--figma-color-border);
+        cursor: default;
+      }
+
+      .option.option-disabled .option-title {
+        color: var(--figma-color-text-disabled);
+      }
+
       .option-title {
         display: block;
         font-size: 13px;
@@ -596,6 +610,12 @@
                 <span class="option-title">Обработать даже скрытые слои</span>
               </span>
             </label>
+            <label class="option option-disabled" for="recolorExistingAsterisks" data-development-only-option="true">
+              <input id="recolorExistingAsterisks" type="checkbox" data-option="recolorExistingAsterisks" data-development-only="true" disabled />
+              <span>
+                <span class="option-title">Считать все одиночные * пробелами</span>
+              </span>
+            </label>
           </div>
         <!-- chistovik-content:typograph:end -->
 
@@ -610,7 +630,8 @@
                 <div class="rule-point">В&nbsp;русском тексте кавычки первого уровня «ёлочки», а&nbsp;второго „лапки“: <span class="rule-example">«Он&nbsp;сказал „привет“»</span></div>
                 <div class="rule-point">В&nbsp;текстах на&nbsp;латинице кавычки первого уровня <span class="rule-example">"двойные"</span>, а&nbsp;второго <span class="rule-example">'одинарные'</span></div>
                 <div class="rule-point">В&nbsp;смешанных текстах кавычки зависят от&nbsp;письма вне кавычек: <span class="rule-example">Он&nbsp;сказал «hello» и&nbsp;ушёл</span>, но&nbsp;<span class="rule-example">The word "привет" means hello</span></div>
-                <div class="rule-point">Точка, запятая, точка с&nbsp;запятой, двоеточие и&nbsp;многоточие после кавычек: <span class="rule-example">Он&nbsp;сказал «привет».</span></div>
+                <div class="rule-point">Точка, запятая, точка с&nbsp;запятой и&nbsp;двоеточие после кавычек: <span class="rule-example">Он&nbsp;сказал «привет».</span></div>
+                <div class="rule-point">Многоточие остаётся там, где стояло: <span class="rule-example">«привет…»</span> или <span class="rule-example">«привет»…</span></div>
                 <div class="rule-point">Вопрос и&nbsp;восклицание внутри кавычек, после них точка не&nbsp;ставится: <span class="rule-example">«Как дела?» или Она сказала «Да!»</span></div>
                 <div class="rule-point">Три точки меняются на&nbsp;многоточие: <span class="rule-example">... <span class="rule-arrow">→</span> …</span></div>
                 <div class="rule-point">Повторные знаки: <span class="rule-example">!! <span class="rule-arrow">→</span> !, ?? <span class="rule-arrow">→</span> ?</span></div>
@@ -755,12 +776,38 @@
 
     <script>
       const runButton = document.getElementById("run");
-      const processLocked = document.getElementById("processLocked");
-      const processHidden = document.getElementById("processHidden");
+      const optionInputs = Array.from(document.querySelectorAll("[data-option]"));
+      const modeInputs = Array.from(document.querySelectorAll('input[name="typographMode"]'));
+      const developmentOnlyOptions = Array.from(document.querySelectorAll("[data-development-only-option]"));
       const tabs = Array.from(document.querySelectorAll("[data-tab]"));
       const panels = Array.from(document.querySelectorAll("[data-panel]"));
       const actions = document.querySelector(".actions");
       const channelLinks = Array.from(document.querySelectorAll(".about-link"));
+
+      function getSelectedModeValue() {
+        const selectedMode = document.querySelector('input[name="typographMode"]:checked');
+
+        return selectedMode ? selectedMode.value : "beauty";
+      }
+
+      function syncDevelopmentOnlyOptions() {
+        const isDevelopmentMode = getSelectedModeValue() === "development";
+
+        developmentOnlyOptions.forEach((option) => {
+          const input = option.querySelector("input");
+
+          if (!input) {
+            return;
+          }
+
+          input.disabled = !isDevelopmentMode;
+          option.classList.toggle("option-disabled", !isDevelopmentMode);
+
+          if (!isDevelopmentMode) {
+            input.checked = false;
+          }
+        });
+      }
 
       function selectTab(selectedTab) {
         tabs.forEach((item) => {
@@ -782,6 +829,12 @@
         });
       });
 
+      modeInputs.forEach((input) => {
+        input.addEventListener("change", syncDevelopmentOnlyOptions);
+      });
+
+      syncDevelopmentOnlyOptions();
+
       const initialTab = new URLSearchParams(window.location.search).get("tab");
 
       if (initialTab && tabs.some((tab) => tab.dataset.tab === initialTab)) {
@@ -789,17 +842,19 @@
       }
 
       runButton.addEventListener("click", () => {
-        const selectedMode = document.querySelector('input[name="typographMode"]:checked');
+        const runOptions = {
+          mode: getSelectedModeValue(),
+        };
+
+        optionInputs.forEach((input) => {
+          runOptions[input.dataset.option] = input.checked && !input.disabled;
+        });
 
         parent.postMessage(
           {
             pluginMessage: {
               type: "run-typograph",
-              options: {
-                mode: selectedMode ? selectedMode.value : "beauty",
-                processLockedNodes: processLocked.checked,
-                processHiddenNodes: processHidden.checked,
-              },
+              options: runOptions,
             },
           },
           "*"

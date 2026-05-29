@@ -54,14 +54,18 @@ function renderTypograph() {
     })
     .join("\n");
   const options = content.typograph.options
-    .map(
-      (option) => `<label class="option" for="${option.id}">
-  <input id="${option.id}" type="checkbox" data-option="${option.key}" />
+    .map((option) => {
+      const developmentOnlyLabel = option.developmentOnly ? " option-disabled" : "";
+      const developmentOnlyAttribute = option.developmentOnly ? ' data-development-only-option="true"' : "";
+      const developmentOnlyInputAttribute = option.developmentOnly ? ' data-development-only="true" disabled' : "";
+
+      return `<label class="option${developmentOnlyLabel}" for="${option.id}"${developmentOnlyAttribute}>
+  <input id="${option.id}" type="checkbox" data-option="${option.key}"${developmentOnlyInputAttribute} />
   <span>
     <span class="option-title">${option.label}</span>
   </span>
-</label>`
-    )
+</label>`;
+    })
     .join("\n");
 
   return `<div class="group">

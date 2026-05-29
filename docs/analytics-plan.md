@@ -219,6 +219,7 @@ Email в будущем не стоит отправлять как `distinct_id
   mode: "default" | "beauty" | "development",
   process_locked_nodes: boolean,
   process_hidden_nodes: boolean,
+  recolor_existing_asterisks: boolean,
   selection_scope: "single_text" | "container" | "page" | "multi_selection",
   selected_nodes_count: number,
   selected_text_nodes_count: number,

@@ -64,6 +64,7 @@ interface PluginRunOptions {
   mode: TypographMode;
   processHiddenNodes: boolean;
   processLockedNodes: boolean;
+  recolorExistingAsterisks: boolean;
 }
 
 interface PluginUIMessage {
@@ -161,7 +162,7 @@ async function run(): Promise<void> {
 function openSettingsUI(): void {
   try {
     figma.showUI(__html__, {
-      height: 360,
+      height: 372,
       themeColors: true,
       width: 360,
     });
@@ -320,6 +321,7 @@ function getRunAnalyticsProperties(context: AnalyticsRunContext): AnalyticsPrope
       mode: context.mode,
       process_hidden_nodes: context.options.processHiddenNodes,
       process_locked_nodes: context.options.processLockedNodes,
+      recolor_existing_asterisks: context.options.recolorExistingAsterisks,
       selected_nodes_count: context.selection.selectedNodesCount,
       selected_text_nodes_count: context.selection.selectedTextNodesCount,
       selection_scope: context.selection.scope,
@@ -477,6 +479,7 @@ function getDefaultRunOptions(): PluginRunOptions {
       mode: "beauty",
       processHiddenNodes: false,
       processLockedNodes: false,
+      recolorExistingAsterisks: false,
     };
   } catch (error) {
     console.error("[Чистовик] Failed to get default run options", error);
@@ -493,6 +496,7 @@ function getRunOptionsFromMessage(message: PluginUIMessage): PluginRunOptions {
       mode,
       processHiddenNodes: message.options?.processHiddenNodes === true,
       processLockedNodes: message.options?.processLockedNodes === true,
+      recolorExistingAsterisks: mode === "development" && message.options?.recolorExistingAsterisks === true,
     };
   } catch (error) {
     console.error("[Чистовик] Failed to get run options from UI message", error);
@@ -1051,7 +1055,9 @@ function cleanTypography(input: string, options: PluginRunOptions = getDefaultRu
 function cleanTypographyWithMetadata(input: string, options: PluginRunOptions = getDefaultRunOptions(), existingDevelopmentMarkerIndexes: number[] = []): TypographyCleanResult {
   try {
     const normalizedInput = normalizeInputNonBreakingSpaces(input);
-    const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, existingDevelopmentMarkerIndexes);
+    const asteriskSpaceCandidateIndexes = getExistingAsteriskSpaceCandidateIndexesForRun(normalizedInput, options);
+    const markerIndexes = getDevelopmentMarkerIndexesForRun(normalizedInput, options, existingDevelopmentMarkerIndexes, asteriskSpaceCandidateIndexes);
+    const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, [...markerIndexes, ...asteriskSpaceCandidateIndexes]);
     const beautyInput = restoreStableDevelopmentPatternMarkers(inputWithKnownMarkers);
     const beautyText = cleanTypographyForBeauty(beautyInput);
 
@@ -1065,6 +1071,140 @@ function cleanTypographyWithMetadata(input: string, options: PluginRunOptions = 
     return createDevelopmentTypographyResult(beautyText);
   } catch (error) {
     console.error("[Чистовик] Failed to clean text with metadata", error);
+    throw error;
+  }
+}
+
+function getExistingAsteriskSpaceCandidateIndexesForRun(input: string, options: PluginRunOptions): number[] {
+  try {
+    if (options.mode !== "development" || !options.recolorExistingAsterisks) {
+      return [];
+    }
+
+    return getExistingAsteriskSpaceCandidateIndexes(input);
+  } catch (error) {
+    console.error("[Чистовик] Failed to get existing asterisk space candidate indexes for run", error);
+    throw error;
+  }
+}
+
+function getDevelopmentMarkerIndexesForRun(input: string, options: PluginRunOptions, existingDevelopmentMarkerIndexes: number[], asteriskSpaceCandidateIndexes: number[]): number[] {
+  try {
+    const markerIndexes = new Set<number>(existingDevelopmentMarkerIndexes);
+
+    if (options.mode === "development" && options.recolorExistingAsterisks) {
+      for (const index of getExistingAsteriskIndexesMatchingNonBreakingSpaces(input, asteriskSpaceCandidateIndexes)) {
+        markerIndexes.add(index);
+      }
+    }
+
+    return Array.from(markerIndexes).sort((first, second) => first - second);
+  } catch (error) {
+    console.error("[Чистовик] Failed to get development marker indexes for run", error);
+    throw error;
+  }
+}
+
+function getExistingAsteriskIndexesMatchingNonBreakingSpaces(input: string, asteriskSpaceCandidateIndexes: number[]): number[] {
+  try {
+    if (asteriskSpaceCandidateIndexes.length === 0) {
+      return [];
+    }
+
+    const candidateIndexSet = new Set<number>(asteriskSpaceCandidateIndexes);
+    const candidateInput = input
+      .split("")
+      .map((char, index) => (char === DEVELOPMENT_NBSP_MARKER && candidateIndexSet.has(index) ? " " : char))
+      .join("");
+    const candidateBeautyText = cleanTypographyForBeauty(restoreStableDevelopmentPatternMarkers(candidateInput));
+    const candidateResult = createDevelopmentTypographyResult(candidateBeautyText);
+    const indexes: number[] = [];
+
+    for (const index of candidateResult.developmentMarkerIndexes) {
+      if (candidateIndexSet.has(index) && input[index] === DEVELOPMENT_NBSP_MARKER && candidateResult.text[index] === DEVELOPMENT_NBSP_MARKER) {
+        indexes.push(index);
+      }
+    }
+
+    return indexes;
+  } catch (error) {
+    console.error("[Чистовик] Failed to get existing asterisk indexes matching non-breaking spaces", error);
+    throw error;
+  }
+}
+
+function getExistingAsteriskSpaceCandidateIndexes(input: string): number[] {
+  try {
+    const indexes: number[] = [];
+    let index = input.indexOf(DEVELOPMENT_NBSP_MARKER);
+
+    while (index !== -1) {
+      if (isSafeAsteriskSpaceCandidate(input, index)) {
+        indexes.push(index);
+      }
+
+      index = input.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
+    }
+
+    return indexes;
+  } catch (error) {
+    console.error("[Чистовик] Failed to get existing asterisk space candidate indexes", error);
+    throw error;
+  }
+}
+
+function isSafeAsteriskSpaceCandidate(input: string, index: number): boolean {
+  try {
+    if (!isIsolatedAsterisk(input, index) || isUnsafeAsteriskSpaceCandidate(input, index)) {
+      return false;
+    }
+
+    const previous = input[index - 1] ?? "";
+    const next = input[index + 1] ?? "";
+
+    if ((isCyrillicLetter(previous) && isDash(next)) || (isDash(previous) && isCyrillicLetter(next))) {
+      return true;
+    }
+
+    if (/\d/.test(previous) && isCyrillicLetter(next)) {
+      return true;
+    }
+
+    if (!isCyrillicLetter(previous) || !isCyrillicLetter(next)) {
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check safe asterisk space candidate", error);
+    throw error;
+  }
+}
+
+function isUnsafeAsteriskSpaceCandidate(input: string, index: number): boolean {
+  try {
+    const previous = input[index - 1] ?? "";
+    const next = input[index + 1] ?? "";
+
+    if (/\d/.test(previous) && /\d/.test(next)) {
+      return true;
+    }
+
+    const bounds = getLooseTokenBounds(input, index, index + 1);
+    const token = input.slice(bounds.start, bounds.end);
+
+    return isMaskedSecretToken(token) || /[A-Za-z]/.test(token) || token.includes("@") || token.includes("_");
+  } catch (error) {
+    console.error("[Чистовик] Failed to check unsafe asterisk space candidate", error);
+    throw error;
+  }
+}
+
+function isIsolatedAsterisk(input: string, index: number): boolean {
+  try {
+    return input[index - 1] !== DEVELOPMENT_NBSP_MARKER && input[index + 1] !== DEVELOPMENT_NBSP_MARKER;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check isolated asterisk", error);
     throw error;
   }
 }
@@ -1283,7 +1423,7 @@ function cleanupQuotesAndPunctuation(input: string): string {
 
     return formatQuotes(text)
       .replace(/([»“"'])([?!])/g, "$2$1")
-      .replace(/([.,;:…])([»“"'])/g, "$2$1")
+      .replace(/([.,;:])([»“"'])/g, "$2$1")
       .replace(/([?!](?:[»“"']+))\./g, "$1")
       .replace(/[ \t\u00A0]+([.,;:?!…])/g, "$1");
   } catch (error) {
@@ -2031,7 +2171,8 @@ function normalizeSpacedYears(input: string): string {
     return input
       .replace(/(\b\d{1,2}\.\d{2}\.)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3")
       .replace(/(^|[^\d])([12])[ \t\u00A0](\d{3})(?=[ \t\u00A0]*(?:г\.?|год|году|года)(?=$|[^A-Za-zА-Яа-яЁё]))/gi, "$1$2$3")
-      .replace(/(©[ \t\u00A0]*)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3");
+      .replace(/(©[ \t\u00A0]*)([12])[ \t\u00A0](\d{3})\b/g, "$1$2$3")
+      .replace(/(\b[A-Za-z][A-Za-z\d._-]*\*[12])[ \t\u00A0](\d{3})\b/g, "$1$2");
   } catch (error) {
     console.error("[Чистовик] Failed to normalize spaced years", error);
     throw error;
@@ -2139,7 +2280,7 @@ function isNumberPartOfMaskedSecret(fullText: string, start: number): boolean {
   try {
     const before = fullText.slice(Math.max(0, start - 24), start);
 
-    return /(?:^|[\s\u00A0:])\*{2,}[\* \t\u00A0\-–—−]*$/.test(before);
+    return /\*{2,}[\* \t\u00A0\-–—−]*$/.test(before);
   } catch (error) {
     console.error("[Чистовик] Failed to check masked secret number", error);
     throw error;
@@ -2159,7 +2300,19 @@ function isNumberInsideFullDate(fullText: string, start: number, end: number): b
 
 function isNumberPartOfCodeToken(fullText: string, start: number, end: number): boolean {
   try {
-    return isCodeTokenNeighbor(fullText[start - 1] ?? "") || isCodeTokenNeighbor(fullText[end] ?? "");
+    const previous = fullText[start - 1] ?? "";
+
+    if (isCodeTokenNeighbor(previous) || isCodeTokenNeighbor(fullText[end] ?? "")) {
+      return true;
+    }
+
+    if (previous === DEVELOPMENT_NBSP_MARKER) {
+      const previousSkippingMarker = previousNonSpaceSkippingDevelopmentMarker(fullText, start);
+
+      return previousSkippingMarker !== null && /[A-Za-z]/.test(previousSkippingMarker);
+    }
+
+    return false;
   } catch (error) {
     console.error("[Чистовик] Failed to check code token number", error);
     throw error;
@@ -2740,6 +2893,10 @@ function hasMathNumberBoundaryAfter(input: string, end: number): boolean {
       return true;
     }
 
+    if (next === "," && !/\d/.test(input[end + 1] ?? "")) {
+      return true;
+    }
+
     return !/[A-Za-zА-Яа-яЁё\d.,]/.test(next);
   } catch (error) {
     console.error("[Чистовик] Failed to check math number boundary after", error);
@@ -2934,6 +3091,24 @@ function isLetter(char: string): boolean {
     return /^[A-Za-zА-Яа-яЁё]$/.test(char);
   } catch (error) {
     console.error("[Чистовик] Failed to check letter", error);
+    throw error;
+  }
+}
+
+function isCyrillicLetter(char: string): boolean {
+  try {
+    return /^[А-Яа-яЁё]$/.test(char);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check Cyrillic letter", error);
+    throw error;
+  }
+}
+
+function isDash(char: string): boolean {
+  try {
+    return char === "-" || char === EN_DASH || char === EM_DASH || char === MINUS;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check dash", error);
     throw error;
   }
 }

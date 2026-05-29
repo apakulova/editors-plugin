@@ -35,6 +35,12 @@ module.exports = {
         key: "processHiddenNodes",
         label: "Обработать даже скрытые слои",
       },
+      {
+        id: "recolorExistingAsterisks",
+        key: "recolorExistingAsterisks",
+        label: "Считать все одиночные * пробелами",
+        developmentOnly: true,
+      },
     ],
   },
   rules: [
@@ -44,7 +50,8 @@ module.exports = {
         "В&nbsp;русском тексте кавычки первого уровня «ёлочки», а&nbsp;второго „лапки“: <span class=\"rule-example\">«Он&nbsp;сказал „привет“»</span>",
         "В&nbsp;текстах на&nbsp;латинице кавычки первого уровня <span class=\"rule-example\">\"двойные\"</span>, а&nbsp;второго <span class=\"rule-example\">'одинарные'</span>",
         "В&nbsp;смешанных текстах кавычки зависят от&nbsp;письма вне кавычек: <span class=\"rule-example\">Он&nbsp;сказал «hello» и&nbsp;ушёл</span>, но&nbsp;<span class=\"rule-example\">The word \"привет\" means hello</span>",
-        "Точка, запятая, точка с&nbsp;запятой, двоеточие и&nbsp;многоточие после кавычек: <span class=\"rule-example\">Он&nbsp;сказал «привет».</span>",
+        "Точка, запятая, точка с&nbsp;запятой и&nbsp;двоеточие после кавычек: <span class=\"rule-example\">Он&nbsp;сказал «привет».</span>",
+        "Многоточие остаётся там, где стояло: <span class=\"rule-example\">«привет…»</span> или <span class=\"rule-example\">«привет»…</span>",
         "Вопрос и&nbsp;восклицание внутри кавычек, после них точка не&nbsp;ставится: <span class=\"rule-example\">«Как дела?» или Она сказала «Да!»</span>",
         "Три точки меняются на&nbsp;многоточие: <span class=\"rule-example\">... <span class=\"rule-arrow\">→</span> …</span>",
         "Повторные знаки: <span class=\"rule-example\">!! <span class=\"rule-arrow\">→</span> !, ?? <span class=\"rule-arrow\">→</span> ?</span>",
