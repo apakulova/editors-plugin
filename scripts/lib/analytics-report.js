@@ -144,6 +144,7 @@ SELECT
   countIf(event = 'plugin_run_started' AND properties.selection_scope = 'multi_selection') AS scope_multi_selection,
   countIf(event = 'plugin_run_started' AND properties.process_hidden_nodes = true) AS runs_with_hidden_nodes,
   countIf(event = 'plugin_run_started' AND properties.process_locked_nodes = true) AS runs_with_locked_nodes,
+  countIf(event = 'plugin_run_started' AND properties.recolor_existing_asterisks = true) AS runs_with_recolored_asterisks,
   countIf(event = 'settings_opened') AS settings_opened,
   countIf(event = 'channel_link_clicked') AS channel_link_clicked
 FROM events
@@ -201,6 +202,7 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
     "scopeMultiSelection",
     "runsWithHiddenNodes",
     "runsWithLockedNodes",
+    "runsWithRecoloredAsterisks",
     "settingsOpened",
     "channelLinkClicked",
   ];
@@ -233,6 +235,7 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     "Опции:",
     `— со скрытыми слоями: ${summary.runsWithHiddenNodes}`,
     `— со слоями с замочком: ${summary.runsWithLockedNodes}`,
+    `— с перекраской звездочек: ${summary.runsWithRecoloredAsterisks}`,
     "",
     `Открытия настроек: ${summary.settingsOpened}`,
     `Переходы в канал: ${summary.channelLinkClicked}`,
