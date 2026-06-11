@@ -25,25 +25,43 @@ const LETTERS = "A-Za-zА-Яа-яЁё";
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
 type PreservedStyleField =
+  | "boundVariables"
+  | "fillStyleId"
   | "fontName"
   | "fontSize"
   | "fills"
+  | "hyperlink"
   | "textCase"
   | "textDecoration"
+  | "textDecorationColor"
+  | "textDecorationOffset"
+  | "textDecorationSkipInk"
+  | "textDecorationStyle"
+  | "textDecorationThickness"
   | "letterSpacing"
   | "lineHeight"
   | "listOptions"
   | "listSpacing"
   | "indentation"
   | "paragraphIndent"
-  | "paragraphSpacing";
+  | "paragraphSpacing"
+  | "textStyleId"
+  | "textStyleOverrides";
 
 const STYLE_FIELDS: PreservedStyleField[] = [
+  "boundVariables",
+  "fillStyleId",
   "fontName",
   "fontSize",
   "fills",
+  "hyperlink",
   "textCase",
   "textDecoration",
+  "textDecorationColor",
+  "textDecorationOffset",
+  "textDecorationSkipInk",
+  "textDecorationStyle",
+  "textDecorationThickness",
   "letterSpacing",
   "lineHeight",
   "listOptions",
@@ -51,6 +69,8 @@ const STYLE_FIELDS: PreservedStyleField[] = [
   "indentation",
   "paragraphIndent",
   "paragraphSpacing",
+  "textStyleId",
+  "textStyleOverrides",
 ];
 
 type TypographMode = "beauty" | "development";
@@ -848,8 +868,13 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
           await loadFontsForTextNode(textNode);
           const styles = captureTextStyles(textNode);
           const styleMap = buildStyleMap(oldText, newText, styles);
+          const wholeTextStyle = getWholeTextStyle(styles, oldText);
           textNode.characters = newText;
-          restoreTextStyles(textNode, styleMap, styles);
+          if (wholeTextStyle !== null) {
+            await restoreWholeTextStyle(textNode, wholeTextStyle);
+          } else {
+            await restoreTextStyles(textNode, styleMap, styles);
+          }
           applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
           changed += 1;
         } else if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
@@ -900,6 +925,46 @@ function captureTextStyles(textNode: TextNode): StyleSegment[] {
     console.error(`[Чистовик] Failed to capture text styles for text node ${textNode.id}`, error);
     throw error;
   }
+}
+
+function getWholeTextStyle(styles: StyleSegment[], oldText: string): StyleSegment | null {
+  try {
+    if (styles.length !== 1) {
+      return null;
+    }
+
+    const style = styles[0];
+
+    if (style.start !== 0 || style.end !== oldText.length || style.textStyleId === "" || style.textStyleOverrides.length > 0) {
+      return null;
+    }
+
+    return style;
+  } catch (error) {
+    console.error("[Чистовик] Failed to detect whole text style", error);
+    throw error;
+  }
+}
+
+async function restoreWholeTextStyle(textNode: TextNode, style: StyleSegment): Promise<void> {
+  try {
+    await textNode.setTextStyleIdAsync(style.textStyleId);
+
+    if (style.fillStyleId !== "") {
+      await textNode.setFillStyleIdAsync(style.fillStyleId);
+    }
+
+    if (hasTextDecoration(style)) {
+      restoreTextDecoration(textNode, 0, textNode.characters.length, style);
+    }
+  } catch (error) {
+    console.error(`[Чистовик] Failed to restore whole text style for text node ${textNode.id}`, error);
+    throw error;
+  }
+}
+
+function hasTextDecoration(style: StyleSegment): boolean {
+  return style.textDecoration !== "NONE";
 }
 
 function buildStyleMap(oldText: string, newText: string, styles: StyleSegment[]): number[] {
@@ -1007,7 +1072,7 @@ function buildGreedyOldIndexMap(oldText: string, newText: string): number[] {
   }
 }
 
-function restoreTextStyles(textNode: TextNode, styleMap: number[], styles: StyleSegment[]): void {
+async function restoreTextStyles(textNode: TextNode, styleMap: number[], styles: StyleSegment[]): Promise<void> {
   try {
     if (textNode.characters.length === 0 || styles.length === 0 || styleMap.length === 0) {
       return;
@@ -1023,7 +1088,7 @@ function restoreTextStyles(textNode: TextNode, styleMap: number[], styles: Style
         continue;
       }
 
-      applyStyleSegment(textNode, start, index, styles[currentStyleIndex]);
+      await applyStyleSegment(textNode, start, index, styles[currentStyleIndex]);
       start = index;
       currentStyleIndex = nextStyleIndex;
     }
@@ -1033,19 +1098,14 @@ function restoreTextStyles(textNode: TextNode, styleMap: number[], styles: Style
   }
 }
 
-function applyStyleSegment(textNode: TextNode, start: number, end: number, style: StyleSegment): void {
+async function applyStyleSegment(textNode: TextNode, start: number, end: number, style: StyleSegment): Promise<void> {
   try {
     if (start >= end) {
       return;
     }
 
-    textNode.setRangeFontName(start, end, style.fontName);
-    textNode.setRangeFontSize(start, end, style.fontSize);
-    textNode.setRangeFills(start, end, style.fills);
-    textNode.setRangeTextCase(start, end, style.textCase);
-    textNode.setRangeTextDecoration(start, end, style.textDecoration);
-    textNode.setRangeLetterSpacing(start, end, style.letterSpacing);
-    textNode.setRangeLineHeight(start, end, style.lineHeight);
+    restoreDetachedTextProperties(textNode, start, end, style);
+    restoreDetachedFillProperties(textNode, start, end, style);
     textNode.setRangeListOptions(start, end, style.listOptions);
     if (style.listOptions.type !== "NONE") {
       textNode.setRangeListSpacing(start, end, style.listSpacing);
@@ -1053,8 +1113,145 @@ function applyStyleSegment(textNode: TextNode, start: number, end: number, style
     textNode.setRangeIndentation(start, end, style.indentation);
     textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
     textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
+    if (style.textStyleId === "") {
+      await restoreBoundVariables(textNode, start, end, style);
+    }
+    await restoreStyleIds(textNode, start, end, style);
+    restoreOverriddenStyleProperties(textNode, start, end, style);
   } catch (error) {
     console.error("[Чистовик] Failed to apply style segment", error);
+    throw error;
+  }
+}
+
+function restoreDetachedTextProperties(textNode: TextNode, start: number, end: number, style: StyleSegment): void {
+  try {
+    if (style.textStyleId !== "") {
+      return;
+    }
+
+    textNode.setRangeFontName(start, end, style.fontName);
+    textNode.setRangeFontSize(start, end, style.fontSize);
+    textNode.setRangeTextCase(start, end, style.textCase);
+    textNode.setRangeLetterSpacing(start, end, style.letterSpacing);
+    textNode.setRangeLineHeight(start, end, style.lineHeight);
+    restoreTextDecoration(textNode, start, end, style);
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore detached text properties", error);
+    throw error;
+  }
+}
+
+function restoreDetachedFillProperties(textNode: TextNode, start: number, end: number, style: StyleSegment): void {
+  try {
+    if (style.fillStyleId !== "") {
+      return;
+    }
+
+    textNode.setRangeFills(start, end, style.fills);
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore detached fill properties", error);
+    throw error;
+  }
+}
+
+async function restoreStyleIds(textNode: TextNode, start: number, end: number, style: StyleSegment): Promise<void> {
+  try {
+    if (style.fillStyleId !== "") {
+      await textNode.setRangeFillStyleIdAsync(start, end, style.fillStyleId);
+    }
+
+    if (style.textStyleId !== "") {
+      await textNode.setRangeTextStyleIdAsync(start, end, style.textStyleId);
+    }
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore style ids", error);
+    throw error;
+  }
+}
+
+function restoreOverriddenStyleProperties(textNode: TextNode, start: number, end: number, style: StyleSegment): void {
+  try {
+    if (shouldRestoreStyleOverride(style, "HYPERLINK")) {
+      restoreHyperlink(textNode, start, end, style);
+    }
+
+    if (hasTextDecoration(style) || shouldRestoreStyleOverride(style, "TEXT_DECORATION")) {
+      restoreTextDecoration(textNode, start, end, style);
+    }
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore overridden style properties", error);
+    throw error;
+  }
+}
+
+function shouldRestoreStyleOverride(style: StyleSegment, overrideType: TextStyleOverrideType["type"]): boolean {
+  try {
+    if (style.textStyleId === "") {
+      return true;
+    }
+
+    return style.textStyleOverrides.some((override) => override.type === overrideType);
+  } catch {
+    return false;
+  }
+}
+
+function restoreTextDecoration(textNode: TextNode, start: number, end: number, style: StyleSegment): void {
+  try {
+    textNode.setRangeTextDecoration(start, end, style.textDecoration);
+
+    if (style.textDecorationStyle !== null) {
+      textNode.setRangeTextDecorationStyle(start, end, style.textDecorationStyle);
+    }
+
+    if (style.textDecorationOffset !== null) {
+      textNode.setRangeTextDecorationOffset(start, end, style.textDecorationOffset);
+    }
+
+    if (style.textDecorationThickness !== null) {
+      textNode.setRangeTextDecorationThickness(start, end, style.textDecorationThickness);
+    }
+
+    if (style.textDecorationColor !== null) {
+      textNode.setRangeTextDecorationColor(start, end, style.textDecorationColor);
+    }
+
+    if (style.textDecorationSkipInk !== null) {
+      textNode.setRangeTextDecorationSkipInk(start, end, style.textDecorationSkipInk);
+    }
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore text decoration", error);
+    throw error;
+  }
+}
+
+function restoreHyperlink(textNode: TextNode, start: number, end: number, style: StyleSegment): void {
+  try {
+    textNode.setRangeHyperlink(start, end, style.hyperlink);
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore hyperlink", error);
+    throw error;
+  }
+}
+
+async function restoreBoundVariables(textNode: TextNode, start: number, end: number, style: StyleSegment): Promise<void> {
+  try {
+    if (style.boundVariables === undefined) {
+      return;
+    }
+
+    const entries = Object.entries(style.boundVariables) as Array<[VariableBindableTextField, VariableAlias]>;
+
+    for (const [field, variableAlias] of entries) {
+      const variable = await figma.variables.getVariableByIdAsync(variableAlias.id);
+
+      if (variable !== null) {
+        textNode.setRangeBoundVariable(start, end, field, variable);
+      }
+    }
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore bound variables", error);
     throw error;
   }
 }

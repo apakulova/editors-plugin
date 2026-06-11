@@ -26,11 +26,19 @@ const LETTERS = "A-Za-zА-Яа-яЁё";
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
 const STYLE_FIELDS = [
+    "boundVariables",
+    "fillStyleId",
     "fontName",
     "fontSize",
     "fills",
+    "hyperlink",
     "textCase",
     "textDecoration",
+    "textDecorationColor",
+    "textDecorationOffset",
+    "textDecorationSkipInk",
+    "textDecorationStyle",
+    "textDecorationThickness",
     "letterSpacing",
     "lineHeight",
     "listOptions",
@@ -38,6 +46,8 @@ const STYLE_FIELDS = [
     "indentation",
     "paragraphIndent",
     "paragraphSpacing",
+    "textStyleId",
+    "textStyleOverrides",
 ];
 const pendingAnalyticsEvents = [];
 let analyticsIdentityPromise = null;
@@ -636,8 +646,14 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     await loadFontsForTextNode(textNode);
                     const styles = captureTextStyles(textNode);
                     const styleMap = buildStyleMap(oldText, newText, styles);
+                    const wholeTextStyle = getWholeTextStyle(styles, oldText);
                     textNode.characters = newText;
-                    restoreTextStyles(textNode, styleMap, styles);
+                    if (wholeTextStyle !== null) {
+                        await restoreWholeTextStyle(textNode, wholeTextStyle);
+                    }
+                    else {
+                        await restoreTextStyles(textNode, styleMap, styles);
+                    }
                     applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
                     changed += 1;
                 }
@@ -685,6 +701,40 @@ function captureTextStyles(textNode) {
         console.error(`[Чистовик] Failed to capture text styles for text node ${textNode.id}`, error);
         throw error;
     }
+}
+function getWholeTextStyle(styles, oldText) {
+    try {
+        if (styles.length !== 1) {
+            return null;
+        }
+        const style = styles[0];
+        if (style.start !== 0 || style.end !== oldText.length || style.textStyleId === "" || style.textStyleOverrides.length > 0) {
+            return null;
+        }
+        return style;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to detect whole text style", error);
+        throw error;
+    }
+}
+async function restoreWholeTextStyle(textNode, style) {
+    try {
+        await textNode.setTextStyleIdAsync(style.textStyleId);
+        if (style.fillStyleId !== "") {
+            await textNode.setFillStyleIdAsync(style.fillStyleId);
+        }
+        if (hasTextDecoration(style)) {
+            restoreTextDecoration(textNode, 0, textNode.characters.length, style);
+        }
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to restore whole text style for text node ${textNode.id}`, error);
+        throw error;
+    }
+}
+function hasTextDecoration(style) {
+    return style.textDecoration !== "NONE";
 }
 function buildStyleMap(oldText, newText, styles) {
     try {
@@ -781,7 +831,7 @@ function buildGreedyOldIndexMap(oldText, newText) {
         throw error;
     }
 }
-function restoreTextStyles(textNode, styleMap, styles) {
+async function restoreTextStyles(textNode, styleMap, styles) {
     var _a, _b;
     try {
         if (textNode.characters.length === 0 || styles.length === 0 || styleMap.length === 0) {
@@ -794,7 +844,7 @@ function restoreTextStyles(textNode, styleMap, styles) {
             if (nextStyleIndex === currentStyleIndex && index < styleMap.length) {
                 continue;
             }
-            applyStyleSegment(textNode, start, index, styles[currentStyleIndex]);
+            await applyStyleSegment(textNode, start, index, styles[currentStyleIndex]);
             start = index;
             currentStyleIndex = nextStyleIndex;
         }
@@ -804,18 +854,13 @@ function restoreTextStyles(textNode, styleMap, styles) {
         throw error;
     }
 }
-function applyStyleSegment(textNode, start, end, style) {
+async function applyStyleSegment(textNode, start, end, style) {
     try {
         if (start >= end) {
             return;
         }
-        textNode.setRangeFontName(start, end, style.fontName);
-        textNode.setRangeFontSize(start, end, style.fontSize);
-        textNode.setRangeFills(start, end, style.fills);
-        textNode.setRangeTextCase(start, end, style.textCase);
-        textNode.setRangeTextDecoration(start, end, style.textDecoration);
-        textNode.setRangeLetterSpacing(start, end, style.letterSpacing);
-        textNode.setRangeLineHeight(start, end, style.lineHeight);
+        restoreDetachedTextProperties(textNode, start, end, style);
+        restoreDetachedFillProperties(textNode, start, end, style);
         textNode.setRangeListOptions(start, end, style.listOptions);
         if (style.listOptions.type !== "NONE") {
             textNode.setRangeListSpacing(start, end, style.listSpacing);
@@ -823,9 +868,133 @@ function applyStyleSegment(textNode, start, end, style) {
         textNode.setRangeIndentation(start, end, style.indentation);
         textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
         textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
+        if (style.textStyleId === "") {
+            await restoreBoundVariables(textNode, start, end, style);
+        }
+        await restoreStyleIds(textNode, start, end, style);
+        restoreOverriddenStyleProperties(textNode, start, end, style);
     }
     catch (error) {
         console.error("[Чистовик] Failed to apply style segment", error);
+        throw error;
+    }
+}
+function restoreDetachedTextProperties(textNode, start, end, style) {
+    try {
+        if (style.textStyleId !== "") {
+            return;
+        }
+        textNode.setRangeFontName(start, end, style.fontName);
+        textNode.setRangeFontSize(start, end, style.fontSize);
+        textNode.setRangeTextCase(start, end, style.textCase);
+        textNode.setRangeLetterSpacing(start, end, style.letterSpacing);
+        textNode.setRangeLineHeight(start, end, style.lineHeight);
+        restoreTextDecoration(textNode, start, end, style);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore detached text properties", error);
+        throw error;
+    }
+}
+function restoreDetachedFillProperties(textNode, start, end, style) {
+    try {
+        if (style.fillStyleId !== "") {
+            return;
+        }
+        textNode.setRangeFills(start, end, style.fills);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore detached fill properties", error);
+        throw error;
+    }
+}
+async function restoreStyleIds(textNode, start, end, style) {
+    try {
+        if (style.fillStyleId !== "") {
+            await textNode.setRangeFillStyleIdAsync(start, end, style.fillStyleId);
+        }
+        if (style.textStyleId !== "") {
+            await textNode.setRangeTextStyleIdAsync(start, end, style.textStyleId);
+        }
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore style ids", error);
+        throw error;
+    }
+}
+function restoreOverriddenStyleProperties(textNode, start, end, style) {
+    try {
+        if (shouldRestoreStyleOverride(style, "HYPERLINK")) {
+            restoreHyperlink(textNode, start, end, style);
+        }
+        if (hasTextDecoration(style) || shouldRestoreStyleOverride(style, "TEXT_DECORATION")) {
+            restoreTextDecoration(textNode, start, end, style);
+        }
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore overridden style properties", error);
+        throw error;
+    }
+}
+function shouldRestoreStyleOverride(style, overrideType) {
+    try {
+        if (style.textStyleId === "") {
+            return true;
+        }
+        return style.textStyleOverrides.some((override) => override.type === overrideType);
+    }
+    catch (_a) {
+        return false;
+    }
+}
+function restoreTextDecoration(textNode, start, end, style) {
+    try {
+        textNode.setRangeTextDecoration(start, end, style.textDecoration);
+        if (style.textDecorationStyle !== null) {
+            textNode.setRangeTextDecorationStyle(start, end, style.textDecorationStyle);
+        }
+        if (style.textDecorationOffset !== null) {
+            textNode.setRangeTextDecorationOffset(start, end, style.textDecorationOffset);
+        }
+        if (style.textDecorationThickness !== null) {
+            textNode.setRangeTextDecorationThickness(start, end, style.textDecorationThickness);
+        }
+        if (style.textDecorationColor !== null) {
+            textNode.setRangeTextDecorationColor(start, end, style.textDecorationColor);
+        }
+        if (style.textDecorationSkipInk !== null) {
+            textNode.setRangeTextDecorationSkipInk(start, end, style.textDecorationSkipInk);
+        }
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore text decoration", error);
+        throw error;
+    }
+}
+function restoreHyperlink(textNode, start, end, style) {
+    try {
+        textNode.setRangeHyperlink(start, end, style.hyperlink);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore hyperlink", error);
+        throw error;
+    }
+}
+async function restoreBoundVariables(textNode, start, end, style) {
+    try {
+        if (style.boundVariables === undefined) {
+            return;
+        }
+        const entries = Object.entries(style.boundVariables);
+        for (const [field, variableAlias] of entries) {
+            const variable = await figma.variables.getVariableByIdAsync(variableAlias.id);
+            if (variable !== null) {
+                textNode.setRangeBoundVariable(start, end, field, variable);
+            }
+        }
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore bound variables", error);
         throw error;
     }
 }
