@@ -13,11 +13,14 @@ const EM_DASH = "\u2014";
 const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
+const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
 const ANALYTICS_SCHEMA_VERSION = 1;
 const ANALYTICS_PLUGIN_VERSION = "1.0.0";
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
-const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 1000;
+const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
+const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 3000;
+const ANALYTICS_MAX_QUEUED_EVENTS = 100;
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
@@ -93,6 +96,21 @@ interface AnalyticsRunContext {
   startedAt: number;
 }
 
+interface AnalyticsPayload {
+  api_key: string;
+  distinct_id: string;
+  event: AnalyticsEventName;
+  properties: AnalyticsProperties;
+  timestamp: string;
+  uuid: string;
+}
+
+interface QueuedAnalyticsEvent {
+  attempts: number;
+  id: string;
+  payload: AnalyticsPayload;
+}
+
 interface QuoteState {
   script: QuoteScript;
   level: number;
@@ -136,6 +154,8 @@ interface MathOperatorParseResult {
 type StyleSegment = Pick<StyledTextSegment, PreservedStyleField | "characters" | "start" | "end">;
 
 const pendingAnalyticsEvents: Promise<void>[] = [];
+let analyticsIdentityPromise: Promise<AnalyticsIdentity> | null = null;
+let analyticsQueueOperation: Promise<void> = Promise.resolve();
 
 async function run(): Promise<void> {
   let shouldClosePlugin = true;
@@ -171,6 +191,7 @@ function openSettingsUI(): void {
     figma.ui.onmessage = async (message: PluginUIMessage) => {
       try {
         if (message.type === "close") {
+          await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
           figma.closePlugin();
           return;
         }
@@ -342,7 +363,9 @@ function getAnalyticsDuration(context: AnalyticsRunContext): number {
 
 function queueAnalyticsEvent(event: AnalyticsEventName, properties: AnalyticsProperties = {}): void {
   try {
-    const promise = trackAnalyticsEvent(event, properties);
+    const capturedAt = new Date().toISOString();
+    const eventId = createAnalyticsEventId();
+    const promise = trackAnalyticsEvent(event, properties, capturedAt, eventId);
     pendingAnalyticsEvents.push(promise);
 
     void promise.finally(() => {
@@ -378,35 +401,158 @@ function delay(timeoutMs: number): Promise<void> {
   });
 }
 
-async function trackAnalyticsEvent(event: AnalyticsEventName, properties: AnalyticsProperties = {}): Promise<void> {
+async function trackAnalyticsEvent(event: AnalyticsEventName, properties: AnalyticsProperties = {}, capturedAt: string = new Date().toISOString(), eventId: string = createAnalyticsEventId()): Promise<void> {
   try {
     const identity = await getAnalyticsIdentity();
-    const payload = {
-      api_key: ANALYTICS_PROJECT_TOKEN,
-      distinct_id: identity.distinctId,
-      event,
-      properties: {
-        ...properties,
-        $geoip_disable: true,
-        analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
-        identity_type: identity.identityType,
-        plugin_version: ANALYTICS_PLUGIN_VERSION,
-      },
-    };
+    const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt, eventId);
 
-    await fetch(`${ANALYTICS_API_HOST}/capture/`, {
-      body: JSON.stringify(payload),
-      headers: {
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-    });
+    await enqueueAnalyticsEvent(payload);
+    await flushQueuedAnalyticsEvents();
   } catch {
     // Analytics must never affect plugin behavior.
   }
 }
 
+function createAnalyticsEventPayload(event: AnalyticsEventName, properties: AnalyticsProperties, identity: AnalyticsIdentity, capturedAt: string, eventId: string): AnalyticsPayload {
+  return {
+    api_key: ANALYTICS_PROJECT_TOKEN,
+    distinct_id: identity.distinctId,
+    event,
+    properties: {
+      ...properties,
+      $geoip_disable: true,
+      $process_person_profile: false,
+      analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
+      identity_type: identity.identityType,
+      plugin_version: ANALYTICS_PLUGIN_VERSION,
+    },
+    timestamp: capturedAt,
+    uuid: eventId,
+  };
+}
+
+function getAnalyticsCaptureEndpoint(): string {
+  return `${ANALYTICS_API_HOST}${ANALYTICS_CAPTURE_PATH}`;
+}
+
+async function enqueueAnalyticsEvent(payload: AnalyticsPayload): Promise<void> {
+  await runAnalyticsQueueOperation(async () => {
+    const queue = await readQueuedAnalyticsEvents();
+    const nextEvent: QueuedAnalyticsEvent = {
+      attempts: 0,
+      id: payload.uuid,
+      payload,
+    };
+    const nextQueue = queue
+      .filter((queuedEvent) => queuedEvent.id !== nextEvent.id)
+      .concat(nextEvent)
+      .slice(-ANALYTICS_MAX_QUEUED_EVENTS);
+
+    await writeQueuedAnalyticsEvents(nextQueue);
+  });
+}
+
+async function flushQueuedAnalyticsEvents(): Promise<void> {
+  await runAnalyticsQueueOperation(async () => {
+    const queue = await readQueuedAnalyticsEvents();
+
+    if (queue.length === 0) {
+      return;
+    }
+
+    const remainingQueue: QueuedAnalyticsEvent[] = [];
+
+    for (const queuedEvent of queue) {
+      try {
+        await sendAnalyticsPayload(queuedEvent.payload);
+      } catch {
+        remainingQueue.push({
+          ...queuedEvent,
+          attempts: queuedEvent.attempts + 1,
+        });
+      }
+    }
+
+    await writeQueuedAnalyticsEvents(remainingQueue.slice(-ANALYTICS_MAX_QUEUED_EVENTS));
+  });
+}
+
+async function sendAnalyticsPayload(payload: AnalyticsPayload): Promise<void> {
+  const response = await fetch(getAnalyticsCaptureEndpoint(), {
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`PostHog capture failed: ${response.status}`);
+  }
+}
+
+function runAnalyticsQueueOperation(operation: () => Promise<void>): Promise<void> {
+  const nextOperation = analyticsQueueOperation.then(operation, operation);
+
+  analyticsQueueOperation = nextOperation.then(
+    () => undefined,
+    () => undefined
+  );
+
+  return nextOperation;
+}
+
+async function readQueuedAnalyticsEvents(): Promise<QueuedAnalyticsEvent[]> {
+  const storedQueue = await figma.clientStorage.getAsync(ANALYTICS_EVENT_QUEUE_KEY);
+
+  if (!Array.isArray(storedQueue)) {
+    return [];
+  }
+
+  return storedQueue.filter(isQueuedAnalyticsEvent).slice(-ANALYTICS_MAX_QUEUED_EVENTS);
+}
+
+async function writeQueuedAnalyticsEvents(queue: QueuedAnalyticsEvent[]): Promise<void> {
+  await figma.clientStorage.setAsync(ANALYTICS_EVENT_QUEUE_KEY, queue);
+}
+
+function isQueuedAnalyticsEvent(value: unknown): value is QueuedAnalyticsEvent {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const event = value as Partial<QueuedAnalyticsEvent>;
+
+  return typeof event.id === "string" && isAnalyticsPayload(event.payload);
+}
+
+function isAnalyticsPayload(value: unknown): value is AnalyticsPayload {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const payload = value as Partial<AnalyticsPayload>;
+
+  return (
+    typeof payload.api_key === "string" &&
+    typeof payload.distinct_id === "string" &&
+    typeof payload.event === "string" &&
+    typeof payload.properties === "object" &&
+    payload.properties !== null &&
+    typeof payload.timestamp === "string" &&
+    typeof payload.uuid === "string"
+  );
+}
+
 async function getAnalyticsIdentity(): Promise<AnalyticsIdentity> {
+  if (analyticsIdentityPromise === null) {
+    analyticsIdentityPromise = resolveAnalyticsIdentity();
+  }
+
+  return analyticsIdentityPromise;
+}
+
+async function resolveAnalyticsIdentity(): Promise<AnalyticsIdentity> {
   try {
     const storedAnonymousId = await figma.clientStorage.getAsync(ANALYTICS_ANONYMOUS_ID_KEY);
     const anonymousId = typeof storedAnonymousId === "string" && storedAnonymousId !== "" ? storedAnonymousId : createAnalyticsAnonymousId();
@@ -438,6 +584,14 @@ function createAnalyticsAnonymousId(): string {
     return `anon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}_${Math.random().toString(36).slice(2, 12)}`;
   } catch {
     return "anon_fallback";
+  }
+}
+
+function createAnalyticsEventId(): string {
+  try {
+    return `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}_${Math.random().toString(36).slice(2, 12)}`;
+  } catch {
+    return `evt_fallback_${Date.now().toString(36)}`;
   }
 }
 

@@ -14,6 +14,8 @@ const source = fs.readFileSync("dist/code.js", "utf8").replace(
     "globalThis.cleanTypography = cleanTypography;",
     "globalThis.cleanTypographyWithMetadata = cleanTypographyWithMetadata;",
     "globalThis.restoreTextStyles = restoreTextStyles;",
+    "globalThis.createAnalyticsEventPayload = createAnalyticsEventPayload;",
+    "globalThis.getAnalyticsCaptureEndpoint = getAnalyticsCaptureEndpoint;",
   ].join(" ")
 );
 const context = { console, globalThis: {} };
@@ -24,6 +26,8 @@ vm.runInContext(source, context);
 const cleanTypography = context.globalThis.cleanTypography;
 const cleanTypographyWithMetadata = context.globalThis.cleanTypographyWithMetadata;
 const restoreTextStyles = context.globalThis.restoreTextStyles;
+const createAnalyticsEventPayload = context.globalThis.createAnalyticsEventPayload;
+const getAnalyticsCaptureEndpoint = context.globalThis.getAnalyticsCaptureEndpoint;
 const developmentOptions = {
   mode: "development",
   processHiddenNodes: false,
@@ -42,6 +46,28 @@ const beautyOptions = {
   processLockedNodes: false,
   recolorExistingAsterisks: false,
 };
+
+assert.strictEqual(getAnalyticsCaptureEndpoint(), "https://eu.i.posthog.com/i/v0/e/");
+
+const analyticsPayload = createAnalyticsEventPayload(
+  "plugin_run_started",
+  { mode: "default", source: "quick_run" },
+  {
+    anonymousId: "anon_test",
+    distinctId: "anon_test",
+    identityType: "anonymous",
+    userId: null,
+  },
+  "2026-06-08T10:15:00.000Z",
+  "evt_test"
+);
+
+assert.strictEqual(analyticsPayload.timestamp, "2026-06-08T10:15:00.000Z");
+assert.strictEqual(analyticsPayload.uuid, "evt_test");
+assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
+assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
+assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
+assert.strictEqual(analyticsPayload.properties.mode, "default");
 
 function expectClean(input, expected) {
   const actual = cleanTypography(input);
