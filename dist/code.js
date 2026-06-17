@@ -695,10 +695,67 @@ function captureTextStyles(textNode) {
         if (textNode.characters.length === 0) {
             return [];
         }
-        return textNode.getStyledTextSegments(STYLE_FIELDS);
+        const segments = textNode.getStyledTextSegments(STYLE_FIELDS);
+        const nodeTextStyleId = getNodeStyleId(textNode.textStyleId);
+        const nodeFillStyleId = getNodeStyleId(textNode.fillStyleId);
+        return segments.map((segment) => (Object.assign(Object.assign({}, segment), { fillStyleId: getPreservedRangeStyleId(textNode, segment.start, segment.end, segment.fillStyleId, nodeFillStyleId, (start, end) => textNode.getRangeFillStyleId(start, end)), textStyleId: getPreservedRangeStyleId(textNode, segment.start, segment.end, segment.textStyleId, nodeTextStyleId, (start, end) => textNode.getRangeTextStyleId(start, end)) })));
     }
     catch (error) {
         console.error(`[Чистовик] Failed to capture text styles for text node ${textNode.id}`, error);
+        throw error;
+    }
+}
+function getNodeStyleId(styleId) {
+    try {
+        return typeof styleId === "string" && styleId !== "" ? styleId : null;
+    }
+    catch (_a) {
+        return null;
+    }
+}
+function getPreservedRangeStyleId(textNode, start, end, segmentStyleId, nodeStyleId, getRangeStyleId) {
+    try {
+        const rangeStyleId = getRangeStyleId(start, end);
+        if (typeof rangeStyleId === "string" && rangeStyleId !== "") {
+            return rangeStyleId;
+        }
+        if (segmentStyleId !== "") {
+            return segmentStyleId;
+        }
+        if (typeof rangeStyleId === "string" && nodeStyleId !== null) {
+            return nodeStyleId;
+        }
+        const characterStyleId = getCommonCharacterStyleId(textNode, start, end, getRangeStyleId);
+        if (characterStyleId !== null) {
+            return characterStyleId;
+        }
+        return typeof rangeStyleId === "string" ? rangeStyleId : segmentStyleId;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to preserve range style id", error);
+        throw error;
+    }
+}
+function getCommonCharacterStyleId(textNode, start, end, getRangeStyleId) {
+    try {
+        let commonStyleId = null;
+        for (let index = start; index < end; index += 1) {
+            const characterStyleId = getRangeStyleId(index, index + 1);
+            if (typeof characterStyleId !== "string") {
+                return null;
+            }
+            if (commonStyleId === null) {
+                commonStyleId = characterStyleId;
+                continue;
+            }
+            if (characterStyleId !== commonStyleId) {
+                return null;
+            }
+        }
+        return commonStyleId;
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to capture character style id for text node ${textNode.id}`, error);
         throw error;
     }
 }
@@ -910,11 +967,11 @@ function restoreDetachedFillProperties(textNode, start, end, style) {
 }
 async function restoreStyleIds(textNode, start, end, style) {
     try {
-        if (style.fillStyleId !== "") {
-            await textNode.setRangeFillStyleIdAsync(start, end, style.fillStyleId);
-        }
         if (style.textStyleId !== "") {
             await textNode.setRangeTextStyleIdAsync(start, end, style.textStyleId);
+        }
+        if (style.fillStyleId !== "") {
+            await textNode.setRangeFillStyleIdAsync(start, end, style.fillStyleId);
         }
     }
     catch (error) {
@@ -2301,15 +2358,15 @@ function normalizeAbbreviations(input) {
                 return match;
             }
         });
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*д\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}т.${NBSP}д.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*п\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}т.${NBSP}п.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])и[ \t\u00A0]+др\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1и${NBSP}др.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])в[ \t\u00A0]+т[ \t\u00A0]*\.?[ \t\u00A0]*ч\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1в${NBSP}т.${NBSP}ч.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])н[ \t\u00A0]*\.?[ \t\u00A0]*в\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1н.${NBSP}в.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*е\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}е.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*к\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}к.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*д\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}д.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])т[ \t\u00A0]*\.?[ \t\u00A0]*п\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1т.${NBSP}п.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(др)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}${NBSP}${second}.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(в)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(ч)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(н)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(в)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(е)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(к)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
+        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}P.${NBSP}S.`);
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}S.`);
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])кв\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1кв.${NBSP}м`);

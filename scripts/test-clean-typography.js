@@ -13,6 +13,7 @@ const source = fs.readFileSync("dist/code.js", "utf8").replace(
   [
     "globalThis.cleanTypography = cleanTypography;",
     "globalThis.cleanTypographyWithMetadata = cleanTypographyWithMetadata;",
+    "globalThis.captureTextStyles = captureTextStyles;",
     "globalThis.getWholeTextStyle = getWholeTextStyle;",
     "globalThis.restoreWholeTextStyle = restoreWholeTextStyle;",
     "globalThis.restoreTextStyles = restoreTextStyles;",
@@ -23,6 +24,7 @@ const source = fs.readFileSync("dist/code.js", "utf8").replace(
 const context = {
   console,
   figma: {
+    mixed: Symbol("mixed"),
     variables: {
       getVariableByIdAsync: async (id) => ({ id }),
     },
@@ -35,6 +37,7 @@ vm.runInContext(source, context);
 
 const cleanTypography = context.globalThis.cleanTypography;
 const cleanTypographyWithMetadata = context.globalThis.cleanTypographyWithMetadata;
+const captureTextStyles = context.globalThis.captureTextStyles;
 const getWholeTextStyle = context.globalThis.getWholeTextStyle;
 const restoreWholeTextStyle = context.globalThis.restoreWholeTextStyle;
 const restoreTextStyles = context.globalThis.restoreTextStyles;
@@ -80,6 +83,47 @@ assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
+
+function runStyleCaptureTests() {
+  const baseSegment = {
+    characters: "Заголовок",
+    end: 9,
+    fillStyleId: "",
+    start: 0,
+    textStyleId: "",
+  };
+  const nodeStyleFallback = {
+    characters: "Заголовок",
+    fillStyleId: "node-fill-style-id",
+    getRangeFillStyleId: () => "",
+    getRangeTextStyleId: () => "",
+    getStyledTextSegments: () => [baseSegment],
+    id: "node-style-fallback",
+    textStyleId: "node-text-style-id",
+  };
+
+  const nodeCapturedStyles = captureTextStyles(nodeStyleFallback);
+
+  assert.strictEqual(nodeCapturedStyles.length, 1);
+  assert.strictEqual(nodeCapturedStyles[0].fillStyleId, "node-fill-style-id");
+  assert.strictEqual(nodeCapturedStyles[0].textStyleId, "node-text-style-id");
+
+  const rangeStyleFallback = {
+    characters: "Заголовок",
+    fillStyleId: context.figma.mixed,
+    getRangeFillStyleId: () => "range-fill-style-id",
+    getRangeTextStyleId: () => "range-text-style-id",
+    getStyledTextSegments: () => [baseSegment],
+    id: "range-style-fallback",
+    textStyleId: context.figma.mixed,
+  };
+
+  const rangeCapturedStyles = captureTextStyles(rangeStyleFallback);
+
+  assert.strictEqual(rangeCapturedStyles.length, 1);
+  assert.strictEqual(rangeCapturedStyles[0].fillStyleId, "range-fill-style-id");
+  assert.strictEqual(rangeCapturedStyles[0].textStyleId, "range-text-style-id");
+}
 
 function expectClean(input, expected) {
   const actual = cleanTypography(input);
@@ -299,6 +343,15 @@ expectClean("Время 10 с.", `Время 10${NBSP}с`);
 expectClean("100 руб", `100${NBSP}руб.`);
 expectClean("20 коп", `20${NBSP}коп.`);
 expectClean("Стоимость 100 руб. Оплата завтра.", `Стоимость 100${NBSP}руб. Оплата завтра.`);
+expectClean("Те", "Те");
+expectClean("те?", "те?");
+expectClean("т.е. пример", `т.${NBSP}е. пример`);
+expectClean("т е пример", `т.${NBSP}е. пример`);
+expectClean("Т. е. пример", `Т.${NBSP}е. пример`);
+expectClean("Т е пример", `Т.${NBSP}е. пример`);
+expectClean("ТК пример", `ТК${NBSP}пример`);
+expectClean("Период: НВ", "Период: НВ");
+expectClean("PS", `P.${NBSP}S.`);
 expectClean("P.S. Проверь ещё раз.", `P.${NBSP}S. Проверь ещё раз.`);
 expectClean("P P S проверь ещё раз.", `P.${NBSP}P.${NBSP}S. проверь ещё раз.`);
 expectClean("Список, в т ч важные пункты", `Список, в${NBSP}т.${NBSP}ч. важные пункты`);
@@ -481,6 +534,7 @@ async function runStyleRestorationTests() {
   assert.strictEqual(calls.find(([name]) => name === "boundVariable"), undefined);
   assert.strictEqual(calls.find(([name]) => name === "fontName"), undefined);
   assert.strictEqual(calls.find(([name]) => name === "fills"), undefined);
+  assert(calls.findIndex(([name]) => name === "fillStyleId") > calls.findIndex(([name]) => name === "textStyleId"));
   assert(calls.findIndex(([name]) => name === "textDecoration") > calls.findIndex(([name]) => name === "textStyleId"));
   assert(calls.findIndex(([name]) => name === "hyperlink") > calls.findIndex(([name]) => name === "textStyleId"));
 
@@ -506,6 +560,7 @@ async function runStyleRestorationTests() {
   assert.strictEqual(calls.find(([name]) => name === "fills"), undefined);
   assert.strictEqual(calls.find(([name]) => name === "textDecoration"), undefined);
   assert.strictEqual(calls.find(([name]) => name === "hyperlink"), undefined);
+  assert(calls.findIndex(([name]) => name === "fillStyleId") > calls.findIndex(([name]) => name === "textStyleId"));
 
   calls.length = 0;
 
@@ -598,6 +653,8 @@ async function runWholeTextStyleRestorationTests() {
     ["textDecoration", 0, 9, "UNDERLINE"],
   ]);
 }
+
+runStyleCaptureTests();
 
 runStyleRestorationTests()
   .then(runWholeTextStyleRestorationTests)
