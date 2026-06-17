@@ -8,7 +8,7 @@
     "dev": "npm run sync-ui && tsc -p tsconfig.json --watch",
     "build": "npm run sync-ui && tsc -p tsconfig.json",
     "send-daily-analytics": "node scripts/send-daily-analytics.js",
-    "test": "npm run build && node scripts/test-clean-typography.js"
+    "test": "npm run build && node scripts/test-clean-typography.js && node scripts/test-analytics-report.js"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.106.0",

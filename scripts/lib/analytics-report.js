@@ -3,6 +3,33 @@ const MS_IN_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_POSTHOG_HOST = "https://eu.posthog.com";
 const DEFAULT_POSTHOG_PROJECT_ID = "184090";
 const DEFAULT_POSTHOG_DASHBOARD_URL = "https://eu.posthog.com/project/184090/dashboard/695809";
+const POSTHOG_UNEXPECTED_RESPONSE_REASON = "PostHog вернул неожиданный формат данных.";
+const SUMMARY_COLUMNS = [
+  "uniqueUsers",
+  "typographRuns",
+  "successfulRuns",
+  "failedRuns",
+  "modeDefault",
+  "modeBeauty",
+  "modeDevelopment",
+  "scopeSingleText",
+  "scopeContainer",
+  "scopePage",
+  "scopeMultiSelection",
+  "runsWithHiddenNodes",
+  "runsWithLockedNodes",
+  "runsWithRecoloredAsterisks",
+  "settingsOpened",
+  "channelLinkClicked",
+];
+
+class AnalyticsReportError extends Error {
+  constructor(message, publicReason) {
+    super(message);
+    this.name = "AnalyticsReportError";
+    this.publicReason = publicReason;
+  }
+}
 
 function assertRequiredEnv(env, keys) {
   const missing = keys
@@ -186,28 +213,21 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
     throw new Error(`PostHog query failed: ${response.status} ${body}`);
   }
 
-  const payload = await response.json();
-  const row = Array.isArray(payload.results) && Array.isArray(payload.results[0]) ? payload.results[0] : [];
-  const columns = [
-    "uniqueUsers",
-    "typographRuns",
-    "successfulRuns",
-    "failedRuns",
-    "modeDefault",
-    "modeBeauty",
-    "modeDevelopment",
-    "scopeSingleText",
-    "scopeContainer",
-    "scopePage",
-    "scopeMultiSelection",
-    "runsWithHiddenNodes",
-    "runsWithLockedNodes",
-    "runsWithRecoloredAsterisks",
-    "settingsOpened",
-    "channelLinkClicked",
-  ];
+  let payload;
 
-  return Object.fromEntries(columns.map((column, index) => [column, Number(row[index] || 0)]));
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw new AnalyticsReportError("PostHog query returned invalid JSON", POSTHOG_UNEXPECTED_RESPONSE_REASON);
+  }
+
+  const row = Array.isArray(payload.results) && Array.isArray(payload.results[0]) ? payload.results[0] : null;
+
+  if (row === null || row.length < SUMMARY_COLUMNS.length) {
+    throw new AnalyticsReportError("PostHog query returned unexpected result shape", POSTHOG_UNEXPECTED_RESPONSE_REASON);
+  }
+
+  return Object.fromEntries(SUMMARY_COLUMNS.map((column, index) => [column, Number(row[index] || 0)]));
 }
 
 function formatAnalyticsMessage(dateRange, summary, env = process.env) {
@@ -250,6 +270,17 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   return lines.join("\n");
 }
 
+function formatAnalyticsFailureMessage(dateRange, reason, env = process.env) {
+  const dashboardUrl = env.POSTHOG_DASHBOARD_URL || DEFAULT_POSTHOG_DASHBOARD_URL;
+  const lines = [
+    `<b>🛑 Не удалось собрать отчёт за ${escapeHtml(formatRussianDate(dateRange))}</b>`,
+    "",
+    `${escapeHtml(reason)} Попробуй проверить данные <a href="${escapeHtml(dashboardUrl)}">в полном дашборде</a> (открывается только с vpn)`,
+  ];
+
+  return lines.join("\n");
+}
+
 async function sendTelegramMessage(text, env = process.env, chatId = env.TELEGRAM_CHAT_ID) {
   assertRequiredEnv(env, ["TELEGRAM_BOT_TOKEN"]);
 
@@ -283,10 +314,31 @@ async function createAnalyticsMessage(period, env = process.env) {
   return formatAnalyticsMessage(dateRange, summary, env);
 }
 
+async function createAnalyticsMessageOrDiagnostic(period, env = process.env) {
+  const dateRange = getMoscowReportRange(period);
+
+  try {
+    const summary = await fetchPostHogSummary(dateRange, env);
+
+    return formatAnalyticsMessage(dateRange, summary, env);
+  } catch (error) {
+    if (error instanceof AnalyticsReportError) {
+      console.error(error);
+
+      return formatAnalyticsFailureMessage(dateRange, error.publicReason, env);
+    }
+
+    throw error;
+  }
+}
+
 module.exports = {
+  AnalyticsReportError,
   assertRequiredEnv,
   createAnalyticsMessage,
+  createAnalyticsMessageOrDiagnostic,
   fetchPostHogSummary,
+  formatAnalyticsFailureMessage,
   formatAnalyticsMessage,
   formatRussianDate,
   getMoscowReportRange,

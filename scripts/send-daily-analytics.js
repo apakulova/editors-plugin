@@ -1,6 +1,6 @@
 const {
   assertRequiredEnv,
-  createAnalyticsMessage,
+  createAnalyticsMessageOrDiagnostic,
   sendTelegramMessage,
 } = require("./lib/analytics-report");
 
@@ -11,7 +11,7 @@ async function main() {
     "TELEGRAM_CHAT_ID",
   ]);
 
-  const message = await createAnalyticsMessage("yesterday");
+  const message = await createAnalyticsMessageOrDiagnostic("yesterday");
 
   await sendTelegramMessage(message);
   console.log(message);

@@ -1,6 +1,6 @@
 const {
   assertRequiredEnv,
-  createAnalyticsMessage,
+  createAnalyticsMessageOrDiagnostic,
   sendTelegramMessage,
 } = require("../scripts/lib/analytics-report");
 
@@ -59,7 +59,7 @@ module.exports = async function handler(request, response) {
       return;
     }
 
-    const text = await createAnalyticsMessage("today");
+    const text = await createAnalyticsMessageOrDiagnostic("today");
 
     await sendTelegramMessage(text, process.env, String(message.chat.id));
     sendJson(response, 200, { ok: true });

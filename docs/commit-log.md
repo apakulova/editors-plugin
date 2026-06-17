@@ -4,6 +4,12 @@
 
 README должен оставаться коротким: полный журнал ведется здесь, а в README остается только ссылка на этот файл.
 
+- `TODO` — `Добавить диагностику отчета PostHog`.
+  Telegram-отчет больше не превращает неожиданный формат ответа PostHog в отчет с ложными нулями. `fetchPostHogSummary` теперь проверяет, что PostHog вернул строку результата с ожидаемым количеством колонок; при пустом или нестандартном `results` формируется диагностическое сообщение: жирный заголовок `🛑 Не удалось собрать отчёт за <дата>`, причина `PostHog вернул неожиданный формат данных.` и ссылка `в полном дашборде`.
+  Ежедневный Vercel Cron, команда `/today` и резервный скрипт GitHub Actions переведены на общий безопасный путь `createAnalyticsMessageOrDiagnostic`. Реальные нули при корректном ответе PostHog по-прежнему остаются обычным отчетом.
+  README и `docs/telegram-bot-guide.md` обновлены описанием диагностического сообщения. Добавлен тест `scripts/test-analytics-report.js`, который проверяет диагностический текст, отсутствие строки `Запуски типографа: 0` при нестандартном ответе и сохранение обычного нулевого отчета при корректной строке результатов.
+  Затронуты только Telegram/Vercel-отчет и документация: `scripts/lib/analytics-report.js`, `api/daily-analytics.js`, `api/telegram.js`, `scripts/send-daily-analytics.js`, `scripts/test-analytics-report.js`, `package.json`, README, `docs/telegram-bot-guide.md` и `docs/commit-log.md`. Код Figma-плагина, `src/code.ts`, `dist/code.js`, UI, manifest, типографические правила и уведомления обработки не менялись. Для применения нужен redeploy Vercel; обновлять установленный Figma-плагин из-за этой правки не нужно.
+  Проверки: `node --check scripts/lib/analytics-report.js`, `node --check scripts/send-daily-analytics.js`, `node --check api/daily-analytics.js`, `node --check api/telegram.js`, `node --check scripts/test-analytics-report.js`, `npm test`, `git diff --check`.
 - `975666b` — `Переименовать команду продвинутых фич`.
   Команда открытия интерфейса в `manifest.json` переименована с `⚙️ Настройки` на `⭐ Продвинутые фичи`, чтобы в меню Figma лучше отделять быстрый запуск типографа от расширенных режимов и настроек. Внутренний command id `open-settings` не менялся, поэтому логика открытия UI осталась прежней.
   README обновлен в актуальных описаниях команд и производительности под новое название. Исторические записи в журнале коммитов не переписывались.
