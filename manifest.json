@@ -11,7 +11,7 @@
   "ui": "src/ui.html",
   "menu": [
     { "name": "Запустить типограф", "command": "run-chistovik" },
-    { "name": "⚙️ Настройки", "command": "open-settings" }
+    { "name": "⭐ Продвинутые фичи", "command": "open-settings" }
   ],
   "editorType": ["figma"]
 }
