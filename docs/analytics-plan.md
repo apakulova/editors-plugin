@@ -310,6 +310,35 @@ async function trackAnalyticsEvent(name: string, properties: AnalyticsProperties
 
 Не добавлять `await trackAnalyticsEvent(...)` в критический путь перед изменением текста или перед пользовательским уведомлением.
 
+## Формат PostHog Capture payload
+
+События нужно отправлять в PostHog Capture API без кастомного поля `uuid`.
+
+Внутренние id событий вида `evt_<timestamp>_<random>` можно использовать только внутри локальной очереди плагина, например как `QueuedAnalyticsEvent.id`. Их нельзя передавать в PostHog как `uuid`: Capture API принимает отсутствие `uuid` или настоящий UUID-формат, а произвольная строка приводит к `400 Bad Request`.
+
+Безопасный минимум payload:
+
+```ts
+{
+  api_key: ANALYTICS_PROJECT_TOKEN,
+  distinct_id: identity.distinctId,
+  event,
+  properties: {
+    ...properties,
+    $geoip_disable: true,
+    $process_person_profile: false,
+    analytics_schema_version: 1,
+    identity_type: identity.identityType,
+    plugin_version: ANALYTICS_PLUGIN_VERSION
+  },
+  timestamp: capturedAt
+}
+```
+
+Если для дедупликации в PostHog когда-нибудь понадобится `uuid`, его нужно генерировать настоящим UUID v4 и отдельно проверить Capture API на тестовом событии с `is_test_event: true`.
+
+Локальная очередь событий в `figma.clientStorage` должна быть устойчивой к старому формату: при чтении очереди legacy-payload нужно нормализовать перед отправкой, чтобы старое невалидное поле не блокировало новые события.
+
 ## Где ставить аналитику
 
 Ставить аналитику вокруг сценариев запуска:

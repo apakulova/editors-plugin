@@ -20,7 +20,7 @@ const ANALYTICS_SCHEMA_VERSION = 1;
 const ANALYTICS_PLUGIN_VERSION = "1.0.0";
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
-const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 3000;
+const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
 const ANALYTICS_MAX_QUEUED_EVENTS = 100;
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
@@ -84,7 +84,6 @@ function openSettingsUI() {
         figma.ui.onmessage = async (message) => {
             try {
                 if (message.type === "close") {
-                    await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
                     figma.closePlugin();
                     return;
                 }
@@ -97,7 +96,6 @@ function openSettingsUI() {
                 }
                 if (message.type === "run-typograph") {
                     await runTypograph(getRunOptionsFromMessage(message), "settings");
-                    await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
                 }
             }
             catch (error) {
@@ -265,33 +263,32 @@ function delay(timeoutMs) {
 async function trackAnalyticsEvent(event, properties = {}, capturedAt = new Date().toISOString(), eventId = createAnalyticsEventId()) {
     try {
         const identity = await getAnalyticsIdentity();
-        const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt, eventId);
-        await enqueueAnalyticsEvent(payload);
+        const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt);
+        await enqueueAnalyticsEvent(payload, eventId);
         await flushQueuedAnalyticsEvents();
     }
     catch (_a) {
         // Analytics must never affect plugin behavior.
     }
 }
-function createAnalyticsEventPayload(event, properties, identity, capturedAt, eventId) {
+function createAnalyticsEventPayload(event, properties, identity, capturedAt) {
     return {
         api_key: ANALYTICS_PROJECT_TOKEN,
         distinct_id: identity.distinctId,
         event,
         properties: Object.assign(Object.assign({}, properties), { $geoip_disable: true, $process_person_profile: false, analytics_schema_version: ANALYTICS_SCHEMA_VERSION, identity_type: identity.identityType, plugin_version: ANALYTICS_PLUGIN_VERSION }),
         timestamp: capturedAt,
-        uuid: eventId,
     };
 }
 function getAnalyticsCaptureEndpoint() {
     return `${ANALYTICS_API_HOST}${ANALYTICS_CAPTURE_PATH}`;
 }
-async function enqueueAnalyticsEvent(payload) {
+async function enqueueAnalyticsEvent(payload, eventId) {
     await runAnalyticsQueueOperation(async () => {
         const queue = await readQueuedAnalyticsEvents();
         const nextEvent = {
             attempts: 0,
-            id: payload.uuid,
+            id: eventId,
             payload,
         };
         const nextQueue = queue
@@ -341,30 +338,49 @@ async function readQueuedAnalyticsEvents() {
     if (!Array.isArray(storedQueue)) {
         return [];
     }
-    return storedQueue.filter(isQueuedAnalyticsEvent).slice(-ANALYTICS_MAX_QUEUED_EVENTS);
+    return storedQueue
+        .map(toQueuedAnalyticsEvent)
+        .filter((event) => event !== null)
+        .slice(-ANALYTICS_MAX_QUEUED_EVENTS);
 }
 async function writeQueuedAnalyticsEvents(queue) {
     await figma.clientStorage.setAsync(ANALYTICS_EVENT_QUEUE_KEY, queue);
 }
-function isQueuedAnalyticsEvent(value) {
+function toQueuedAnalyticsEvent(value) {
     if (typeof value !== "object" || value === null) {
-        return false;
+        return null;
     }
     const event = value;
-    return typeof event.id === "string" && isAnalyticsPayload(event.payload);
+    const payload = sanitizeAnalyticsPayload(event.payload);
+    if (typeof event.id !== "string" || payload === null) {
+        return null;
+    }
+    return {
+        attempts: typeof event.attempts === "number" ? event.attempts : 0,
+        id: event.id,
+        payload,
+    };
 }
-function isAnalyticsPayload(value) {
+function sanitizeAnalyticsPayload(value) {
     if (typeof value !== "object" || value === null) {
-        return false;
+        return null;
     }
     const payload = value;
-    return (typeof payload.api_key === "string" &&
-        typeof payload.distinct_id === "string" &&
-        typeof payload.event === "string" &&
-        typeof payload.properties === "object" &&
-        payload.properties !== null &&
-        typeof payload.timestamp === "string" &&
-        typeof payload.uuid === "string");
+    if (typeof payload.api_key !== "string" ||
+        typeof payload.distinct_id !== "string" ||
+        typeof payload.event !== "string" ||
+        typeof payload.properties !== "object" ||
+        payload.properties === null ||
+        typeof payload.timestamp !== "string") {
+        return null;
+    }
+    return {
+        api_key: payload.api_key,
+        distinct_id: payload.distinct_id,
+        event: payload.event,
+        properties: payload.properties,
+        timestamp: payload.timestamp,
+    };
 }
 async function getAnalyticsIdentity() {
     if (analyticsIdentityPromise === null) {
@@ -514,10 +530,10 @@ function getSkippedLayerLabel(result) {
 }
 async function collectTargetTextNodes(options) {
     try {
-        await figma.currentPage.loadAsync();
         const selection = figma.currentPage.selection;
         let candidates = [];
         if (selection.length === 0) {
+            await figma.currentPage.loadAsync();
             candidates = figma.currentPage.findAllWithCriteria({ types: ["TEXT"] });
         }
         else {

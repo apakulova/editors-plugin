@@ -19,7 +19,7 @@ const ANALYTICS_SCHEMA_VERSION = 1;
 const ANALYTICS_PLUGIN_VERSION = "1.0.0";
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
-const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 3000;
+const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
 const ANALYTICS_MAX_QUEUED_EVENTS = 100;
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
@@ -122,7 +122,6 @@ interface AnalyticsPayload {
   event: AnalyticsEventName;
   properties: AnalyticsProperties;
   timestamp: string;
-  uuid: string;
 }
 
 interface QueuedAnalyticsEvent {
@@ -211,7 +210,6 @@ function openSettingsUI(): void {
     figma.ui.onmessage = async (message: PluginUIMessage) => {
       try {
         if (message.type === "close") {
-          await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
           figma.closePlugin();
           return;
         }
@@ -226,7 +224,6 @@ function openSettingsUI(): void {
 
         if (message.type === "run-typograph") {
           await runTypograph(getRunOptionsFromMessage(message), "settings");
-          await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
         }
       } catch (error) {
         console.error("[Чистовик] Failed to handle UI message", error);
@@ -424,16 +421,16 @@ function delay(timeoutMs: number): Promise<void> {
 async function trackAnalyticsEvent(event: AnalyticsEventName, properties: AnalyticsProperties = {}, capturedAt: string = new Date().toISOString(), eventId: string = createAnalyticsEventId()): Promise<void> {
   try {
     const identity = await getAnalyticsIdentity();
-    const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt, eventId);
+    const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt);
 
-    await enqueueAnalyticsEvent(payload);
+    await enqueueAnalyticsEvent(payload, eventId);
     await flushQueuedAnalyticsEvents();
   } catch {
     // Analytics must never affect plugin behavior.
   }
 }
 
-function createAnalyticsEventPayload(event: AnalyticsEventName, properties: AnalyticsProperties, identity: AnalyticsIdentity, capturedAt: string, eventId: string): AnalyticsPayload {
+function createAnalyticsEventPayload(event: AnalyticsEventName, properties: AnalyticsProperties, identity: AnalyticsIdentity, capturedAt: string): AnalyticsPayload {
   return {
     api_key: ANALYTICS_PROJECT_TOKEN,
     distinct_id: identity.distinctId,
@@ -447,7 +444,6 @@ function createAnalyticsEventPayload(event: AnalyticsEventName, properties: Anal
       plugin_version: ANALYTICS_PLUGIN_VERSION,
     },
     timestamp: capturedAt,
-    uuid: eventId,
   };
 }
 
@@ -455,12 +451,12 @@ function getAnalyticsCaptureEndpoint(): string {
   return `${ANALYTICS_API_HOST}${ANALYTICS_CAPTURE_PATH}`;
 }
 
-async function enqueueAnalyticsEvent(payload: AnalyticsPayload): Promise<void> {
+async function enqueueAnalyticsEvent(payload: AnalyticsPayload, eventId: string): Promise<void> {
   await runAnalyticsQueueOperation(async () => {
     const queue = await readQueuedAnalyticsEvents();
     const nextEvent: QueuedAnalyticsEvent = {
       attempts: 0,
-      id: payload.uuid,
+      id: eventId,
       payload,
     };
     const nextQueue = queue
@@ -529,39 +525,60 @@ async function readQueuedAnalyticsEvents(): Promise<QueuedAnalyticsEvent[]> {
     return [];
   }
 
-  return storedQueue.filter(isQueuedAnalyticsEvent).slice(-ANALYTICS_MAX_QUEUED_EVENTS);
+  return storedQueue
+    .map(toQueuedAnalyticsEvent)
+    .filter((event): event is QueuedAnalyticsEvent => event !== null)
+    .slice(-ANALYTICS_MAX_QUEUED_EVENTS);
 }
 
 async function writeQueuedAnalyticsEvents(queue: QueuedAnalyticsEvent[]): Promise<void> {
   await figma.clientStorage.setAsync(ANALYTICS_EVENT_QUEUE_KEY, queue);
 }
 
-function isQueuedAnalyticsEvent(value: unknown): value is QueuedAnalyticsEvent {
+function toQueuedAnalyticsEvent(value: unknown): QueuedAnalyticsEvent | null {
   if (typeof value !== "object" || value === null) {
-    return false;
+    return null;
   }
 
   const event = value as Partial<QueuedAnalyticsEvent>;
+  const payload = sanitizeAnalyticsPayload(event.payload);
 
-  return typeof event.id === "string" && isAnalyticsPayload(event.payload);
+  if (typeof event.id !== "string" || payload === null) {
+    return null;
+  }
+
+  return {
+    attempts: typeof event.attempts === "number" ? event.attempts : 0,
+    id: event.id,
+    payload,
+  };
 }
 
-function isAnalyticsPayload(value: unknown): value is AnalyticsPayload {
+function sanitizeAnalyticsPayload(value: unknown): AnalyticsPayload | null {
   if (typeof value !== "object" || value === null) {
-    return false;
+    return null;
   }
 
   const payload = value as Partial<AnalyticsPayload>;
 
-  return (
-    typeof payload.api_key === "string" &&
-    typeof payload.distinct_id === "string" &&
-    typeof payload.event === "string" &&
-    typeof payload.properties === "object" &&
-    payload.properties !== null &&
-    typeof payload.timestamp === "string" &&
-    typeof payload.uuid === "string"
-  );
+  if (
+    typeof payload.api_key !== "string" ||
+    typeof payload.distinct_id !== "string" ||
+    typeof payload.event !== "string" ||
+    typeof payload.properties !== "object" ||
+    payload.properties === null ||
+    typeof payload.timestamp !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    api_key: payload.api_key,
+    distinct_id: payload.distinct_id,
+    event: payload.event as AnalyticsEventName,
+    properties: payload.properties as AnalyticsProperties,
+    timestamp: payload.timestamp,
+  };
 }
 
 async function getAnalyticsIdentity(): Promise<AnalyticsIdentity> {
@@ -722,12 +739,11 @@ function getSkippedLayerLabel(result: TextProcessResult): string {
 
 async function collectTargetTextNodes(options: { processHidden: boolean; processLocked: boolean }): Promise<TextCollectionResult> {
   try {
-    await figma.currentPage.loadAsync();
-
     const selection = figma.currentPage.selection;
     let candidates: TextNode[] = [];
 
     if (selection.length === 0) {
+      await figma.currentPage.loadAsync();
       candidates = figma.currentPage.findAllWithCriteria({ types: ["TEXT"] });
     } else {
       const seen = new Set<string>();

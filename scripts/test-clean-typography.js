@@ -73,12 +73,11 @@ const analyticsPayload = createAnalyticsEventPayload(
     identityType: "anonymous",
     userId: null,
   },
-  "2026-06-08T10:15:00.000Z",
-  "evt_test"
+  "2026-06-08T10:15:00.000Z"
 );
 
 assert.strictEqual(analyticsPayload.timestamp, "2026-06-08T10:15:00.000Z");
-assert.strictEqual(analyticsPayload.uuid, "evt_test");
+assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload, "uuid"), false);
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
