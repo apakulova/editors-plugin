@@ -52,6 +52,7 @@ const STYLE_FIELDS = [
 const pendingAnalyticsEvents = [];
 let analyticsIdentityPromise = null;
 let analyticsQueueOperation = Promise.resolve();
+let typographRunInProgress = false;
 async function run() {
     let shouldClosePlugin = true;
     try {
@@ -64,7 +65,7 @@ async function run() {
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean typography", error);
-        figma.notify("Ой, не получилось почистить 🛑", { error: true });
+        figma.notify("Ой, не получилось почистить 🛑", { error: true, timeout: 4000 });
     }
     finally {
         if (shouldClosePlugin) {
@@ -100,7 +101,7 @@ function openSettingsUI() {
             }
             catch (error) {
                 console.error("[Чистовик] Failed to handle UI message", error);
-                figma.notify("Ой, не получилось почистить 🛑", { error: true });
+                figma.notify("Ой, не получилось почистить 🛑", { error: true, timeout: 4000 });
             }
         };
     }
@@ -111,11 +112,17 @@ function openSettingsUI() {
 }
 async function runTypograph(options, source) {
     var _a, _b;
+    if (typographRunInProgress) {
+        return;
+    }
     const analyticsContext = createAnalyticsRunContext(options, source);
+    typographRunInProgress = true;
     let analyticsStage = "unknown";
     let result = null;
-    queueAnalyticsEvent("plugin_run_started", getRunAnalyticsProperties(analyticsContext));
+    let workingNotification = null;
     try {
+        workingNotification = figma.notify("Чистовик работает...", { timeout: Infinity });
+        queueAnalyticsEvent("plugin_run_started", getRunAnalyticsProperties(analyticsContext));
         figma.skipInvisibleInstanceChildren = !options.processHiddenNodes;
         analyticsStage = "collect_nodes";
         const collection = await collectTargetTextNodes({
@@ -127,6 +134,8 @@ async function runTypograph(options, source) {
         if (result.failed > 0) {
             throw new Error(`Failed to process ${result.failed} text node(s)`);
         }
+        cancelNotificationSafely(workingNotification);
+        workingNotification = null;
         notifyCleanResult(result);
         queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_nodes_count: result.changed, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_nodes_count: result.failed, found_text_nodes_count: result.processed + result.skippedHidden + result.skippedLocked, processed_text_nodes_count: result.processed, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked }));
     }
@@ -134,6 +143,26 @@ async function runTypograph(options, source) {
         console.error("[Чистовик] Failed to run typograph", error);
         queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_fingerprint: createErrorFingerprint(error), error_name: getErrorName(error), failed_text_nodes_count: (_a = result === null || result === void 0 ? void 0 : result.failed) !== null && _a !== void 0 ? _a : null, found_text_nodes_count: result === null ? null : result.processed + result.skippedHidden + result.skippedLocked, processed_text_nodes_count: (_b = result === null || result === void 0 ? void 0 : result.processed) !== null && _b !== void 0 ? _b : null, stage: analyticsStage }));
         throw error;
+    }
+    finally {
+        cancelNotificationSafely(workingNotification);
+        typographRunInProgress = false;
+        if (source === "settings") {
+            try {
+                figma.ui.postMessage({ type: "typograph-run-finished" });
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to reset typograph UI state", error);
+            }
+        }
+    }
+}
+function cancelNotificationSafely(notification) {
+    try {
+        notification === null || notification === void 0 ? void 0 : notification.cancel();
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to cancel notification", error);
     }
 }
 function createAnalyticsRunContext(options, source) {
@@ -651,6 +680,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         let processed = 0;
         let changed = 0;
         let failed = 0;
+        const fontLoadCache = new Map();
         for (const textNode of textNodes) {
             try {
                 processed += 1;
@@ -659,7 +689,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 const cleanResult = cleanTypographyWithMetadata(oldText, options, existingDevelopmentMarkerIndexes);
                 const newText = cleanResult.text;
                 if (newText !== oldText) {
-                    await loadFontsForTextNode(textNode);
+                    await loadFontsForTextNode(textNode, fontLoadCache);
                     const styles = captureTextStyles(textNode);
                     const styleMap = buildStyleMap(oldText, newText, styles);
                     const wholeTextStyle = getWholeTextStyle(styles, oldText);
@@ -690,7 +720,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         throw error;
     }
 }
-async function loadFontsForTextNode(textNode) {
+async function loadFontsForTextNode(textNode, fontLoadCache) {
     try {
         const fonts = new Map();
         if (textNode.characters.length === 0) {
@@ -699,12 +729,27 @@ async function loadFontsForTextNode(textNode) {
         for (const font of textNode.getRangeAllFontNames(0, textNode.characters.length)) {
             fonts.set(`${font.family}\n${font.style}`, font);
         }
-        await Promise.all(Array.from(fonts.values(), (font) => figma.loadFontAsync(font)));
+        await Promise.all(Array.from(fonts.values(), (font) => getFontLoadPromise(font, fontLoadCache)));
     }
     catch (error) {
         console.error(`[Чистовик] Failed to load fonts for text node ${textNode.id}`, error);
         throw error;
     }
+}
+function getFontLoadPromise(font, fontLoadCache) {
+    const key = `${font.family}\n${font.style}`;
+    const cachedPromise = fontLoadCache.get(key);
+    if (cachedPromise !== undefined) {
+        return cachedPromise;
+    }
+    const loadPromise = figma.loadFontAsync(font).catch((error) => {
+        if (fontLoadCache.get(key) === loadPromise) {
+            fontLoadCache.delete(key);
+        }
+        throw error;
+    });
+    fontLoadCache.set(key, loadPromise);
+    return loadPromise;
 }
 function captureTextStyles(textNode) {
     try {
@@ -2387,7 +2432,21 @@ function normalizeAbbreviations(input) {
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}S.`);
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])кв\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1кв.${NBSP}м`);
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])куб\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1куб.${NBSP}м`);
-        text = text.replace(new RegExp(`(^|[^${LETTERS}])(${DOTTED_ABBREVIATIONS})\\.?(?=$|[^${LETTERS}\\-${NB_HYPHEN}])`, "gi"), "$1$2.");
+        text = normalizeSlashSeparatedAbbreviationDots(text);
+        text = text.replace(new RegExp(`(^|[^${LETTERS}])(${DOTTED_ABBREVIATIONS})\\.?(?=$|[^${LETTERS}\\-${NB_HYPHEN}])`, "gi"), (match, prefix, abbreviation, offset, fullText) => {
+            try {
+                const abbreviationStart = offset + prefix.length;
+                const abbreviationEnd = abbreviationStart + abbreviation.length;
+                if (isSlashSeparatedAbbreviationPart(fullText, abbreviationStart, abbreviationEnd)) {
+                    return match;
+                }
+                return `${prefix}${abbreviation}.`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize dotted abbreviation candidate", error);
+                return match;
+            }
+        });
         text = text.replace(new RegExp(`(^|[^${LETTERS}])(под)(?=\\.|[ \\t\\u00A0]+\\d)(\\.?)`, "gi"), "$1$2.");
         text = text.replace(new RegExp(`(^|[^${LETTERS}])(б[-${NB_HYPHEN}]р|пр[-${NB_HYPHEN}]т)\\.?(?=$|[^${LETTERS}])`, "gi"), "$1$2");
         text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, prefix, offset, fullText) => {
@@ -2459,6 +2518,92 @@ function isSameLineSentenceContinuation(fullText, periodIndex) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to check same-line sentence continuation", error);
+        throw error;
+    }
+}
+function normalizeSlashSeparatedAbbreviationDots(input) {
+    try {
+        return input
+            .replace(new RegExp(`(^|[^${LETTERS}])([А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]*\\/[ \\t\\u00A0]*[А-Яа-яЁё])`, "g"), "$1$2")
+            .replace(new RegExp(`(^|[^${LETTERS}])((?:[А-Яа-яЁё]{1,4}[ \\t\\u00A0]*\\/[ \\t\\u00A0]*)+[А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]+[а-яё])`, "g"), (match, prefix, slashAbbreviation, offset, fullText) => {
+            try {
+                const dotIndex = offset + match.length - 1;
+                if (isSlashSeparatedAreaUnitAbbreviation(fullText, slashAbbreviation, dotIndex)) {
+                    return match;
+                }
+                return `${prefix}${slashAbbreviation}`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize slash-separated abbreviation dot candidate", error);
+                return match;
+            }
+        });
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to normalize slash-separated abbreviation dots", error);
+        throw error;
+    }
+}
+function isSlashSeparatedAreaUnitAbbreviation(fullText, slashAbbreviation, dotIndex) {
+    try {
+        return /\/[ \t\u00A0]*(кв|куб)$/i.test(slashAbbreviation) &&
+            /^[ \t\u00A0]+м(?=$|[^A-Za-zА-Яа-яЁё])/.test(fullText.slice(dotIndex + 1));
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check slash-separated area unit abbreviation", error);
+        throw error;
+    }
+}
+function isSlashSeparatedAbbreviationPart(fullText, abbreviationStart, abbreviationEnd) {
+    try {
+        const previousIndex = findPreviousHorizontalNonSpaceIndex(fullText, abbreviationStart);
+        if (previousIndex !== -1 && fullText[previousIndex] === "/") {
+            const beforeSlashIndex = findPreviousHorizontalNonSpaceIndex(fullText, previousIndex);
+            if (beforeSlashIndex !== -1 && isLetter(fullText[beforeSlashIndex])) {
+                return true;
+            }
+        }
+        const nextIndex = findNextHorizontalNonSpaceIndex(fullText, abbreviationEnd);
+        if (nextIndex !== -1 && fullText[nextIndex] === "/") {
+            const afterSlashIndex = findNextHorizontalNonSpaceIndex(fullText, nextIndex + 1);
+            if (afterSlashIndex !== -1 && isLetter(fullText[afterSlashIndex])) {
+                return true;
+            }
+        }
+        return false;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check slash-separated abbreviation part", error);
+        throw error;
+    }
+}
+function findPreviousHorizontalNonSpaceIndex(input, index) {
+    try {
+        for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+            if (/[ \t\u00A0]/.test(input[cursor])) {
+                continue;
+            }
+            return cursor;
+        }
+        return -1;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to find previous horizontal non-space index", error);
+        throw error;
+    }
+}
+function findNextHorizontalNonSpaceIndex(input, index) {
+    try {
+        for (let cursor = index; cursor < input.length; cursor += 1) {
+            if (/[ \t\u00A0]/.test(input[cursor])) {
+                continue;
+            }
+            return cursor;
+        }
+        return -1;
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to find next horizontal non-space index", error);
         throw error;
     }
 }

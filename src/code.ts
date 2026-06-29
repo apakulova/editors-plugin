@@ -175,6 +175,7 @@ type StyleSegment = Pick<StyledTextSegment, PreservedStyleField | "characters" |
 const pendingAnalyticsEvents: Promise<void>[] = [];
 let analyticsIdentityPromise: Promise<AnalyticsIdentity> | null = null;
 let analyticsQueueOperation: Promise<void> = Promise.resolve();
+let typographRunInProgress = false;
 
 async function run(): Promise<void> {
   let shouldClosePlugin = true;
@@ -189,7 +190,7 @@ async function run(): Promise<void> {
     await runTypograph(getDefaultRunOptions(), "quick_run");
   } catch (error) {
     console.error("[Чистовик] Failed to clean typography", error);
-    figma.notify("Ой, не получилось почистить 🛑", { error: true });
+    figma.notify("Ой, не получилось почистить 🛑", { error: true, timeout: 4000 });
   } finally {
     if (shouldClosePlugin) {
       await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
@@ -227,7 +228,7 @@ function openSettingsUI(): void {
         }
       } catch (error) {
         console.error("[Чистовик] Failed to handle UI message", error);
-        figma.notify("Ой, не получилось почистить 🛑", { error: true });
+        figma.notify("Ой, не получилось почистить 🛑", { error: true, timeout: 4000 });
       }
     };
   } catch (error) {
@@ -237,13 +238,19 @@ function openSettingsUI(): void {
 }
 
 async function runTypograph(options: PluginRunOptions, source: PluginRunSource): Promise<void> {
+  if (typographRunInProgress) {
+    return;
+  }
+
   const analyticsContext = createAnalyticsRunContext(options, source);
+  typographRunInProgress = true;
   let analyticsStage: AnalyticsErrorStage = "unknown";
   let result: TextProcessResult | null = null;
-
-  queueAnalyticsEvent("plugin_run_started", getRunAnalyticsProperties(analyticsContext));
+  let workingNotification: NotificationHandler | null = null;
 
   try {
+    workingNotification = figma.notify("Чистовик работает...", { timeout: Infinity });
+    queueAnalyticsEvent("plugin_run_started", getRunAnalyticsProperties(analyticsContext));
     figma.skipInvisibleInstanceChildren = !options.processHiddenNodes;
 
     analyticsStage = "collect_nodes";
@@ -259,6 +266,8 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
       throw new Error(`Failed to process ${result.failed} text node(s)`);
     }
 
+    cancelNotificationSafely(workingNotification);
+    workingNotification = null;
     notifyCleanResult(result);
     queueAnalyticsEvent("plugin_run_completed", {
       ...getRunAnalyticsProperties(analyticsContext),
@@ -284,6 +293,26 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
       stage: analyticsStage,
     });
     throw error;
+  } finally {
+    cancelNotificationSafely(workingNotification);
+
+    typographRunInProgress = false;
+
+    if (source === "settings") {
+      try {
+        figma.ui.postMessage({ type: "typograph-run-finished" });
+      } catch (error) {
+        console.error("[Чистовик] Failed to reset typograph UI state", error);
+      }
+    }
+  }
+}
+
+function cancelNotificationSafely(notification: NotificationHandler | null): void {
+  try {
+    notification?.cancel();
+  } catch (error) {
+    console.error("[Чистовик] Failed to cancel notification", error);
   }
 }
 
@@ -871,6 +900,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
     let processed = 0;
     let changed = 0;
     let failed = 0;
+    const fontLoadCache = new Map<string, Promise<void>>();
 
     for (const textNode of textNodes) {
       try {
@@ -881,7 +911,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
         const newText = cleanResult.text;
 
         if (newText !== oldText) {
-          await loadFontsForTextNode(textNode);
+          await loadFontsForTextNode(textNode, fontLoadCache);
           const styles = captureTextStyles(textNode);
           const styleMap = buildStyleMap(oldText, newText, styles);
           const wholeTextStyle = getWholeTextStyle(styles, oldText);
@@ -911,7 +941,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
   }
 }
 
-async function loadFontsForTextNode(textNode: TextNode): Promise<void> {
+async function loadFontsForTextNode(textNode: TextNode, fontLoadCache: Map<string, Promise<void>>): Promise<void> {
   try {
     const fonts = new Map<string, FontName>();
 
@@ -923,11 +953,31 @@ async function loadFontsForTextNode(textNode: TextNode): Promise<void> {
       fonts.set(`${font.family}\n${font.style}`, font);
     }
 
-    await Promise.all(Array.from(fonts.values(), (font) => figma.loadFontAsync(font)));
+    await Promise.all(Array.from(fonts.values(), (font) => getFontLoadPromise(font, fontLoadCache)));
   } catch (error) {
     console.error(`[Чистовик] Failed to load fonts for text node ${textNode.id}`, error);
     throw error;
   }
+}
+
+function getFontLoadPromise(font: FontName, fontLoadCache: Map<string, Promise<void>>): Promise<void> {
+  const key = `${font.family}\n${font.style}`;
+  const cachedPromise = fontLoadCache.get(key);
+
+  if (cachedPromise !== undefined) {
+    return cachedPromise;
+  }
+
+  const loadPromise = figma.loadFontAsync(font).catch((error) => {
+    if (fontLoadCache.get(key) === loadPromise) {
+      fontLoadCache.delete(key);
+    }
+
+    throw error;
+  });
+
+  fontLoadCache.set(key, loadPromise);
+  return loadPromise;
 }
 
 function captureTextStyles(textNode: TextNode): StyleSegment[] {
@@ -2834,7 +2884,22 @@ function normalizeAbbreviations(input: string): string {
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}S.`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])кв\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1кв.${NBSP}м`);
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])куб\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1куб.${NBSP}м`);
-    text = text.replace(new RegExp(`(^|[^${LETTERS}])(${DOTTED_ABBREVIATIONS})\\.?(?=$|[^${LETTERS}\\-${NB_HYPHEN}])`, "gi"), "$1$2.");
+    text = normalizeSlashSeparatedAbbreviationDots(text);
+    text = text.replace(new RegExp(`(^|[^${LETTERS}])(${DOTTED_ABBREVIATIONS})\\.?(?=$|[^${LETTERS}\\-${NB_HYPHEN}])`, "gi"), (match: string, prefix: string, abbreviation: string, offset: number, fullText: string) => {
+      try {
+        const abbreviationStart = offset + prefix.length;
+        const abbreviationEnd = abbreviationStart + abbreviation.length;
+
+        if (isSlashSeparatedAbbreviationPart(fullText, abbreviationStart, abbreviationEnd)) {
+          return match;
+        }
+
+        return `${prefix}${abbreviation}.`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to normalize dotted abbreviation candidate", error);
+        return match;
+      }
+    });
     text = text.replace(new RegExp(`(^|[^${LETTERS}])(под)(?=\\.|[ \\t\\u00A0]+\\d)(\\.?)`, "gi"), "$1$2.");
     text = text.replace(new RegExp(`(^|[^${LETTERS}])(б[-${NB_HYPHEN}]р|пр[-${NB_HYPHEN}]т)\\.?(?=$|[^${LETTERS}])`, "gi"), "$1$2");
     text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match: string, prefix: string, offset: number, fullText: string) => {
@@ -2912,6 +2977,103 @@ function isSameLineSentenceContinuation(fullText: string, periodIndex: number): 
     return /^[ \t\u00A0]+[A-ZА-ЯЁ]/.test(after);
   } catch (error) {
     console.error("[Чистовик] Failed to check same-line sentence continuation", error);
+    throw error;
+  }
+}
+
+function normalizeSlashSeparatedAbbreviationDots(input: string): string {
+  try {
+    return input
+      .replace(new RegExp(`(^|[^${LETTERS}])([А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]*\\/[ \\t\\u00A0]*[А-Яа-яЁё])`, "g"), "$1$2")
+      .replace(new RegExp(`(^|[^${LETTERS}])((?:[А-Яа-яЁё]{1,4}[ \\t\\u00A0]*\\/[ \\t\\u00A0]*)+[А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]+[а-яё])`, "g"), (match: string, prefix: string, slashAbbreviation: string, offset: number, fullText: string) => {
+        try {
+          const dotIndex = offset + match.length - 1;
+
+          if (isSlashSeparatedAreaUnitAbbreviation(fullText, slashAbbreviation, dotIndex)) {
+            return match;
+          }
+
+          return `${prefix}${slashAbbreviation}`;
+        } catch (error) {
+          console.error("[Чистовик] Failed to normalize slash-separated abbreviation dot candidate", error);
+          return match;
+        }
+      });
+  } catch (error) {
+    console.error("[Чистовик] Failed to normalize slash-separated abbreviation dots", error);
+    throw error;
+  }
+}
+
+function isSlashSeparatedAreaUnitAbbreviation(fullText: string, slashAbbreviation: string, dotIndex: number): boolean {
+  try {
+    return /\/[ \t\u00A0]*(кв|куб)$/i.test(slashAbbreviation) &&
+      /^[ \t\u00A0]+м(?=$|[^A-Za-zА-Яа-яЁё])/.test(fullText.slice(dotIndex + 1));
+  } catch (error) {
+    console.error("[Чистовик] Failed to check slash-separated area unit abbreviation", error);
+    throw error;
+  }
+}
+
+function isSlashSeparatedAbbreviationPart(fullText: string, abbreviationStart: number, abbreviationEnd: number): boolean {
+  try {
+    const previousIndex = findPreviousHorizontalNonSpaceIndex(fullText, abbreviationStart);
+
+    if (previousIndex !== -1 && fullText[previousIndex] === "/") {
+      const beforeSlashIndex = findPreviousHorizontalNonSpaceIndex(fullText, previousIndex);
+
+      if (beforeSlashIndex !== -1 && isLetter(fullText[beforeSlashIndex])) {
+        return true;
+      }
+    }
+
+    const nextIndex = findNextHorizontalNonSpaceIndex(fullText, abbreviationEnd);
+
+    if (nextIndex !== -1 && fullText[nextIndex] === "/") {
+      const afterSlashIndex = findNextHorizontalNonSpaceIndex(fullText, nextIndex + 1);
+
+      if (afterSlashIndex !== -1 && isLetter(fullText[afterSlashIndex])) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check slash-separated abbreviation part", error);
+    throw error;
+  }
+}
+
+function findPreviousHorizontalNonSpaceIndex(input: string, index: number): number {
+  try {
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (/[ \t\u00A0]/.test(input[cursor])) {
+        continue;
+      }
+
+      return cursor;
+    }
+
+    return -1;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find previous horizontal non-space index", error);
+    throw error;
+  }
+}
+
+function findNextHorizontalNonSpaceIndex(input: string, index: number): number {
+  try {
+    for (let cursor = index; cursor < input.length; cursor += 1) {
+      if (/[ \t\u00A0]/.test(input[cursor])) {
+        continue;
+      }
+
+      return cursor;
+    }
+
+    return -1;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find next horizontal non-space index", error);
     throw error;
   }
 }

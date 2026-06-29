@@ -123,7 +123,10 @@ ${indent(bullets, 4)}
 }
 
 function renderActions() {
-  return `<button class="primary" id="run" type="button">${content.actions.runButton}</button>`;
+  return `<button class="primary" id="run" type="button" aria-busy="false">
+  <span class="run-spinner" aria-hidden="true"></span>
+  <span>${content.actions.runButton}</span>
+</button>`;
 }
 
 function replaceBlock(html, key, block) {

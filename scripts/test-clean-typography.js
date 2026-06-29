@@ -17,6 +17,8 @@ const source = fs.readFileSync("dist/code.js", "utf8").replace(
     "globalThis.getWholeTextStyle = getWholeTextStyle;",
     "globalThis.restoreWholeTextStyle = restoreWholeTextStyle;",
     "globalThis.restoreTextStyles = restoreTextStyles;",
+    "globalThis.loadFontsForTextNode = loadFontsForTextNode;",
+    "globalThis.getFontLoadPromise = getFontLoadPromise;",
     "globalThis.createAnalyticsEventPayload = createAnalyticsEventPayload;",
     "globalThis.getAnalyticsCaptureEndpoint = getAnalyticsCaptureEndpoint;",
   ].join(" ")
@@ -41,6 +43,8 @@ const captureTextStyles = context.globalThis.captureTextStyles;
 const getWholeTextStyle = context.globalThis.getWholeTextStyle;
 const restoreWholeTextStyle = context.globalThis.restoreWholeTextStyle;
 const restoreTextStyles = context.globalThis.restoreTextStyles;
+const loadFontsForTextNode = context.globalThis.loadFontsForTextNode;
+const getFontLoadPromise = context.globalThis.getFontLoadPromise;
 const createAnalyticsEventPayload = context.globalThis.createAnalyticsEventPayload;
 const getAnalyticsCaptureEndpoint = context.globalThis.getAnalyticsCaptureEndpoint;
 const developmentOptions = {
@@ -355,6 +359,17 @@ expectClean("P.S. Проверь ещё раз.", `P.${NBSP}S. Проверь е
 expectClean("P P S проверь ещё раз.", `P.${NBSP}P.${NBSP}S. проверь ещё раз.`);
 expectClean("Список, в т ч важные пункты", `Список, в${NBSP}т.${NBSP}ч. важные пункты`);
 expectClean("Период: н. в.", `Период: н.${NBSP}в.`);
+expectClean("ж/д билеты", `ж/д${NBSP}билеты`);
+expectClean("ж/д. билеты", `ж/д${NBSP}билеты`);
+expectClean("Кешбэк за покупку ж/д билетов, оплату проезда в метро", `Кешбэк за${NBSP}покупку${NBSP}ж/д${NBSP}билетов, оплату проезда в${NBSP}метро`);
+expectClean("д/к фильм", `д/к${NBSP}фильм`);
+expectClean("п/п платеж", `п/п${NBSP}платеж`);
+expectClean("а/д дорога", `а/д${NBSP}дорога`);
+expectClean("руб/мес тариф", "руб/мес тариф");
+expectClean("кв/м площадь", `кв/м${NBSP}площадь`);
+expectClean("руб/кв. м", `руб/кв.${NBSP}м`);
+expectClean("руб./кв. м", `руб/кв.${NBSP}м`);
+expectClean("100 руб/кв. м", `100${NBSP}руб/кв.${NBSP}м`);
 expectClean("см ниже, гл 2, илл 3, ст 12, п 4", "см. ниже, гл. 2, илл. 3, ст. 12, п. 4");
 expectClean("обл Московская, кр 1, пос Северный, пер Лесной, пр Мира", "обл. Московская, кр. 1, пос. Северный, пер. Лесной, пр. Мира");
 expectClean("просп Ленина, пл Победы, бул Солнечный, наб Реки, ш Энтузиастов, туп Южный", "просп. Ленина, пл. Победы, бул. Солнечный, наб. Реки, ш. Энтузиастов, туп. Южный");
@@ -653,10 +668,58 @@ async function runWholeTextStyleRestorationTests() {
   ]);
 }
 
+async function runFontLoadingCacheTests() {
+  const loadCalls = [];
+  const fontLoadCache = new Map();
+  const interRegular = { family: "Inter", style: "Regular" };
+  const interBold = { family: "Inter", style: "Bold" };
+  const regularNode = {
+    characters: "Обычный текст",
+    getRangeAllFontNames: () => [interRegular],
+    id: "regular-node",
+  };
+  const mixedNode = {
+    characters: "Текст с выделением",
+    getRangeAllFontNames: () => [interRegular, interBold, interRegular],
+    id: "mixed-node",
+  };
+
+  context.figma.loadFontAsync = async (font) => {
+    loadCalls.push(`${font.family}\n${font.style}`);
+  };
+
+  await loadFontsForTextNode(regularNode, fontLoadCache);
+  await loadFontsForTextNode(regularNode, fontLoadCache);
+  await loadFontsForTextNode(mixedNode, fontLoadCache);
+
+  assert.deepStrictEqual(loadCalls, ["Inter\nRegular", "Inter\nBold"]);
+  assert.strictEqual(fontLoadCache.size, 2);
+
+  let retryAttempts = 0;
+  const retryCache = new Map();
+  const retryFont = { family: "Retry Font", style: "Regular" };
+  context.figma.loadFontAsync = async () => {
+    retryAttempts += 1;
+
+    if (retryAttempts === 1) {
+      throw new Error("Temporary font load failure");
+    }
+  };
+
+  await assert.rejects(getFontLoadPromise(retryFont, retryCache), /Temporary font load failure/);
+  assert.strictEqual(retryCache.size, 0);
+
+  await getFontLoadPromise(retryFont, retryCache);
+
+  assert.strictEqual(retryAttempts, 2);
+  assert.strictEqual(retryCache.size, 1);
+}
+
 runStyleCaptureTests();
 
 runStyleRestorationTests()
   .then(runWholeTextStyleRestorationTests)
+  .then(runFontLoadingCacheTests)
   .then(() => {
     console.log("cleanTypography tests passed");
   })

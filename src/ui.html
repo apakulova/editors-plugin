@@ -535,22 +535,51 @@
       }
 
       .primary {
+        align-items: center;
         appearance: none;
         background: var(--figma-color-bg-brand);
         border: 0;
         border-radius: 8px;
         color: var(--figma-color-text-onbrand);
         cursor: pointer;
+        display: flex;
         font-size: 14px;
         font-weight: 500;
+        gap: 8px;
         height: 40px;
+        justify-content: center;
         line-height: 18px;
         padding: 0 14px;
         width: 100%;
       }
 
-      .primary:hover {
+      .primary:hover:not(:disabled) {
         background: var(--figma-color-bg-brand-hover);
+      }
+
+      .primary:disabled {
+        cursor: default;
+        opacity: 0.72;
+      }
+
+      .run-spinner {
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        display: none;
+        height: 12px;
+        width: 12px;
+      }
+
+      .primary[aria-busy="true"] .run-spinner {
+        animation: run-spinner-rotation 0.8s linear infinite;
+        display: block;
+      }
+
+      @keyframes run-spinner-rotation {
+        to {
+          transform: rotate(360deg);
+        }
       }
     </style>
   </head>
@@ -769,7 +798,10 @@
 
       <div class="actions">
         <!-- chistovik-content:actions:start -->
-          <button class="primary" id="run" type="button">Запустить типограф</button>
+          <button class="primary" id="run" type="button" aria-busy="false">
+            <span class="run-spinner" aria-hidden="true"></span>
+            <span>Запустить типограф</span>
+          </button>
         <!-- chistovik-content:actions:end -->
       </div>
     </main>
@@ -788,6 +820,11 @@
         const selectedMode = document.querySelector('input[name="typographMode"]:checked');
 
         return selectedMode ? selectedMode.value : "beauty";
+      }
+
+      function setRunButtonRunning(isRunning) {
+        runButton.disabled = isRunning;
+        runButton.setAttribute("aria-busy", isRunning ? "true" : "false");
       }
 
       function syncDevelopmentOnlyOptions() {
@@ -842,6 +879,10 @@
       }
 
       runButton.addEventListener("click", () => {
+        if (runButton.disabled) {
+          return;
+        }
+
         const runOptions = {
           mode: getSelectedModeValue(),
         };
@@ -850,16 +891,31 @@
           runOptions[input.dataset.option] = input.checked && !input.disabled;
         });
 
-        parent.postMessage(
-          {
-            pluginMessage: {
-              type: "run-typograph",
-              options: runOptions,
+        setRunButtonRunning(true);
+
+        try {
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: "run-typograph",
+                options: runOptions,
+              },
             },
-          },
-          "*"
-        );
+            "*"
+          );
+        } catch (error) {
+          setRunButtonRunning(false);
+          throw error;
+        }
       });
+
+      onmessage = (event) => {
+        const message = event.data.pluginMessage;
+
+        if (message && message.type === "typograph-run-finished") {
+          setRunButtonRunning(false);
+        }
+      };
 
       channelLinks.forEach((link) => {
         link.addEventListener("click", () => {
