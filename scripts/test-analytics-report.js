@@ -75,24 +75,28 @@ async function run() {
   const message = formatAnalyticsMessage(dateRange, createSummary(), env);
 
   assert(message.includes("<b>✦ Чистовик за 27 июля (пн)</b>"));
-  assert(message.includes("Запуски типографа: 28 — на 12% больше среднего за предыдущие 7 дней"));
-  assert(message.includes("Успешные обработки: 20 из 25 завершённых — 80%"));
-  assert(message.includes("Без финального статуса: 3 из 28 — 11%, нужно проверить доставку аналитики"));
-  assert(message.includes("5 неудачных попыток у 1 пользователя — вероятно, повторные запуски"));
-  assert(message.includes("18% всех запусков завершились ошибкой — обычно было 4%"));
-  assert(message.includes("основная причина: шрифт недоступен — 4 из 5 ошибок"));
+  assert(message.includes("Запуски типографа: 28"));
+  assert(message.includes("Успешные обработки: 20 — это 80%"));
+  assert(message.includes("Без финального статуса: 3"));
+  assert(message.includes("📍 Плагин запускали на 12% больше среднего за последние 7 дней"));
+  assert(message.includes("5 фейлов у 1 пользователя"));
+  assert(message.includes("18% от всех запусков"));
+  assert(message.includes("основные причины — недоступен шрифт (4 из 5 ошибок), не удалось записать текст (1 из 5 ошибок)"));
+  assert(message.includes("📍 Это на 346% больше среднего за последние 7 дней"));
   assert(message.includes("обычное время обработки: 420 мс — без заметных изменений"));
-  assert(message.includes("90% обработок укладываются в 1,8 секунды — заметно хуже, на 30%"));
+  assert(message.includes("90% обработок за 1,8 секунды — заметно хуже, на 30%"));
+  assert(message.includes("📍 Скорость примерно такая же, как в среднем за последние 7 дней"));
   assert(message.includes("открывается только с vpn"));
 
   const todayRange = getMoscowReportRange("today", new Date("2026-07-28T06:00:00.000Z"));
   const todayMessage = formatAnalyticsMessage(todayRange, createSummary(), env);
 
   assert(todayMessage.includes("<b>✦ Чистовик сегодня (вт)</b>"));
-  assert(todayMessage.includes("Запуски типографа: 28 — на 12% больше среднего за предыдущие 7 дней"));
+  assert(todayMessage.includes("Запуски типографа: 28"));
+  assert(todayMessage.includes("📍 Плагин запускали на 12% больше среднего за последние 7 дней"));
   assert(todayMessage.includes("Ошибки:"));
   assert(todayMessage.includes("Производительность:"));
-  assert(todayMessage.includes("основная причина: шрифт недоступен — 4 из 5 ошибок"));
+  assert(todayMessage.includes("основные причины — недоступен шрифт (4 из 5 ошибок), не удалось записать текст (1 из 5 ошибок)"));
 
   const noErrorsMessage = formatAnalyticsMessage(
     dateRange,
@@ -135,8 +139,24 @@ async function run() {
     env
   );
 
-  assert(tiedCausesMessage.includes("8 неудачных попыток у 4 пользователей"));
-  assert(tiedCausesMessage.includes("единой основной причины нет: шрифт недоступен — 4, не удалось записать текст — 4"));
+  assert(tiedCausesMessage.includes("8 фейлов у 4 пользователей"));
+  assert(tiedCausesMessage.includes("основные причины — недоступен шрифт (4 из 8 ошибок), не удалось записать текст (4 из 8 ошибок)"));
+
+  const noKnownCauseMessage = formatAnalyticsMessage(
+    dateRange,
+    createSummary({
+      affectedUsers: 2,
+      errorCategories: [],
+      failedRuns: 3,
+      successfulRuns: 22,
+      typographRuns: 28,
+    }),
+    env
+  );
+
+  assert(noKnownCauseMessage.includes("3 фейла у 2 пользователей"));
+  assert(!noKnownCauseMessage.includes("основная причина"));
+  assert(!noKnownCauseMessage.includes("основные причины"));
 
   const failureMessage = formatAnalyticsFailureMessage(
     dateRange,

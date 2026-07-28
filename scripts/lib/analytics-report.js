@@ -32,7 +32,7 @@ const BASELINE_COLUMNS = [
   "p90DurationMs",
 ];
 const ERROR_CATEGORY_LABELS = {
-  font_unavailable: "шрифт недоступен",
+  font_unavailable: "недоступен шрифт",
   layer_not_editable: "слой нельзя изменить",
   layer_changed: "слой изменился или исчез",
   mixed_or_unsupported_property: "смешанное или неподдерживаемое свойство",
@@ -348,30 +348,22 @@ function formatDuration(durationMs) {
   return `${(durationMs / 1000).toFixed(1).replace(".", ",")} секунды`;
 }
 
-function formatRunsComparison(currentRuns, averageDailyRuns) {
+function formatRunsInsight(currentRuns, averageDailyRuns) {
   if (!Number.isFinite(averageDailyRuns) || averageDailyRuns < 1) {
-    return "данных пока мало для надёжного сравнения";
+    return null;
   }
 
   const change = (currentRuns - averageDailyRuns) / averageDailyRuns;
 
   if (Math.abs(change) < 0.1) {
-    return "примерно как обычно";
-  }
-
-  if (change > 0.25) {
-    return `заметно больше среднего за предыдущие 7 дней — на ${formatSignedPercent(change)}`;
+    return "📍 Плагин запускали примерно как обычно";
   }
 
   if (change > 0) {
-    return `на ${formatSignedPercent(change)} больше среднего за предыдущие 7 дней`;
+    return `📍 Плагин запускали на ${formatSignedPercent(change)} больше среднего за последние 7 дней`;
   }
 
-  if (change < -0.25) {
-    return `заметно меньше среднего за предыдущие 7 дней — на ${formatSignedPercent(change)}`;
-  }
-
-  return `на ${formatSignedPercent(change)} меньше среднего за предыдущие 7 дней`;
+  return `📍 Плагин запускали на ${formatSignedPercent(change)} меньше среднего за последние 7 дней`;
 }
 
 function formatPerformanceComparison(currentValue, baselineValue, slowerWord, fasterWord) {
@@ -420,33 +412,79 @@ function getRussianPlural(value, one, few, many) {
 }
 
 function formatErrorAttempts(summary) {
-  const attemptsWord = getRussianPlural(summary.failedRuns, "неудачная попытка", "неудачные попытки", "неудачных попыток");
+  const attemptsWord = getRussianPlural(summary.failedRuns, "фейл", "фейла", "фейлов");
   const usersWord = getRussianPlural(summary.affectedUsers, "пользователя", "пользователей", "пользователей");
-  const repeated = summary.affectedUsers === 1 && summary.failedRuns > 1 ? " — вероятно, повторные запуски" : "";
 
-  return `${summary.failedRuns} ${attemptsWord} у ${summary.affectedUsers} ${usersWord}${repeated}`;
+  return `${summary.failedRuns} ${attemptsWord} у ${summary.affectedUsers} ${usersWord}`;
 }
 
 function formatMainErrorCause(summary) {
   if (!Array.isArray(summary.errorCategories) || summary.errorCategories.length === 0) {
-    return "причину ошибок пока определить не удалось";
+    return null;
   }
 
-  const sorted = summary.errorCategories.slice().sort((left, right) => right.count - left.count);
+  const sorted = summary.errorCategories
+    .filter((item) => item.category !== "unknown" && ERROR_CATEGORY_LABELS[item.category] && item.count > 0)
+    .slice()
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 2);
+
+  if (sorted.length === 0) {
+    return null;
+  }
+
   const first = sorted[0];
   const second = sorted[1];
-  const firstLabel = ERROR_CATEGORY_LABELS[first.category] || "неизвестная причина";
+  const firstLabel = ERROR_CATEGORY_LABELS[first.category];
+  const firstReason = `${firstLabel} (${first.count} из ${summary.failedRuns} ошибок)`;
 
-  if (second && second.count === first.count) {
-    const secondLabel = ERROR_CATEGORY_LABELS[second.category] || "неизвестная причина";
-    return `единой основной причины нет: ${firstLabel} — ${first.count}, ${secondLabel} — ${second.count}`;
+  if (second) {
+    const secondLabel = ERROR_CATEGORY_LABELS[second.category];
+    const secondReason = `${secondLabel} (${second.count} из ${summary.failedRuns} ошибок)`;
+    return `основные причины — ${firstReason}, ${secondReason}`;
   }
 
-  if (first.count < summary.failedRuns / 2) {
-    return "единой основной причины нет";
+  return `основная причина — ${firstReason}`;
+}
+
+function formatErrorsInsight(failedRate, baselineFailedRate) {
+  if (!Number.isFinite(failedRate) || failedRate === null || !Number.isFinite(baselineFailedRate) || baselineFailedRate === null) {
+    return null;
   }
 
-  return `основная причина: ${firstLabel} — ${first.count} из ${summary.failedRuns} ошибок`;
+  if (baselineFailedRate === 0) {
+    return failedRate > 0 ? "📍 За предыдущие 7 дней ошибок не было" : null;
+  }
+
+  const change = (failedRate - baselineFailedRate) / baselineFailedRate;
+
+  if (Math.abs(change) < 0.1) {
+    return "📍 Доля ошибок примерно такая же, как в среднем за последние 7 дней";
+  }
+
+  if (change > 0) {
+    return `📍 Это на ${formatSignedPercent(change)} больше среднего за последние 7 дней`;
+  }
+
+  return `📍 Это на ${formatSignedPercent(change)} меньше среднего за последние 7 дней`;
+}
+
+function formatPerformanceInsight(currentValue, baselineValue) {
+  if (!Number.isFinite(currentValue) || currentValue <= 0 || !Number.isFinite(baselineValue) || baselineValue <= 0) {
+    return null;
+  }
+
+  const change = (currentValue - baselineValue) / baselineValue;
+
+  if (Math.abs(change) < 0.1) {
+    return "📍 Скорость примерно такая же, как в среднем за последние 7 дней";
+  }
+
+  if (change > 0) {
+    return `📍 Скорость на ${formatSignedPercent(change)} медленнее средней за последние 7 дней`;
+  }
+
+  return `📍 Скорость на ${formatSignedPercent(change)} быстрее средней за последние 7 дней`;
 }
 
 function formatAnalyticsMessage(dateRange, summary, env = process.env) {
@@ -466,37 +504,45 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   const runsWithoutFinalStatus = Math.max(0, summary.typographRuns - summary.successfulRuns - summary.failedRuns);
   const completedRuns = summary.successfulRuns + summary.failedRuns;
   const successRate = completedRuns > 0 ? summary.successfulRuns / completedRuns : null;
-  const missingRate = summary.typographRuns > 0 ? runsWithoutFinalStatus / summary.typographRuns : null;
   const failedRate = summary.typographRuns > 0 ? summary.failedRuns / summary.typographRuns : null;
   const baselineFailedRate = summary.baseline?.failedRate;
+  const runsInsight = formatRunsInsight(summary.typographRuns, summary.baseline?.averageDailyRuns);
   const lines = [
     heading,
     "",
-    `Запуски типографа: ${summary.typographRuns} — ${formatRunsComparison(summary.typographRuns, summary.baseline?.averageDailyRuns)}`,
+    `Запуски типографа: ${summary.typographRuns}`,
     `Уникальные пользователи: ${summary.uniqueUsers}`,
     completedRuns > 0
-      ? `Успешные обработки: ${summary.successfulRuns} из ${completedRuns} завершённых — ${formatPercent(successRate)}`
-      : "Успешные обработки: пока нет завершённых запусков",
-    runsWithoutFinalStatus === 0
-      ? "Без финального статуса: 0 — все запуски получили результат"
-      : `Без финального статуса: ${runsWithoutFinalStatus} из ${summary.typographRuns} — ${formatPercent(missingRate)}${missingRate > 0.05 ? ", нужно проверить доставку аналитики" : ""}`,
-    "",
-    "Ошибки:",
+      ? `Успешные обработки: ${summary.successfulRuns} — это ${formatPercent(successRate)}`
+      : "Успешные обработки: 0 — пока нет завершённых запусков",
+    `Без финального статуса: ${runsWithoutFinalStatus}`,
   ];
+
+  if (runsInsight) {
+    lines.push("", runsInsight);
+  }
+
+  lines.push("", "Ошибки:");
 
   if (summary.failedRuns === 0) {
     lines.push("— ошибок не было");
   } else {
-    const rateComparison =
-      Number.isFinite(baselineFailedRate) && baselineFailedRate !== null
-        ? ` — обычно было ${formatPercent(baselineFailedRate)}`
-        : "";
+    const mainErrorCause = formatMainErrorCause(summary);
 
     lines.push(
       `— ${formatErrorAttempts(summary)}`,
-      `— ${formatPercent(failedRate)} всех запусков завершились ошибкой${rateComparison}`,
-      `— ${formatMainErrorCause(summary)}`
+      `— ${formatPercent(failedRate)} от всех запусков`
     );
+
+    if (mainErrorCause) {
+      lines.push(`— ${mainErrorCause}`);
+    }
+
+    const errorsInsight = formatErrorsInsight(failedRate, baselineFailedRate);
+
+    if (errorsInsight) {
+      lines.push("", errorsInsight);
+    }
   }
 
   lines.push("", "Производительность:");
@@ -521,13 +567,19 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     lines.push("— 90% обработок укладываются: пока недостаточно данных");
   } else {
     lines.push(
-      `— 90% обработок укладываются в ${p90Duration} — ${formatPerformanceComparison(
+      `— 90% обработок за ${p90Duration} — ${formatPerformanceComparison(
         summary.p90DurationMs,
         summary.baseline?.p90DurationMs,
         "хуже",
         "лучше"
       )}`
     );
+  }
+
+  const performanceInsight = formatPerformanceInsight(summary.medianDurationMs, summary.baseline?.medianDurationMs);
+
+  if (performanceInsight) {
+    lines.push("", performanceInsight);
   }
 
   lines.push(
