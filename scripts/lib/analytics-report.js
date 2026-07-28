@@ -3,7 +3,9 @@ const MS_IN_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_POSTHOG_HOST = "https://eu.posthog.com";
 const DEFAULT_POSTHOG_PROJECT_ID = "184090";
 const DEFAULT_POSTHOG_DASHBOARD_URL = "https://eu.posthog.com/project/184090/dashboard/695809";
+const DEFAULT_POSTHOG_PERFORMANCE_DASHBOARD_URL = "https://eu.posthog.com/project/184090/dashboard/854930";
 const POSTHOG_UNEXPECTED_RESPONSE_REASON = "PostHog вернул неожиданный формат данных.";
+const MIN_WEEKLY_PERFORMANCE_RUNS = 10;
 const SUMMARY_COLUMNS = [
   "uniqueUsers",
   "typographRuns",
@@ -41,6 +43,35 @@ const ERROR_CATEGORY_LABELS = {
   typography_failed: "ошибка правил типографики",
   timeout: "превышено время ожидания",
   unknown: "причина неизвестна",
+};
+const PERFORMANCE_TIMING_COLUMNS = [
+  { key: "collectTextMs", label: "поиск текстовых слоёв", property: "timing_collect_text_ms" },
+  { key: "typographyMs", label: "применение правил типографики", property: "timing_typography_ms" },
+  { key: "fontsMs", label: "загрузка шрифтов", property: "timing_fonts_ms" },
+  { key: "readStylesMs", label: "чтение оформления", property: "timing_read_styles_ms" },
+  { key: "compareTextMs", label: "сравнение текста", property: "timing_compare_text_ms" },
+  { key: "writeTextMs", label: "запись текста", property: "timing_write_text_ms" },
+  { key: "restoreStylesMs", label: "возвращение оформления", property: "timing_restore_styles_ms" },
+  { key: "developmentMarkersMs", label: "работа со служебными звёздочками", property: "timing_development_markers_ms" },
+  { key: "otherMs", label: "остальные операции", property: "timing_other_ms" },
+];
+const PERFORMANCE_COLUMNS = [
+  "successfulRuns",
+  "averageDurationMs",
+  "p90DurationMs",
+  "slowestDurationMs",
+  ...PERFORMANCE_TIMING_COLUMNS.map((item) => item.key),
+];
+const WEEKLY_ERROR_SUMMARY_COLUMNS = [
+  "typographRuns",
+  "failedRuns",
+  "affectedUsers",
+];
+const ERROR_SCOPE_LABELS = {
+  single_text: "на текстовом слое",
+  container: "во фрейме",
+  page: "на странице",
+  multi_selection: "при мультивыборе",
 };
 
 class AnalyticsReportError extends Error {
@@ -137,6 +168,22 @@ function getMoscowReportRange(period, referenceDate = new Date()) {
   throw new Error(`Unsupported report period: ${period}`);
 }
 
+function getMoscowCompletedWeekRange(referenceDate = new Date()) {
+  const todayParts = getMoscowDateParts(referenceDate);
+  const end = getMoscowDayStartUtc(todayParts);
+  const start = new Date(end.getTime() - 7 * MS_IN_DAY);
+  const baselineStart = new Date(start.getTime() - 7 * MS_IN_DAY);
+  const startParts = getMoscowDateParts(start);
+  const endParts = getMoscowDateParts(new Date(end.getTime() - 1));
+
+  return {
+    baselineStart,
+    end,
+    label: formatRussianDateRange(startParts, endParts),
+    start,
+  };
+}
+
 function formatRussianDate({ day, month }) {
   const monthNames = [
     "января",
@@ -154,6 +201,18 @@ function formatRussianDate({ day, month }) {
   ];
 
   return `${day} ${monthNames[month - 1]}`;
+}
+
+function formatRussianDateRange(startParts, endParts) {
+  if (startParts.year === endParts.year && startParts.month === endParts.month) {
+    return `${startParts.day}–${formatRussianDate(endParts)}`;
+  }
+
+  if (startParts.year === endParts.year) {
+    return `${formatRussianDate(startParts)} — ${formatRussianDate(endParts)}`;
+  }
+
+  return `${formatRussianDate(startParts)} ${startParts.year} — ${formatRussianDate(endParts)} ${endParts.year}`;
 }
 
 function formatRussianWeekday({ day, month, year }) {
@@ -256,6 +315,68 @@ ORDER BY total DESC, error_category ASC
 `;
 }
 
+function getWeeklyPerformanceQuery(start, end) {
+  const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
+  const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
+  const timingColumns = PERFORMANCE_TIMING_COLUMNS
+    .map(
+      (item) =>
+        `  avgIf(toFloat(properties.${item.property}), isNotNull(properties.${item.property})) AS ${item.property}`
+    )
+    .join(",\n");
+
+  return `
+SELECT
+  count() AS successful_runs,
+  avgIf(toFloat(properties.duration_ms), isNotNull(properties.duration_ms)) AS average_duration_ms,
+  quantileIf(0.9)(toFloat(properties.duration_ms), isNotNull(properties.duration_ms)) AS p90_duration_ms,
+  maxIf(toFloat(properties.duration_ms), isNotNull(properties.duration_ms)) AS slowest_duration_ms,
+${timingColumns}
+FROM events
+WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
+  AND timestamp < toDateTime('${endDateTime}', 'UTC')
+  AND event = 'plugin_run_completed'
+  AND ifNull(properties.is_test_event, false) != true
+`;
+}
+
+function getWeeklyErrorSummaryQuery(start, end) {
+  const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
+  const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
+
+  return `
+SELECT
+  countIf(event = 'plugin_run_started') AS typograph_runs,
+  countIf(event = 'plugin_run_failed') AS failed_runs,
+  uniqExactIf(distinct_id, event = 'plugin_run_failed') AS affected_users
+FROM events
+WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
+  AND timestamp < toDateTime('${endDateTime}', 'UTC')
+  AND event IN ('plugin_run_started', 'plugin_run_failed')
+  AND ifNull(properties.is_test_event, false) != true
+`;
+}
+
+function getErrorScopesQuery(start, end) {
+  const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
+  const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
+
+  return `
+SELECT
+  toString(properties.selection_scope) AS selection_scope,
+  count() AS total
+FROM events
+WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
+  AND timestamp < toDateTime('${endDateTime}', 'UTC')
+  AND event = 'plugin_run_failed'
+  AND isNotNull(properties.selection_scope)
+  AND toString(properties.selection_scope) != ''
+  AND ifNull(properties.is_test_event, false) != true
+GROUP BY selection_scope
+ORDER BY total DESC, selection_scope ASC
+`;
+}
+
 async function queryPostHog(query, name, env) {
   const posthogHost = env.POSTHOG_HOST || DEFAULT_POSTHOG_HOST;
   const posthogProjectId = env.POSTHOG_PROJECT_ID || DEFAULT_POSTHOG_PROJECT_ID;
@@ -325,6 +446,84 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
       p90DurationMs: baseline.p90DurationMs,
     },
     errorCategories,
+  };
+}
+
+function parseNumericResult(payload, columns) {
+  const row = Array.isArray(payload.results) && Array.isArray(payload.results[0]) ? payload.results[0] : null;
+
+  if (row === null || row.length < columns.length) {
+    throw new AnalyticsReportError("PostHog query returned unexpected result shape", POSTHOG_UNEXPECTED_RESPONSE_REASON);
+  }
+
+  return Object.fromEntries(columns.map((column, index) => [column, Number(row[index] || 0)]));
+}
+
+function parseGroupedResults(payload, keyName) {
+  if (!Array.isArray(payload.results)) {
+    throw new AnalyticsReportError("PostHog grouped query returned unexpected result shape", POSTHOG_UNEXPECTED_RESPONSE_REASON);
+  }
+
+  return payload.results
+    .filter((row) => Array.isArray(row) && typeof row[0] === "string")
+    .map((row) => ({
+      [keyName]: row[0],
+      count: Number(row[1] || 0),
+    }))
+    .filter((item) => item.count > 0);
+}
+
+async function fetchWeeklyPerformanceSummary(dateRange, env = process.env) {
+  assertRequiredEnv(env, ["POSTHOG_PERSONAL_API_KEY"]);
+  const [currentPayload, baselinePayload] = await Promise.all([
+    queryPostHog(
+      getWeeklyPerformanceQuery(dateRange.start, dateRange.end),
+      "chistovik telegram weekly performance",
+      env
+    ),
+    queryPostHog(
+      getWeeklyPerformanceQuery(dateRange.baselineStart, dateRange.start),
+      "chistovik telegram previous weekly performance",
+      env
+    ),
+  ]);
+
+  return {
+    ...parseNumericResult(currentPayload, PERFORMANCE_COLUMNS),
+    baseline: parseNumericResult(baselinePayload, PERFORMANCE_COLUMNS),
+  };
+}
+
+async function fetchWeeklyErrorsSummary(dateRange, env = process.env) {
+  assertRequiredEnv(env, ["POSTHOG_PERSONAL_API_KEY"]);
+  const [currentPayload, baselinePayload, categoriesPayload, scopesPayload] = await Promise.all([
+    queryPostHog(
+      getWeeklyErrorSummaryQuery(dateRange.start, dateRange.end),
+      "chistovik telegram weekly errors",
+      env
+    ),
+    queryPostHog(
+      getWeeklyErrorSummaryQuery(dateRange.baselineStart, dateRange.start),
+      "chistovik telegram previous weekly errors",
+      env
+    ),
+    queryPostHog(
+      getErrorCategoriesQuery(dateRange.start, dateRange.end),
+      "chistovik telegram weekly error categories",
+      env
+    ),
+    queryPostHog(
+      getErrorScopesQuery(dateRange.start, dateRange.end),
+      "chistovik telegram weekly error scopes",
+      env
+    ),
+  ]);
+
+  return {
+    ...parseNumericResult(currentPayload, WEEKLY_ERROR_SUMMARY_COLUMNS),
+    baseline: parseNumericResult(baselinePayload, WEEKLY_ERROR_SUMMARY_COLUMNS),
+    errorCategories: parseGroupedResults(categoriesPayload, "category"),
+    errorScopes: parseGroupedResults(scopesPayload, "scope"),
   };
 }
 
@@ -611,6 +810,236 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   return lines.join("\n");
 }
 
+function getPerformanceDashboardUrl(env) {
+  return env.POSTHOG_PERFORMANCE_DASHBOARD_URL || DEFAULT_POSTHOG_PERFORMANCE_DASHBOARD_URL;
+}
+
+function appendPerformanceDashboardLink(lines, env) {
+  const dashboardUrl = getPerformanceDashboardUrl(env);
+
+  lines.push(
+    "",
+    `<a href="${escapeHtml(dashboardUrl)}">Дашборд по производительности</a> (открывается только с vpn)`
+  );
+}
+
+function formatWeeklyPerformanceInsight(currentAverage, baselineAverage, baselineRuns) {
+  if (
+    baselineRuns < MIN_WEEKLY_PERFORMANCE_RUNS ||
+    !Number.isFinite(currentAverage) ||
+    currentAverage <= 0 ||
+    !Number.isFinite(baselineAverage) ||
+    baselineAverage <= 0
+  ) {
+    return null;
+  }
+
+  const change = (currentAverage - baselineAverage) / baselineAverage;
+
+  if (Math.abs(change) < 0.1) {
+    return "📍 Скорость примерно такая же, как за предыдущие 7 дней";
+  }
+
+  if (change > 0) {
+    return `📍 Скорость стала на ${formatSignedPercent(change)} медленнее, чем за предыдущие 7 дней`;
+  }
+
+  return `📍 Скорость стала на ${formatSignedPercent(change)} быстрее, чем за предыдущие 7 дней`;
+}
+
+function getPerformanceBreakdown(summary) {
+  return PERFORMANCE_TIMING_COLUMNS
+    .map((item) => ({
+      label: item.label,
+      value: Number(summary[item.key] || 0),
+    }))
+    .filter((item) => item.value > 0)
+    .sort((left, right) => right.value - left.value);
+}
+
+function formatWeeklyPerformanceMessage(dateRange, summary, env = process.env) {
+  const lines = [`<b>✦ Скорость за ${escapeHtml(dateRange.label)}</b>`];
+
+  if (
+    summary.successfulRuns < MIN_WEEKLY_PERFORMANCE_RUNS ||
+    !Number.isFinite(summary.averageDurationMs) ||
+    summary.averageDurationMs <= 0
+  ) {
+    lines.push("", "Слишком мало запусков за последние 7 дней, чтобы оценить скорость");
+    appendPerformanceDashboardLink(lines, env);
+    return lines.join("\n");
+  }
+
+  lines.push(
+    "",
+    `Успешные обработки: ${summary.successfulRuns}`,
+    `Среднее время: ${formatDuration(summary.averageDurationMs)}`,
+    `90% обработок: за ${formatDuration(summary.p90DurationMs)}`,
+    `Самый медленный запуск: ${formatDuration(summary.slowestDurationMs)}`
+  );
+
+  const breakdown = getPerformanceBreakdown(summary);
+
+  if (breakdown.length > 0) {
+    lines.push("", "Разбивка по времени:");
+
+    for (const item of breakdown) {
+      lines.push(`— ${item.label}: ${formatDuration(item.value)}`);
+    }
+  }
+
+  const performanceInsight = formatWeeklyPerformanceInsight(
+    summary.averageDurationMs,
+    summary.baseline?.averageDurationMs,
+    summary.baseline?.successfulRuns || 0
+  );
+
+  if (performanceInsight) {
+    lines.push("", performanceInsight);
+  }
+
+  if (breakdown.length > 0) {
+    lines.push(`📍 Основная задержка — ${breakdown[0].label}`);
+  }
+
+  appendPerformanceDashboardLink(lines, env);
+  return lines.join("\n");
+}
+
+function formatWeeklyErrorComparison(summary) {
+  if (summary.typographRuns <= 0 || summary.baseline?.typographRuns <= 0) {
+    return null;
+  }
+
+  const currentRate = summary.failedRuns / summary.typographRuns;
+  const baselineRate = summary.baseline.failedRuns / summary.baseline.typographRuns;
+
+  if (baselineRate === 0) {
+    return currentRate > 0 ? "📍 За предыдущие 7 дней ошибок не было" : null;
+  }
+
+  const change = (currentRate - baselineRate) / baselineRate;
+
+  if (Math.abs(change) < 0.1) {
+    return "📍 Ошибок примерно столько же, сколько за предыдущие 7 дней";
+  }
+
+  if (change > 0) {
+    return `📍 Ошибок на ${formatSignedPercent(change)} больше, чем за предыдущие 7 дней`;
+  }
+
+  return `📍 Ошибок на ${formatSignedPercent(change)} меньше, чем за предыдущие 7 дней`;
+}
+
+function getWeeklyMainErrorInsight(errorCategories) {
+  if (!Array.isArray(errorCategories) || errorCategories.length === 0) {
+    return null;
+  }
+
+  const sorted = errorCategories
+    .filter((item) => item.count > 0)
+    .slice()
+    .sort((left, right) => right.count - left.count);
+
+  if (sorted.length === 0) {
+    return null;
+  }
+
+  const highestCount = sorted[0].count;
+  const mainCategories = sorted.filter((item) => item.count === highestCount);
+  const labels = mainCategories.map((item) => ERROR_CATEGORY_LABELS[item.category] || "другая причина");
+
+  if (labels.length === 1) {
+    return `📍 Основная причина — ${labels[0]}`;
+  }
+
+  return `📍 Основные причины — ${labels.join(", ")}`;
+}
+
+function formatWeeklyErrorsMessage(dateRange, summary, env = process.env) {
+  const lines = [`<b>✦ Ошибки за ${escapeHtml(dateRange.label)}</b>`];
+
+  if (summary.failedRuns === 0) {
+    lines.push("", "За последние 7 дней ошибок не было");
+    appendPerformanceDashboardLink(lines, env);
+    return lines.join("\n");
+  }
+
+  const failedRate = summary.typographRuns > 0 ? summary.failedRuns / summary.typographRuns : null;
+
+  lines.push(
+    "",
+    `Запуски типографа: ${summary.typographRuns}`,
+    `Ошибки: ${summary.failedRuns}`,
+    `Пострадавшие пользователи: ${summary.affectedUsers}`
+  );
+
+  if (failedRate !== null) {
+    lines.push(`Доля запусков с ошибкой: ${formatPercent(failedRate)}`);
+  }
+
+  const errorCategories = Array.isArray(summary.errorCategories)
+    ? summary.errorCategories
+        .filter((item) => item.count > 0)
+        .slice()
+        .sort((left, right) => right.count - left.count)
+    : [];
+
+  if (errorCategories.length > 0) {
+    const errorsWord = getRussianPlural(summary.failedRuns, "ошибки", "ошибок", "ошибок");
+    lines.push("", "Разбивка по причинам:");
+
+    for (const item of errorCategories) {
+      const label = ERROR_CATEGORY_LABELS[item.category] || "другая причина";
+      lines.push(`— ${label}: ${item.count} из ${summary.failedRuns} ${errorsWord}`);
+    }
+  }
+
+  const errorScopes = Array.isArray(summary.errorScopes)
+    ? summary.errorScopes
+        .filter((item) => item.count > 0 && ERROR_SCOPE_LABELS[item.scope])
+        .slice()
+        .sort((left, right) => right.count - left.count)
+    : [];
+
+  if (errorScopes.length > 0) {
+    lines.push("", "Где происходили ошибки:");
+
+    for (const item of errorScopes) {
+      lines.push(`— ${ERROR_SCOPE_LABELS[item.scope]}: ${item.count}`);
+    }
+  }
+
+  const comparisonInsight = formatWeeklyErrorComparison(summary);
+  const mainErrorInsight = getWeeklyMainErrorInsight(errorCategories);
+
+  if (comparisonInsight || mainErrorInsight) {
+    lines.push("");
+  }
+
+  if (comparisonInsight) {
+    lines.push(comparisonInsight);
+  }
+
+  if (mainErrorInsight) {
+    lines.push(mainErrorInsight);
+  }
+
+  appendPerformanceDashboardLink(lines, env);
+  return lines.join("\n");
+}
+
+function formatWeeklyFailureMessage(subject, dateRange, reason, env = process.env) {
+  const lines = [
+    `<b>🛑 Не удалось собрать отчёт «${escapeHtml(subject)}» за ${escapeHtml(dateRange.label)}</b>`,
+    "",
+    escapeHtml(reason),
+  ];
+
+  appendPerformanceDashboardLink(lines, env);
+  return lines.join("\n");
+}
+
 function formatAnalyticsFailureMessage(dateRange, reason, env = process.env) {
   const dashboardUrl = env.POSTHOG_DASHBOARD_URL || DEFAULT_POSTHOG_DASHBOARD_URL;
   const lines = [
@@ -673,15 +1102,58 @@ async function createAnalyticsMessageOrDiagnostic(period, env = process.env) {
   }
 }
 
+async function createWeeklyPerformanceMessageOrDiagnostic(env = process.env) {
+  const dateRange = getMoscowCompletedWeekRange();
+
+  try {
+    const summary = await fetchWeeklyPerformanceSummary(dateRange, env);
+
+    return formatWeeklyPerformanceMessage(dateRange, summary, env);
+  } catch (error) {
+    if (error instanceof AnalyticsReportError) {
+      console.error(error);
+
+      return formatWeeklyFailureMessage("Скорость", dateRange, error.publicReason, env);
+    }
+
+    throw error;
+  }
+}
+
+async function createWeeklyErrorsMessageOrDiagnostic(env = process.env) {
+  const dateRange = getMoscowCompletedWeekRange();
+
+  try {
+    const summary = await fetchWeeklyErrorsSummary(dateRange, env);
+
+    return formatWeeklyErrorsMessage(dateRange, summary, env);
+  } catch (error) {
+    if (error instanceof AnalyticsReportError) {
+      console.error(error);
+
+      return formatWeeklyFailureMessage("Ошибки", dateRange, error.publicReason, env);
+    }
+
+    throw error;
+  }
+}
+
 module.exports = {
   AnalyticsReportError,
   assertRequiredEnv,
   createAnalyticsMessage,
   createAnalyticsMessageOrDiagnostic,
+  createWeeklyErrorsMessageOrDiagnostic,
+  createWeeklyPerformanceMessageOrDiagnostic,
   fetchPostHogSummary,
+  fetchWeeklyErrorsSummary,
+  fetchWeeklyPerformanceSummary,
   formatAnalyticsFailureMessage,
   formatAnalyticsMessage,
   formatRussianDate,
+  formatWeeklyErrorsMessage,
+  formatWeeklyPerformanceMessage,
+  getMoscowCompletedWeekRange,
   getMoscowReportRange,
   sendTelegramMessage,
 };

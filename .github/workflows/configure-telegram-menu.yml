@@ -1,0 +1,23 @@
+name: Configure Telegram menu
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure-telegram-menu:
+    name: Configure Telegram command menu
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Configure command menu
+        run: node scripts/configure-telegram-menu.js

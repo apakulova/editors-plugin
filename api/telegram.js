@@ -1,6 +1,8 @@
 const {
   assertRequiredEnv,
   createAnalyticsMessageOrDiagnostic,
+  createWeeklyErrorsMessageOrDiagnostic,
+  createWeeklyPerformanceMessageOrDiagnostic,
   sendTelegramMessage,
 } = require("../scripts/lib/analytics-report");
 
@@ -54,12 +56,18 @@ module.exports = async function handler(request, response) {
 
     const command = getCommand(message);
 
-    if (command !== "/today") {
+    let text;
+
+    if (command === "/today") {
+      text = await createAnalyticsMessageOrDiagnostic("today");
+    } else if (command === "/speed") {
+      text = await createWeeklyPerformanceMessageOrDiagnostic();
+    } else if (command === "/errors") {
+      text = await createWeeklyErrorsMessageOrDiagnostic();
+    } else {
       sendJson(response, 200, { ok: true });
       return;
     }
-
-    const text = await createAnalyticsMessageOrDiagnostic("today");
 
     await sendTelegramMessage(text, process.env, String(message.chat.id));
     sendJson(response, 200, { ok: true });

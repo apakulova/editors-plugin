@@ -91,9 +91,17 @@ GitHub Actions workflow `.github/workflows/daily-analytics.yml` оставлен
 
 Скрипт отчета лежит в `scripts/send-daily-analytics.js`. Он использует общую логику из `scripts/lib/analytics-report.js`: исключает тестовые события с `is_test_event: true`, считает основные метрики по событиям `plugin_run_started`, `plugin_run_completed`, `plugin_run_failed`, `settings_opened` и `channel_link_clicked`, отдельно показывает запуски без финального статуса и мультивыбор, добавляет понятные выводы по ошибкам и производительности, а также кликабельную ссылку `Полный дашборд с графиками (открывается только с vpn)`. Затем сообщение отправляется через Telegram Bot API. Заголовок отчета отправляется жирным через HTML-разметку Telegram. Для неожиданных ответов PostHog тот же модуль формирует диагностическое сообщение вместо отчета с нулями.
 
-## Telegram-команда `/today`
+## Telegram-команды
 
-В проекте есть Vercel endpoint `api/telegram.js` для команды `/today`. Он принимает webhook от Telegram, проверяет секретный заголовок Telegram, проверяет `TELEGRAM_CHAT_ID`, игнорирует чужие сообщения и по команде `/today` отправляет отчет за текущий день по Москве.
+В проекте есть Vercel endpoint `api/telegram.js` для команд `/today`, `/speed` и `/errors`. Он принимает webhook от Telegram, проверяет секретный заголовок Telegram, проверяет `TELEGRAM_CHAT_ID` и игнорирует чужие сообщения.
+
+- `/today` отправляет общую сводку за текущий день по Москве;
+- `/speed` отправляет отчет по скорости за семь полностью завершенных дней;
+- `/errors` отправляет отчет по ошибкам за семь полностью завершенных дней.
+
+Недельные команды не используют кнопки внутри сообщений. `/speed` показывает среднее время, границу для 90% обработок, самый медленный запуск и все ненулевые этапы обработки. `/errors` показывает количество ошибок, пострадавших пользователей, долю ошибок, все известные ненулевые причины и все ненулевые области запуска. Оба недельных отчета сравниваются с предыдущими семью днями и ведут на дашборд производительности `https://eu.posthog.com/project/184090/dashboard/854930`.
+
+Подписи команд в меню Telegram задаются скриптом `scripts/configure-telegram-menu.js`: `/speed` — `Отчёт по скорости за 7 дней`, `/errors` — `Отчёт по ошибкам за 7 дней`. Для безопасного обновления без передачи токена вручную используется workflow `.github/workflows/configure-telegram-menu.yml`.
 
 Для Vercel нужно добавить Environment Variables:
 
@@ -101,6 +109,7 @@ GitHub Actions workflow `.github/workflows/daily-analytics.yml` оставлен
 - `POSTHOG_HOST` — `https://eu.posthog.com`;
 - `POSTHOG_PROJECT_ID` — `184090`;
 - `POSTHOG_DASHBOARD_URL` — `https://eu.posthog.com/project/184090/dashboard/695809`;
+- `POSTHOG_PERFORMANCE_DASHBOARD_URL` — `https://eu.posthog.com/project/184090/dashboard/854930`;
 - `TELEGRAM_BOT_TOKEN` — токен Telegram-бота;
 - `TELEGRAM_CHAT_ID` — id разрешенного чата;
 - `TELEGRAM_WEBHOOK_SECRET` — длинная случайная строка для проверки webhook.
@@ -111,7 +120,7 @@ GitHub Actions workflow `.github/workflows/daily-analytics.yml` оставлен
 https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<VERCEL_URL>/api/telegram&secret_token=<TELEGRAM_WEBHOOK_SECRET>
 ```
 
-После этого команда `/today` в Telegram должна присылать отчет за текущий день. Ежедневный отчет за вчера отправляет Vercel Cron.
+После этого `/today` должна присылать отчет за текущий день, а `/speed` и `/errors` — недельные отчеты. Ежедневный отчет за вчера отправляет Vercel Cron.
 
 Рабочие инструкции по Telegram Bot API, webhook, командам меню, проверкам и сбросу настроек лежат в `docs/telegram-bot-guide.md`.
 
@@ -435,8 +444,9 @@ npm run dev
 - `src/ui.html` — готовый HTML для Figma. В нем есть размеченные блоки `chistovik-content:*`, которые обновляет скрипт синхронизации.
 - `scripts/sync-ui-content.js` — генератор, который переносит данные из `src/ui-content.js` в `src/ui.html`.
 - `scripts/send-daily-analytics.js` — скрипт ежедневного Telegram-отчета по PostHog-аналитике.
+- `scripts/configure-telegram-menu.js` — скрипт обновления команд и подписей в меню Telegram.
 - `scripts/lib/analytics-report.js` — общая логика PostHog-запросов, форматирования Telegram-сообщений и отправки сообщений.
-- `api/telegram.js` — Vercel endpoint для Telegram webhook и команды `/today`.
+- `api/telegram.js` — Vercel endpoint для Telegram webhook и команд `/today`, `/speed` и `/errors`.
 - `api/daily-analytics.js` — Vercel endpoint для ежедневного Telegram-отчета за вчера.
 
 Важный технический нюанс: Figma-плагин не читает отдельные локальные файлы контента во время работы. Поэтому контент хранится отдельно для удобного редактирования, но встраивается в `src/ui.html` перед сборкой. Команды `npm run build` и `npm run dev` сначала запускают `npm run sync-ui`.

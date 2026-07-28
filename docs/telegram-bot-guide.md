@@ -11,13 +11,13 @@
 https://chistovik-plugin.vercel.app/api/daily-analytics
 ```
 
-- Команда `/today` работает через Vercel endpoint:
+- Команды `/today`, `/speed` и `/errors` работают через Vercel endpoint:
 
 ```text
 https://chistovik-plugin.vercel.app/api/telegram
 ```
 
-- Команда `/today` добавлена в меню команд бота.
+- В меню бота добавлены общая сводка за сегодня, отчет по скорости за 7 дней и отчет по ошибкам за 7 дней.
 - В обычных отчетах заголовок приходит жирным и начинается с `✦`, а полный дашборд спрятан в кликабельный текст `Полный дашборд с графиками`.
 - Если PostHog вернул неожиданный формат данных, бот отправляет диагностическое сообщение вместо отчета с ложными нулями. Заголовок приходит жирным и начинается с `🛑`, а ссылка на дашборд спрятана в текст `в полном дашборде`.
 - Полный дашборд PostHog:
@@ -26,13 +26,21 @@ https://chistovik-plugin.vercel.app/api/telegram
 https://eu.posthog.com/project/184090/dashboard/695809
 ```
 
+- Дашборд по производительности и ошибкам:
+
+```text
+https://eu.posthog.com/project/184090/dashboard/854930
+```
+
 ## Где лежит код
 
 - `api/daily-analytics.js` — Vercel endpoint для ежедневного отчета за вчера.
 - `scripts/send-daily-analytics.js` — резервный ручной отчет за вчера через GitHub Actions.
+- `scripts/configure-telegram-menu.js` — безопасно обновляет список команд и подписей в меню Telegram.
 - `scripts/lib/analytics-report.js` — общая логика PostHog-запросов, форматирования сообщений и отправки в Telegram.
-- `api/telegram.js` — Vercel endpoint для Telegram webhook и команды `/today`.
+- `api/telegram.js` — Vercel endpoint для Telegram webhook и команд `/today`, `/speed` и `/errors`.
 - `.github/workflows/daily-analytics.yml` — ручной резервный запуск ежедневного отчета.
+- `.github/workflows/configure-telegram-menu.yml` — ручное обновление меню команд через сохраненный GitHub Secret.
 - `vercel.json` — конфиг Vercel.
 - `public/index.html` — минимальный static output для Vercel.
 
@@ -50,13 +58,14 @@ TELEGRAM_CHAT_ID
 
 ### Vercel Environment Variables
 
-Нужны для команды `/today` и ежедневного отчета через Vercel Cron:
+Нужны для Telegram-команд и ежедневного отчета через Vercel Cron:
 
 ```text
 POSTHOG_PERSONAL_API_KEY
 POSTHOG_HOST=https://eu.posthog.com
 POSTHOG_PROJECT_ID=184090
 POSTHOG_DASHBOARD_URL=https://eu.posthog.com/project/184090/dashboard/695809
+POSTHOG_PERFORMANCE_DASHBOARD_URL=https://eu.posthog.com/project/184090/dashboard/854930
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
 TELEGRAM_WEBHOOK_SECRET
@@ -146,7 +155,7 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://chistovi
 {"ok":true,"result":true,"description":"Webhook was set"}
 ```
 
-После этого команда `/today` должна работать в Telegram.
+После этого команды `/today`, `/speed` и `/errors` должны работать в Telegram.
 
 ## Как проверить webhook
 
@@ -174,16 +183,18 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteWebhook
 
 ## Как добавить команды в меню бота
 
-Открыть в браузере:
+Основной способ — вручную запустить workflow `Configure Telegram menu` в GitHub Actions. Он использует сохраненный `TELEGRAM_BOT_TOKEN` и не показывает токен в логах.
+
+Для резервной ручной настройки можно открыть в браузере:
 
 ```text
-https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setMyCommands?commands=[{"command":"today","description":"Отчёт за сегодня"}]
+https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setMyCommands?commands=[{"command":"today","description":"Отчёт за сегодня"},{"command":"speed","description":"Отчёт по скорости за 7 дней"},{"command":"errors","description":"Отчёт по ошибкам за 7 дней"}]
 ```
 
 Если браузер ругается на русские буквы, использовать encoded-вариант:
 
 ```text
-https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setMyCommands?commands=%5B%7B%22command%22%3A%22today%22%2C%22description%22%3A%22%D0%9E%D1%82%D1%87%D1%91%D1%82%20%D0%B7%D0%B0%20%D1%81%D0%B5%D0%B3%D0%BE%D0%B4%D0%BD%D1%8F%22%7D%5D
+https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setMyCommands?commands=%5B%7B%22command%22%3A%22today%22%2C%22description%22%3A%22%D0%9E%D1%82%D1%87%D1%91%D1%82%20%D0%B7%D0%B0%20%D1%81%D0%B5%D0%B3%D0%BE%D0%B4%D0%BD%D1%8F%22%7D%2C%7B%22command%22%3A%22speed%22%2C%22description%22%3A%22%D0%9E%D1%82%D1%87%D1%91%D1%82%20%D0%BF%D0%BE%20%D1%81%D0%BA%D0%BE%D1%80%D0%BE%D1%81%D1%82%D0%B8%20%D0%B7%D0%B0%207%20%D0%B4%D0%BD%D0%B5%D0%B9%22%7D%2C%7B%22command%22%3A%22errors%22%2C%22description%22%3A%22%D0%9E%D1%82%D1%87%D1%91%D1%82%20%D0%BF%D0%BE%20%D0%BE%D1%88%D0%B8%D0%B1%D0%BA%D0%B0%D0%BC%20%D0%B7%D0%B0%207%20%D0%B4%D0%BD%D0%B5%D0%B9%22%7D%5D
 ```
 
 Успешный ответ:
@@ -196,6 +207,8 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setMyCommands?commands=%5B%7B%2
 
 ```text
 /today — Отчёт за сегодня
+/speed — Отчёт по скорости за 7 дней
+/errors — Отчёт по ошибкам за 7 дней
 ```
 
 Иногда меню обновляется не сразу. Можно закрыть и снова открыть чат с ботом.
@@ -228,17 +241,19 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteMyCommands
 
 После деплоя Vercel отдельно проверить, что в проекте появился cron `/api/daily-analytics`. На Hobby-тарифе он может сработать не ровно в `09:00`, а в пределах часа.
 
-## Как проверить команду /today
+## Как проверить команды
 
 1. Убедиться, что Vercel deploy успешный.
 2. Убедиться, что webhook установлен.
-3. Написать боту:
+3. По очереди написать боту:
 
 ```text
 /today
+/speed
+/errors
 ```
 
-4. Проверить, что пришел отчет за текущий день по Москве.
+4. Проверить, что `/today` прислал отчет за текущий день по Москве, а `/speed` и `/errors` — отчеты за семь полностью завершенных дней.
 
 Если PostHog вернул неожиданный формат данных, вместо отчета должно прийти диагностическое сообщение:
 
@@ -250,7 +265,7 @@ PostHog вернул неожиданный формат данных. Попр�
 
 Такой ответ означает, что бот не стал подставлять нули, потому что не смог надежно прочитать результат PostHog.
 
-## Что делать, если /today не отвечает
+## Что делать, если команда не отвечает
 
 1. Проверить Vercel deploy.
 2. Проверить Vercel logs.
@@ -279,7 +294,6 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo
 ```text
 /yesterday
 /week
-/errors
 /error_types
 /help
 ```

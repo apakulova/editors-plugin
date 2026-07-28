@@ -2,10 +2,20 @@ const assert = require("assert");
 
 const {
   createAnalyticsMessageOrDiagnostic,
+  fetchWeeklyErrorsSummary,
+  fetchWeeklyPerformanceSummary,
   formatAnalyticsFailureMessage,
   formatAnalyticsMessage,
+  formatWeeklyErrorsMessage,
+  formatWeeklyPerformanceMessage,
+  getMoscowCompletedWeekRange,
   getMoscowReportRange,
 } = require("./lib/analytics-report");
+const telegramHandler = require("../api/telegram");
+const {
+  TELEGRAM_COMMANDS,
+  configureTelegramCommands,
+} = require("./configure-telegram-menu");
 
 const originalFetch = global.fetch;
 const originalConsoleError = console.error;
@@ -19,15 +29,57 @@ function createResponse(payload) {
 
 async function withMockedFetch(payloads, callback) {
   let callIndex = 0;
-  global.fetch = async () => createResponse(payloads[callIndex++] ?? { results: [] });
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ options, url });
+    return createResponse(payloads[callIndex++] ?? { results: [] });
+  };
   console.error = () => {};
 
   try {
-    await callback();
+    await callback(calls);
   } finally {
     global.fetch = originalFetch;
     console.error = originalConsoleError;
   }
+}
+
+async function withTelegramEnvironment(callback) {
+  const keys = [
+    "POSTHOG_PERSONAL_API_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID",
+    "TELEGRAM_WEBHOOK_SECRET",
+  ];
+  const originalValues = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+
+  process.env.POSTHOG_PERSONAL_API_KEY = "phx_test";
+  process.env.TELEGRAM_BOT_TOKEN = "telegram_test";
+  process.env.TELEGRAM_CHAT_ID = "123";
+  process.env.TELEGRAM_WEBHOOK_SECRET = "secret";
+
+  try {
+    await callback();
+  } finally {
+    for (const key of keys) {
+      if (originalValues[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = originalValues[key];
+      }
+    }
+  }
+}
+
+function createApiResponse() {
+  return {
+    body: null,
+    end(body) {
+      this.body = JSON.parse(body);
+    },
+    setHeader() {},
+    statusCode: null,
+  };
 }
 
 function createSummary(overrides = {}) {
@@ -158,6 +210,129 @@ async function run() {
   assert(!noKnownCauseMessage.includes("основная причина"));
   assert(!noKnownCauseMessage.includes("основные причины"));
 
+  const weeklyRange = getMoscowCompletedWeekRange(new Date("2026-07-28T06:00:00.000Z"));
+  assert.strictEqual(weeklyRange.label, "21–27 июля");
+
+  const weeklyPerformanceMessage = formatWeeklyPerformanceMessage(
+    weeklyRange,
+    {
+      averageDurationMs: 420,
+      baseline: {
+        averageDurationMs: 338.71,
+        successfulRuns: 150,
+      },
+      collectTextMs: 10,
+      compareTextMs: 0,
+      developmentMarkersMs: 0,
+      fontsMs: 310,
+      otherMs: 6,
+      p90DurationMs: 1800,
+      readStylesMs: 0,
+      restoreStylesMs: 74,
+      slowestDurationMs: 12400,
+      successfulRuns: 164,
+      typographyMs: 20,
+      writeTextMs: 0,
+    },
+    env
+  );
+
+  assert(weeklyPerformanceMessage.includes("<b>✦ Скорость за 21–27 июля</b>"));
+  assert(weeklyPerformanceMessage.includes("Успешные обработки: 164"));
+  assert(weeklyPerformanceMessage.includes("Среднее время: 420 мс"));
+  assert(weeklyPerformanceMessage.includes("90% обработок: за 1,8 секунды"));
+  assert(weeklyPerformanceMessage.includes("Самый медленный запуск: 12,4 секунды"));
+  assert(weeklyPerformanceMessage.includes("— загрузка шрифтов: 310 мс"));
+  assert(weeklyPerformanceMessage.includes("— возвращение оформления: 74 мс"));
+  assert(weeklyPerformanceMessage.includes("— применение правил типографики: 20 мс"));
+  assert(weeklyPerformanceMessage.includes("— поиск текстовых слоёв: 10 мс"));
+  assert(weeklyPerformanceMessage.includes("— остальные операции: 6 мс"));
+  assert(!weeklyPerformanceMessage.includes("сравнение текста"));
+  assert(weeklyPerformanceMessage.includes("📍 Скорость стала на 24% медленнее, чем за предыдущие 7 дней"));
+  assert(weeklyPerformanceMessage.includes("📍 Основная задержка — загрузка шрифтов"));
+  assert(
+    weeklyPerformanceMessage.includes(
+      '<a href="https://eu.posthog.com/project/184090/dashboard/854930">Дашборд по производительности</a>'
+    )
+  );
+
+  const insufficientPerformanceMessage = formatWeeklyPerformanceMessage(
+    weeklyRange,
+    {
+      averageDurationMs: 420,
+      baseline: { averageDurationMs: 400, successfulRuns: 20 },
+      successfulRuns: 4,
+    },
+    env
+  );
+
+  assert(insufficientPerformanceMessage.includes("Слишком мало запусков за последние 7 дней, чтобы оценить скорость"));
+  assert(!insufficientPerformanceMessage.includes("Среднее время:"));
+
+  const weeklyErrorsMessage = formatWeeklyErrorsMessage(
+    weeklyRange,
+    {
+      affectedUsers: 4,
+      baseline: {
+        affectedUsers: 3,
+        failedRuns: 12,
+        typographRuns: 808,
+      },
+      errorCategories: [
+        { category: "font_unavailable", count: 10 },
+        { category: "write_text_failed", count: 5 },
+        { category: "unknown", count: 2 },
+      ],
+      errorScopes: [
+        { scope: "container", count: 10 },
+        { scope: "single_text", count: 5 },
+        { scope: "page", count: 2 },
+      ],
+      failedRuns: 17,
+      typographRuns: 806,
+    },
+    env
+  );
+
+  assert(weeklyErrorsMessage.includes("<b>✦ Ошибки за 21–27 июля</b>"));
+  assert(weeklyErrorsMessage.includes("Запуски типографа: 806"));
+  assert(weeklyErrorsMessage.includes("Ошибки: 17"));
+  assert(weeklyErrorsMessage.includes("Пострадавшие пользователи: 4"));
+  assert(weeklyErrorsMessage.includes("Доля запусков с ошибкой: 2%"));
+  assert(weeklyErrorsMessage.includes("— недоступен шрифт: 10 из 17 ошибок"));
+  assert(weeklyErrorsMessage.includes("— не удалось записать текст: 5 из 17 ошибок"));
+  assert(weeklyErrorsMessage.includes("— причина неизвестна: 2 из 17 ошибок"));
+  assert(weeklyErrorsMessage.includes("— во фрейме: 10"));
+  assert(weeklyErrorsMessage.includes("— на текстовом слое: 5"));
+  assert(weeklyErrorsMessage.includes("— на странице: 2"));
+  assert(weeklyErrorsMessage.includes("📍 Ошибок на 42% больше, чем за предыдущие 7 дней"));
+  assert(weeklyErrorsMessage.includes("📍 Основная причина — недоступен шрифт"));
+  assert(
+    weeklyErrorsMessage.includes(
+      '<a href="https://eu.posthog.com/project/184090/dashboard/854930">Дашборд по производительности</a>'
+    )
+  );
+
+  const noWeeklyErrorsMessage = formatWeeklyErrorsMessage(
+    weeklyRange,
+    {
+      affectedUsers: 0,
+      baseline: {
+        affectedUsers: 1,
+        failedRuns: 1,
+        typographRuns: 100,
+      },
+      errorCategories: [],
+      errorScopes: [],
+      failedRuns: 0,
+      typographRuns: 120,
+    },
+    env
+  );
+
+  assert(noWeeklyErrorsMessage.includes("За последние 7 дней ошибок не было"));
+  assert(!noWeeklyErrorsMessage.includes("Запуски типографа:"));
+
   const failureMessage = formatAnalyticsFailureMessage(
     dateRange,
     "PostHog вернул неожиданный формат данных.",
@@ -201,6 +376,114 @@ async function run() {
       assert(!emptyMessage.includes("Запуски типографа: 0"));
       assert(!emptyMessage.includes("Ошибки:"));
       assert(!emptyMessage.includes("Не удалось собрать отчёт"));
+    }
+  );
+
+  await withMockedFetch(
+    [
+      { results: [[164, 420, 1800, 12400, 10, 20, 310, 0, 0, 0, 74, 0, 6]] },
+      { results: [[150, 338.71, 1600, 9000, 8, 18, 250, 0, 0, 0, 55, 0, 5]] },
+    ],
+    async () => {
+      const summary = await fetchWeeklyPerformanceSummary(weeklyRange, env);
+
+      assert.strictEqual(summary.successfulRuns, 164);
+      assert.strictEqual(summary.fontsMs, 310);
+      assert.strictEqual(summary.baseline.averageDurationMs, 338.71);
+    }
+  );
+
+  await withMockedFetch(
+    [
+      { results: [[806, 17, 4]] },
+      { results: [[808, 12, 3]] },
+      { results: [["font_unavailable", 10], ["write_text_failed", 5], ["unknown", 2]] },
+      { results: [["container", 10], ["single_text", 5], ["page", 2]] },
+    ],
+    async () => {
+      const summary = await fetchWeeklyErrorsSummary(weeklyRange, env);
+
+      assert.strictEqual(summary.failedRuns, 17);
+      assert.strictEqual(summary.errorCategories.length, 3);
+      assert.strictEqual(summary.errorScopes.length, 3);
+      assert.strictEqual(summary.baseline.failedRuns, 12);
+    }
+  );
+
+  await withTelegramEnvironment(async () => {
+    await withMockedFetch(
+      [
+        { results: [[164, 420, 1800, 12400, 10, 20, 310, 0, 0, 0, 74, 0, 6]] },
+        { results: [[150, 338.71, 1600, 9000, 8, 18, 250, 0, 0, 0, 55, 0, 5]] },
+        { ok: true },
+      ],
+      async (calls) => {
+        const response = createApiResponse();
+
+        await telegramHandler(
+          {
+            body: { message: { chat: { id: 123 }, text: "/speed" } },
+            headers: { "x-telegram-bot-api-secret-token": "secret" },
+            method: "POST",
+          },
+          response
+        );
+
+        assert.strictEqual(response.statusCode, 200);
+        assert.deepStrictEqual(response.body, { ok: true });
+        assert.strictEqual(calls.length, 3);
+        const telegramPayload = JSON.parse(calls[2].options.body);
+        assert(telegramPayload.text.includes("✦ Скорость за"));
+        assert(telegramPayload.text.includes("Дашборд по производительности"));
+      }
+    );
+
+    await withMockedFetch(
+      [
+        { results: [[806, 17, 4]] },
+        { results: [[808, 12, 3]] },
+        { results: [["font_unavailable", 10], ["write_text_failed", 5], ["unknown", 2]] },
+        { results: [["container", 10], ["single_text", 5], ["page", 2]] },
+        { ok: true },
+      ],
+      async (calls) => {
+        const response = createApiResponse();
+
+        await telegramHandler(
+          {
+            body: { message: { chat: { id: 123 }, text: "/errors" } },
+            headers: { "x-telegram-bot-api-secret-token": "secret" },
+            method: "POST",
+          },
+          response
+        );
+
+        assert.strictEqual(response.statusCode, 200);
+        assert.deepStrictEqual(response.body, { ok: true });
+        assert.strictEqual(calls.length, 5);
+        const telegramPayload = JSON.parse(calls[4].options.body);
+        assert(telegramPayload.text.includes("✦ Ошибки за"));
+        assert(telegramPayload.text.includes("Ошибки: 17"));
+        assert(telegramPayload.text.includes("Пострадавшие пользователи: 4"));
+      }
+    );
+  });
+
+  assert.deepStrictEqual(TELEGRAM_COMMANDS, [
+    { command: "today", description: "Отчёт за сегодня" },
+    { command: "speed", description: "Отчёт по скорости за 7 дней" },
+    { command: "errors", description: "Отчёт по ошибкам за 7 дней" },
+  ]);
+
+  await withMockedFetch(
+    [{ ok: true, result: true }],
+    async (calls) => {
+      await configureTelegramCommands({ TELEGRAM_BOT_TOKEN: "telegram_test" });
+
+      assert.strictEqual(calls.length, 1);
+      assert.deepStrictEqual(JSON.parse(calls[0].options.body), {
+        commands: TELEGRAM_COMMANDS,
+      });
     }
   );
 }
