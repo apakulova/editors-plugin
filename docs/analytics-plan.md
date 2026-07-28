@@ -213,8 +213,8 @@ Email в будущем не стоит отправлять как `distinct_id
 
 ```ts
 {
-  analytics_schema_version: 1,
-  plugin_version: "1.0.0",
+  analytics_schema_version: 2,
+  plugin_release: "2026-07-28",
   source: "quick_run" | "settings",
   mode: "default" | "beauty" | "development",
   process_locked_nodes: boolean,
@@ -231,28 +231,97 @@ Email в будущем не стоит отправлять как `distinct_id
 
 ```ts
 {
-  processed_text_nodes_count: number,
-  changed_text_nodes_count: number,
+  processed_text_layers_count: number,
+  changed_text_layers_count: number,
   skipped_locked_count: number,
   skipped_hidden_count: number,
   duration_ms: number,
-  changed_anything: boolean
-  failed_text_nodes_count: number,
-  found_text_nodes_count: number
+  changed_anything: boolean,
+  failed_text_layers_count: number,
+  found_text_layers_count: number,
+  characters_processed_total: number,
+  characters_changed_total: number,
+  largest_text_layer_characters: number,
+  slowest_text_layer_ms: number,
+  changed_style_segments_count: number,
+  loaded_unique_fonts_count: number,
+  timing_collect_text_ms: number,
+  timing_typography_ms: number,
+  timing_fonts_ms: number,
+  timing_read_styles_ms: number,
+  timing_compare_text_ms: number,
+  timing_write_text_ms: number,
+  timing_restore_styles_ms: number,
+  timing_development_markers_ms: number,
+  timing_other_ms: number
 }
 ```
+
+`characters_processed_total` — точная сумма символов во всех непустых текстовых слоях, которые были проверены правилами. `characters_changed_total` — сумма исходных длин только тех слоев, где текст действительно изменился. `changed_style_segments_count` и `loaded_unique_fonts_count` относятся к измененным слоям: плагин не должен читать оформление и загружать шрифты у уже чистого текста только ради аналитики.
+
+Один запуск отправляет одно событие завершения. Отдельные события по каждому слою и по каждому этапу не создаются. Названия слоев, тексты и названия шрифтов не отправляются.
+
+### Русская легенда производительности
+
+В PostHog технические свойства нужно показывать пользователю с понятными русскими названиями:
+
+| Свойство | Название на дашборде | Что означает |
+|---|---|---|
+| `duration_ms` | Общее время обработки | Весь запуск от команды до готового результата, без ожидания отправки аналитики |
+| `timing_collect_text_ms` | Поиск текстовых слоёв | Поиск текста в выделении или на странице и проверка замочков и скрытых слоёв |
+| `timing_typography_ms` | Правила типографики | Кавычки, тире, числа, телефоны, сокращения, пробелы и остальные текстовые правила |
+| `timing_fonts_ms` | Загрузка шрифтов | Ожидание Figma при подготовке шрифтов изменяемого текста |
+| `timing_read_styles_ms` | Чтение оформления | Запоминание шрифтов, цветов, ссылок, списков и других свойств изменяемого текста |
+| `timing_compare_text_ms` | Сравнение текстов | Сопоставление исходного и исправленного текста для переноса оформления |
+| `timing_write_text_ms` | Запись текста | Передача исправленного текста в Figma |
+| `timing_restore_styles_ms` | Возвращение оформления | Возвращение сохранённых свойств текста после записи |
+| `timing_development_markers_ms` | Служебные звёздочки | Чтение, окрашивание и сохранение служебных `*` режима `Для разработки` |
+| `timing_other_ms` | Остальные операции | Часть общего времени, которая не вошла в перечисленные этапы |
+| `characters_processed_total` | Проверено символов | Суммарная длина всех проверенных непустых текстовых слоёв |
+| `characters_changed_total` | Символов в изменённых слоях | Суммарная исходная длина слоёв, где плагин нашёл изменения |
+| `largest_text_layer_characters` | Самый большой слой | Длина крупнейшего обработанного текстового слоя |
+| `slowest_text_layer_ms` | Самый медленный слой | Время самого долгого текстового слоя без его текста и названия |
+| `changed_style_segments_count` | Фрагменты оформления | Сколько фрагментов с отдельным оформлением прочитано в изменённых слоях |
+| `loaded_unique_fonts_count` | Загруженные шрифты | Сколько уникальных пар шрифт/начертание пришлось загрузить для изменённых слоёв |
+| `plugin_release` | Дата публикации | Московская дата версии плагина в формате `YYYY-MM-DD`; при двух публикациях за день добавляется `.1`, `.2` |
+
+Основной дашборд должен исключать события с `is_test_event: true`. Для сравнения скорости использовать не только среднее, но и обычное время большинства запусков, медленные 10% запусков и долю запусков дольше `500 ms`, `1 s`, `2 s` и `5 s`.
 
 Дополнительные свойства для `plugin_run_failed`:
 
 ```ts
 {
   duration_ms: number,
-  stage: "load_page" | "collect_nodes" | "load_fonts" | "clean_text" | "apply_text" | "unknown",
+  stage:
+    | "collect_nodes"
+    | "development_markers"
+    | "load_fonts"
+    | "read_styles"
+    | "clean_text"
+    | "compare_text"
+    | "write_text"
+    | "restore_styles"
+    | "unknown",
   error_name: string,
   error_fingerprint: string,
-  failed_text_nodes_count: number | null,
-  found_text_nodes_count: number | null,
-  processed_text_nodes_count: number | null
+  failed_text_layers_count: number | null,
+  found_text_layers_count: number | null,
+  processed_text_layers_count: number | null,
+  characters_processed_total: number | null,
+  characters_changed_total: number | null,
+  largest_text_layer_characters: number | null,
+  slowest_text_layer_ms: number | null,
+  changed_style_segments_count: number | null,
+  loaded_unique_fonts_count: number | null,
+  timing_collect_text_ms: number,
+  timing_typography_ms?: number,
+  timing_fonts_ms?: number,
+  timing_read_styles_ms?: number,
+  timing_compare_text_ms?: number,
+  timing_write_text_ms?: number,
+  timing_restore_styles_ms?: number,
+  timing_development_markers_ms?: number,
+  timing_other_ms: number | null
 }
 ```
 
@@ -264,8 +333,8 @@ Email в будущем не стоит отправлять как `distinct_id
 
 ```ts
 {
-  analytics_schema_version: 1,
-  plugin_version: "1.0.0",
+  analytics_schema_version: 2,
+  plugin_release: "2026-07-28",
   source: "about_tab",
   link: "channel"
 }
@@ -327,9 +396,9 @@ async function trackAnalyticsEvent(name: string, properties: AnalyticsProperties
     ...properties,
     $geoip_disable: true,
     $process_person_profile: false,
-    analytics_schema_version: 1,
+    analytics_schema_version: 2,
     identity_type: identity.identityType,
-    plugin_version: ANALYTICS_PLUGIN_VERSION
+    plugin_release: ANALYTICS_PLUGIN_RELEASE
   },
   timestamp: capturedAt
 }
