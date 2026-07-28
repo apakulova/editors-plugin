@@ -16,7 +16,7 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 2;
+const ANALYTICS_SCHEMA_VERSION = 3;
 const ANALYTICS_PLUGIN_RELEASE = "2026-07-28";
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
@@ -111,7 +111,7 @@ function openSettingsUI() {
     }
 }
 async function runTypograph(options, source) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     if (typographRunInProgress) {
         return;
     }
@@ -146,7 +146,8 @@ async function runTypograph(options, source) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to run typograph", error);
-        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_fingerprint: createErrorFingerprint(error), error_name: getErrorName(error), failed_text_layers_count: (_b = result === null || result === void 0 ? void 0 : result.failed) !== null && _b !== void 0 ? _b : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_c = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _c !== void 0 ? _c : null, characters_processed_total: (_d = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _d !== void 0 ? _d : null, largest_text_layer_characters: (_e = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _e !== void 0 ? _e : null, processed_text_layers_count: (_f = result === null || result === void 0 ? void 0 : result.processed) !== null && _f !== void 0 ? _f : null, slowest_text_layer_ms: (_g = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _g !== void 0 ? _g : null, stage: analyticsStage, changed_style_segments_count: (_h = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _h !== void 0 ? _h : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _j !== void 0 ? _j : null }));
+        const errorDiagnostic = (_b = result === null || result === void 0 ? void 0 : result.failureDiagnostic) !== null && _b !== void 0 ? _b : createAnalyticsErrorDiagnostic(error, analyticsStage);
+        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_c = result === null || result === void 0 ? void 0 : result.failed) !== null && _c !== void 0 ? _c : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_d = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _d !== void 0 ? _d : null, characters_processed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _e !== void 0 ? _e : null, largest_text_layer_characters: (_f = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _f !== void 0 ? _f : null, processed_text_layers_count: (_g = result === null || result === void 0 ? void 0 : result.processed) !== null && _g !== void 0 ? _g : null, slowest_text_layer_ms: (_h = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _h !== void 0 ? _h : null, stage: analyticsStage, changed_style_segments_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _j !== void 0 ? _j : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _k !== void 0 ? _k : null }));
         throw error;
     }
     finally {
@@ -175,6 +176,7 @@ function createAnalyticsRunContext(options, source) {
         return {
             mode: getAnalyticsRunMode(options, source),
             options,
+            runId: createAnalyticsRunId(),
             selection: getSelectionAnalyticsSummary(figma.currentPage.selection),
             source,
             startedAt: Date.now(),
@@ -184,6 +186,7 @@ function createAnalyticsRunContext(options, source) {
         return {
             mode: getAnalyticsRunMode(options, source),
             options,
+            runId: createAnalyticsRunId(),
             selection: {
                 scope: "page",
                 selectedNodesCount: 0,
@@ -240,6 +243,7 @@ function getRunAnalyticsProperties(context) {
             process_hidden_nodes: context.options.processHiddenNodes,
             process_locked_nodes: context.options.processLockedNodes,
             recolor_existing_asterisks: context.options.recolorExistingAsterisks,
+            run_id: context.runId,
             selected_nodes_count: context.selection.selectedNodesCount,
             selected_text_nodes_count: context.selection.selectedTextNodesCount,
             selection_scope: context.selection.scope,
@@ -502,9 +506,23 @@ function createAnalyticsEventId() {
         return `evt_fallback_${Date.now().toString(36)}`;
     }
 }
+function createAnalyticsRunId() {
+    try {
+        return `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}_${Math.random().toString(36).slice(2, 12)}`;
+    }
+    catch (_a) {
+        return `run_fallback_${Date.now().toString(36)}`;
+    }
+}
 function getErrorName(error) {
     try {
-        return error instanceof Error && error.name !== "" ? error.name : "UnknownError";
+        if (error instanceof Error && error.name !== "") {
+            return error.name;
+        }
+        if (typeof error === "object" && error !== null && "name" in error && typeof error.name === "string" && error.name !== "") {
+            return error.name;
+        }
+        return "UnknownError";
     }
     catch (_a) {
         return "UnknownError";
@@ -513,12 +531,91 @@ function getErrorName(error) {
 function createErrorFingerprint(error) {
     try {
         const name = getErrorName(error);
-        const message = error instanceof Error ? error.message : String(error);
+        const message = getErrorMessage(error);
         return hashAnalyticsString(`${name}:${message}`);
     }
     catch (_a) {
         return "unknown";
     }
+}
+function getErrorMessage(error) {
+    try {
+        if (error instanceof Error) {
+            return error.message;
+        }
+        if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
+            return error.message;
+        }
+        return String(error);
+    }
+    catch (_a) {
+        return "";
+    }
+}
+function createAnalyticsErrorDiagnostic(error, stage) {
+    return {
+        category: classifyAnalyticsError(error, stage),
+        fingerprint: createErrorFingerprint(error),
+        location: getAnalyticsErrorLocation(stage),
+        name: getErrorName(error),
+        operation: getAnalyticsErrorOperation(stage),
+    };
+}
+function classifyAnalyticsError(error, stage) {
+    const message = getErrorMessage(error).toLowerCase();
+    if (/(timeout|timed out|deadline)/.test(message)) {
+        return "timeout";
+    }
+    if (/(font).*(unavailable|missing|not found|failed|load)|failed.*font/.test(message)) {
+        return "font_unavailable";
+    }
+    if (/(read.?only|readonly|not editable|cannot edit|can.?t edit|locked|permission|not allowed)/.test(message)) {
+        return "layer_not_editable";
+    }
+    if (/(removed|detached|deleted|invalid node|node.*not found|does not exist)/.test(message)) {
+        return "layer_changed";
+    }
+    if (/(mixed|unsupported|symbol)/.test(message)) {
+        return "mixed_or_unsupported_property";
+    }
+    if (stage === "write_text") {
+        return "write_text_failed";
+    }
+    if (stage === "restore_styles" || stage === "development_markers") {
+        return "restore_styles_failed";
+    }
+    if (stage === "clean_text" || stage === "compare_text") {
+        return "typography_failed";
+    }
+    return "unknown";
+}
+function getAnalyticsErrorOperation(stage) {
+    const operations = {
+        clean_text: "apply_typography_rules",
+        collect_nodes: "collect_target_text_layers",
+        compare_text: "compare_original_and_clean_text",
+        development_markers: "apply_development_markers",
+        load_fonts: "load_text_layer_fonts",
+        read_styles: "capture_text_layer_styles",
+        restore_styles: "restore_text_layer_styles",
+        unknown: "unknown",
+        write_text: "write_clean_text",
+    };
+    return operations[stage];
+}
+function getAnalyticsErrorLocation(stage) {
+    const locations = {
+        clean_text: "src/code.ts:cleanTypographyWithMetadata",
+        collect_nodes: "src/code.ts:collectTargetTextNodes",
+        compare_text: "src/code.ts:buildStyleMap",
+        development_markers: "src/code.ts:applyDevelopmentMarkerStyles",
+        load_fonts: "src/code.ts:loadFontsForTextNode",
+        read_styles: "src/code.ts:captureTextStyles",
+        restore_styles: "src/code.ts:restoreTextStyles",
+        unknown: "src/code.ts:runTypograph",
+        write_text: "src/code.ts:processTextNodes/write_clean_text",
+    };
+    return locations[stage];
 }
 function hashAnalyticsString(input) {
     try {
@@ -725,6 +822,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         let processed = 0;
         let changed = 0;
         let failed = 0;
+        let failureDiagnostic = null;
         let failedStage = null;
         const timings = createEmptyTextProcessTimings();
         let charactersChangedTotal = 0;
@@ -821,6 +919,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             catch (error) {
                 failed += 1;
                 failedStage !== null && failedStage !== void 0 ? failedStage : (failedStage = currentStage);
+                failureDiagnostic !== null && failureDiagnostic !== void 0 ? failureDiagnostic : (failureDiagnostic = createAnalyticsErrorDiagnostic(error, currentStage));
                 console.error(`[Чистовик] Failed to process text node ${textNode.id}`, error);
             }
             finally {
@@ -833,6 +932,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             processed,
             changed,
             failed,
+            failureDiagnostic,
             failedStage,
             skippedHidden,
             skippedLocked,

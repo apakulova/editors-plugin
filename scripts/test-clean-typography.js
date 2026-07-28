@@ -21,6 +21,7 @@ const source = fs.readFileSync("dist/code.js", "utf8").replace(
     "globalThis.getFontLoadPromise = getFontLoadPromise;",
     "globalThis.processTextNodes = processTextNodes;",
     "globalThis.createAnalyticsEventPayload = createAnalyticsEventPayload;",
+    "globalThis.createAnalyticsErrorDiagnostic = createAnalyticsErrorDiagnostic;",
     "globalThis.getAnalyticsCaptureEndpoint = getAnalyticsCaptureEndpoint;",
     "globalThis.getTextProcessTimingAnalyticsProperties = getTextProcessTimingAnalyticsProperties;",
   ].join(" ")
@@ -49,6 +50,7 @@ const loadFontsForTextNode = context.globalThis.loadFontsForTextNode;
 const getFontLoadPromise = context.globalThis.getFontLoadPromise;
 const processTextNodes = context.globalThis.processTextNodes;
 const createAnalyticsEventPayload = context.globalThis.createAnalyticsEventPayload;
+const createAnalyticsErrorDiagnostic = context.globalThis.createAnalyticsErrorDiagnostic;
 const getAnalyticsCaptureEndpoint = context.globalThis.getAnalyticsCaptureEndpoint;
 const getTextProcessTimingAnalyticsProperties = context.globalThis.getTextProcessTimingAnalyticsProperties;
 const developmentOptions = {
@@ -89,10 +91,28 @@ assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload, "uuid"
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 2);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 3);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
 assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-28");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
+
+assert.deepStrictEqual(
+  {
+    ...JSON.parse(JSON.stringify(createAnalyticsErrorDiagnostic(new Error("Font is unavailable"), "load_fonts"))),
+    fingerprint: "stable",
+  },
+  {
+    category: "font_unavailable",
+    fingerprint: "stable",
+    location: "src/code.ts:loadFontsForTextNode",
+    name: "Error",
+    operation: "load_text_layer_fonts",
+  }
+);
+
+assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Node is read-only"), "write_text").category, "layer_not_editable");
+assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unexpected write failure"), "write_text").category, "write_text_failed");
+assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unsupported mixed property"), "restore_styles").category, "mixed_or_unsupported_property");
 assert.deepStrictEqual(
   JSON.parse(
     JSON.stringify(
@@ -805,6 +825,7 @@ async function runWhitespaceOnlyTextNodeTests() {
     skippedLocked: 0,
   });
   assert.strictEqual(result.failedStage, null);
+  assert.strictEqual(result.failureDiagnostic, null);
   assert.strictEqual(result.analytics.charactersProcessedTotal, 0);
   assert.strictEqual(result.analytics.charactersChangedTotal, 0);
   assert.strictEqual(result.analytics.largestTextLayerCharacters, 0);
@@ -925,6 +946,9 @@ async function runProcessingFailureAnalyticsTests() {
     skippedLocked: 0,
   });
   assert.strictEqual(result.failedStage, "load_fonts");
+  assert.strictEqual(result.failureDiagnostic.category, "font_unavailable");
+  assert.strictEqual(result.failureDiagnostic.location, "src/code.ts:loadFontsForTextNode");
+  assert.strictEqual(result.failureDiagnostic.operation, "load_text_layer_fonts");
   assert.strictEqual(result.analytics.charactersProcessedTotal, 8);
   assert.strictEqual(result.analytics.charactersChangedTotal, 0);
   assert.strictEqual(result.analytics.largestTextLayerCharacters, 8);

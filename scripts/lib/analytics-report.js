@@ -9,6 +9,9 @@ const SUMMARY_COLUMNS = [
   "typographRuns",
   "successfulRuns",
   "failedRuns",
+  "affectedUsers",
+  "medianDurationMs",
+  "p90DurationMs",
   "modeDefault",
   "modeBeauty",
   "modeDevelopment",
@@ -22,6 +25,23 @@ const SUMMARY_COLUMNS = [
   "settingsOpened",
   "channelLinkClicked",
 ];
+const BASELINE_COLUMNS = [
+  "typographRuns",
+  "failedRuns",
+  "medianDurationMs",
+  "p90DurationMs",
+];
+const ERROR_CATEGORY_LABELS = {
+  font_unavailable: "шрифт недоступен",
+  layer_not_editable: "слой нельзя изменить",
+  layer_changed: "слой изменился или исчез",
+  mixed_or_unsupported_property: "смешанное или неподдерживаемое свойство",
+  write_text_failed: "не удалось записать текст",
+  restore_styles_failed: "не удалось вернуть оформление",
+  typography_failed: "ошибка правил типографики",
+  timeout: "превышено время ожидания",
+  unknown: "причина неизвестна",
+};
 
 class AnalyticsReportError extends Error {
   constructor(message, publicReason) {
@@ -158,10 +178,13 @@ function getAnalyticsQuery(start, end) {
 
   return `
 SELECT
-  uniqExact(distinct_id) AS unique_users,
+  uniqExactIf(distinct_id, event = 'plugin_run_started') AS unique_users,
   countIf(event = 'plugin_run_started') AS typograph_runs,
   countIf(event = 'plugin_run_completed') AS successful_runs,
   countIf(event = 'plugin_run_failed') AS failed_runs,
+  uniqExactIf(distinct_id, event = 'plugin_run_failed') AS affected_users,
+  quantileIf(0.5)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms)) AS median_duration_ms,
+  quantileIf(0.9)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms)) AS p90_duration_ms,
   countIf(event = 'plugin_run_started' AND properties.mode = 'default') AS mode_default,
   countIf(event = 'plugin_run_started' AND properties.mode = 'beauty') AS mode_beauty,
   countIf(event = 'plugin_run_started' AND properties.mode = 'development') AS mode_development,
@@ -188,17 +211,53 @@ WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
 `;
 }
 
-async function fetchPostHogSummary(dateRange, env = process.env) {
-  assertRequiredEnv(env, ["POSTHOG_PERSONAL_API_KEY"]);
+function getBaselineAnalyticsQuery(start, end) {
+  const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
+  const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
 
+  return `
+SELECT
+  countIf(event = 'plugin_run_started') AS typograph_runs,
+  countIf(event = 'plugin_run_failed') AS failed_runs,
+  quantileIf(0.5)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms)) AS median_duration_ms,
+  quantileIf(0.9)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms)) AS p90_duration_ms
+FROM events
+WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
+  AND timestamp < toDateTime('${endDateTime}', 'UTC')
+  AND event IN ('plugin_run_started', 'plugin_run_completed', 'plugin_run_failed')
+  AND ifNull(properties.is_test_event, false) != true
+`;
+}
+
+function getErrorCategoriesQuery(start, end) {
+  const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
+  const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
+
+  return `
+SELECT
+  toString(properties.error_category) AS error_category,
+  count() AS total
+FROM events
+WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
+  AND timestamp < toDateTime('${endDateTime}', 'UTC')
+  AND event = 'plugin_run_failed'
+  AND isNotNull(properties.error_category)
+  AND toString(properties.error_category) != ''
+  AND ifNull(properties.is_test_event, false) != true
+GROUP BY error_category
+ORDER BY total DESC, error_category ASC
+`;
+}
+
+async function queryPostHog(query, name, env) {
   const posthogHost = env.POSTHOG_HOST || DEFAULT_POSTHOG_HOST;
   const posthogProjectId = env.POSTHOG_PROJECT_ID || DEFAULT_POSTHOG_PROJECT_ID;
   const response = await fetch(`${posthogHost}/api/projects/${posthogProjectId}/query/`, {
     body: JSON.stringify({
-      name: "chistovik telegram report",
+      name,
       query: {
         kind: "HogQLQuery",
-        query: getAnalyticsQuery(dateRange.start, dateRange.end),
+        query,
       },
     }),
     headers: {
@@ -213,33 +272,245 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
     throw new Error(`PostHog query failed: ${response.status} ${body}`);
   }
 
-  let payload;
-
   try {
-    payload = await response.json();
+    return await response.json();
   } catch (error) {
     throw new AnalyticsReportError("PostHog query returned invalid JSON", POSTHOG_UNEXPECTED_RESPONSE_REASON);
   }
+}
 
-  const row = Array.isArray(payload.results) && Array.isArray(payload.results[0]) ? payload.results[0] : null;
+async function fetchPostHogSummary(dateRange, env = process.env) {
+  assertRequiredEnv(env, ["POSTHOG_PERSONAL_API_KEY"]);
+  const baselineStart = new Date(dateRange.start.getTime() - 7 * MS_IN_DAY);
+  const [summaryPayload, baselinePayload, categoriesPayload] = await Promise.all([
+    queryPostHog(getAnalyticsQuery(dateRange.start, dateRange.end), "chistovik telegram daily summary", env),
+    queryPostHog(getBaselineAnalyticsQuery(baselineStart, dateRange.start), "chistovik telegram seven day baseline", env),
+    queryPostHog(getErrorCategoriesQuery(dateRange.start, dateRange.end), "chistovik telegram error categories", env),
+  ]);
+
+  const row = Array.isArray(summaryPayload.results) && Array.isArray(summaryPayload.results[0]) ? summaryPayload.results[0] : null;
+  const baselineRow = Array.isArray(baselinePayload.results) && Array.isArray(baselinePayload.results[0]) ? baselinePayload.results[0] : null;
 
   if (row === null || row.length < SUMMARY_COLUMNS.length) {
     throw new AnalyticsReportError("PostHog query returned unexpected result shape", POSTHOG_UNEXPECTED_RESPONSE_REASON);
   }
 
-  return Object.fromEntries(SUMMARY_COLUMNS.map((column, index) => [column, Number(row[index] || 0)]));
+  if (baselineRow === null || baselineRow.length < BASELINE_COLUMNS.length || !Array.isArray(categoriesPayload.results)) {
+    throw new AnalyticsReportError("PostHog baseline query returned unexpected result shape", POSTHOG_UNEXPECTED_RESPONSE_REASON);
+  }
+
+  const summary = Object.fromEntries(SUMMARY_COLUMNS.map((column, index) => [column, Number(row[index] || 0)]));
+  const baseline = Object.fromEntries(BASELINE_COLUMNS.map((column, index) => [column, Number(baselineRow[index] || 0)]));
+  const errorCategories = categoriesPayload.results
+    .filter((categoryRow) => Array.isArray(categoryRow) && typeof categoryRow[0] === "string")
+    .map((categoryRow) => ({
+      category: categoryRow[0],
+      count: Number(categoryRow[1] || 0),
+    }))
+    .filter((item) => item.count > 0);
+
+  return {
+    ...summary,
+    baseline: {
+      averageDailyRuns: baseline.typographRuns / 7,
+      failedRate: baseline.typographRuns > 0 ? baseline.failedRuns / baseline.typographRuns : null,
+      medianDurationMs: baseline.medianDurationMs,
+      p90DurationMs: baseline.p90DurationMs,
+    },
+    errorCategories,
+  };
+}
+
+function formatPercent(value) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatSignedPercent(value) {
+  return `${Math.round(Math.abs(value) * 100)}%`;
+}
+
+function formatDuration(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return null;
+  }
+
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs)} мс`;
+  }
+
+  return `${(durationMs / 1000).toFixed(1).replace(".", ",")} секунды`;
+}
+
+function formatRunsComparison(currentRuns, averageDailyRuns) {
+  if (!Number.isFinite(averageDailyRuns) || averageDailyRuns < 1) {
+    return "данных пока мало для надёжного сравнения";
+  }
+
+  const change = (currentRuns - averageDailyRuns) / averageDailyRuns;
+
+  if (Math.abs(change) < 0.1) {
+    return "примерно как обычно";
+  }
+
+  if (change > 0.25) {
+    return `заметно больше среднего за предыдущие 7 дней — на ${formatSignedPercent(change)}`;
+  }
+
+  if (change > 0) {
+    return `на ${formatSignedPercent(change)} больше среднего за предыдущие 7 дней`;
+  }
+
+  if (change < -0.25) {
+    return `заметно меньше среднего за предыдущие 7 дней — на ${formatSignedPercent(change)}`;
+  }
+
+  return `на ${formatSignedPercent(change)} меньше среднего за предыдущие 7 дней`;
+}
+
+function formatPerformanceComparison(currentValue, baselineValue, slowerWord, fasterWord) {
+  if (!Number.isFinite(currentValue) || currentValue <= 0 || !Number.isFinite(baselineValue) || baselineValue <= 0) {
+    return "данных пока мало для надёжного сравнения";
+  }
+
+  const change = (currentValue - baselineValue) / baselineValue;
+
+  if (Math.abs(change) < 0.1) {
+    return "без заметных изменений";
+  }
+
+  if (change > 0.25) {
+    return `заметно ${slowerWord}, на ${formatSignedPercent(change)}`;
+  }
+
+  if (change > 0) {
+    return `немного ${slowerWord}, на ${formatSignedPercent(change)}`;
+  }
+
+  if (change < -0.25) {
+    return `заметно ${fasterWord}, на ${formatSignedPercent(change)}`;
+  }
+
+  return `немного ${fasterWord}, на ${formatSignedPercent(change)}`;
+}
+
+function getRussianPlural(value, one, few, many) {
+  const absolute = Math.abs(value) % 100;
+  const lastDigit = absolute % 10;
+
+  if (absolute > 10 && absolute < 20) {
+    return many;
+  }
+
+  if (lastDigit === 1) {
+    return one;
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return few;
+  }
+
+  return many;
+}
+
+function formatErrorAttempts(summary) {
+  const attemptsWord = getRussianPlural(summary.failedRuns, "неудачная попытка", "неудачные попытки", "неудачных попыток");
+  const usersWord = getRussianPlural(summary.affectedUsers, "пользователя", "пользователей", "пользователей");
+  const repeated = summary.affectedUsers === 1 && summary.failedRuns > 1 ? " — вероятно, повторные запуски" : "";
+
+  return `${summary.failedRuns} ${attemptsWord} у ${summary.affectedUsers} ${usersWord}${repeated}`;
+}
+
+function formatMainErrorCause(summary) {
+  if (!Array.isArray(summary.errorCategories) || summary.errorCategories.length === 0) {
+    return "причину ошибок пока определить не удалось";
+  }
+
+  const sorted = summary.errorCategories.slice().sort((left, right) => right.count - left.count);
+  const first = sorted[0];
+  const second = sorted[1];
+  const firstLabel = ERROR_CATEGORY_LABELS[first.category] || "неизвестная причина";
+
+  if (second && second.count === first.count) {
+    const secondLabel = ERROR_CATEGORY_LABELS[second.category] || "неизвестная причина";
+    return `единой основной причины нет: ${firstLabel} — ${first.count}, ${secondLabel} — ${second.count}`;
+  }
+
+  if (first.count < summary.failedRuns / 2) {
+    return "единой основной причины нет";
+  }
+
+  return `основная причина: ${firstLabel} — ${first.count} из ${summary.failedRuns} ошибок`;
 }
 
 function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   const runsWithoutFinalStatus = Math.max(0, summary.typographRuns - summary.successfulRuns - summary.failedRuns);
+  const completedRuns = summary.successfulRuns + summary.failedRuns;
+  const successRate = completedRuns > 0 ? summary.successfulRuns / completedRuns : null;
+  const missingRate = summary.typographRuns > 0 ? runsWithoutFinalStatus / summary.typographRuns : null;
+  const failedRate = summary.typographRuns > 0 ? summary.failedRuns / summary.typographRuns : null;
+  const baselineFailedRate = summary.baseline?.failedRate;
   const lines = [
     `<b>✦ Чистовик ${escapeHtml(dateRange.label)}</b>`,
     "",
+    `Запуски типографа: ${summary.typographRuns} — ${formatRunsComparison(summary.typographRuns, summary.baseline?.averageDailyRuns)}`,
     `Уникальные пользователи: ${summary.uniqueUsers}`,
-    `Запуски типографа: ${summary.typographRuns}`,
-    `Успешные обработки: ${summary.successfulRuns}`,
-    `Ошибки: ${summary.failedRuns}`,
-    `Без финального статуса: ${runsWithoutFinalStatus}`,
+    completedRuns > 0
+      ? `Успешные обработки: ${summary.successfulRuns} из ${completedRuns} завершённых — ${formatPercent(successRate)}`
+      : "Успешные обработки: пока нет завершённых запусков",
+    runsWithoutFinalStatus === 0
+      ? "Без финального статуса: 0 — все запуски получили результат"
+      : `Без финального статуса: ${runsWithoutFinalStatus} из ${summary.typographRuns} — ${formatPercent(missingRate)}${missingRate > 0.05 ? ", нужно проверить доставку аналитики" : ""}`,
+    "",
+    "Ошибки:",
+  ];
+
+  if (summary.failedRuns === 0) {
+    lines.push("— ошибок не было");
+  } else {
+    const rateComparison =
+      Number.isFinite(baselineFailedRate) && baselineFailedRate !== null
+        ? ` — обычно было ${formatPercent(baselineFailedRate)}`
+        : "";
+
+    lines.push(
+      `— ${formatErrorAttempts(summary)}`,
+      `— ${formatPercent(failedRate)} всех запусков завершились ошибкой${rateComparison}`,
+      `— ${formatMainErrorCause(summary)}`
+    );
+  }
+
+  lines.push("", "Производительность:");
+
+  const medianDuration = formatDuration(summary.medianDurationMs);
+  const p90Duration = formatDuration(summary.p90DurationMs);
+
+  if (medianDuration === null || summary.successfulRuns === 0) {
+    lines.push("— обычное время обработки: пока недостаточно данных");
+  } else {
+    lines.push(
+      `— обычное время обработки: ${medianDuration} — ${formatPerformanceComparison(
+        summary.medianDurationMs,
+        summary.baseline?.medianDurationMs,
+        "медленнее",
+        "быстрее"
+      )}`
+    );
+  }
+
+  if (p90Duration === null || summary.successfulRuns < 10) {
+    lines.push("— 90% обработок укладываются: пока недостаточно данных");
+  } else {
+    lines.push(
+      `— 90% обработок укладываются в ${p90Duration} — ${formatPerformanceComparison(
+        summary.p90DurationMs,
+        summary.baseline?.p90DurationMs,
+        "хуже",
+        "лучше"
+      )}`
+    );
+  }
+
+  lines.push(
     "",
     "Режимы:",
     `— Быстрый запуск: ${summary.modeDefault}`,
@@ -258,13 +529,13 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     `— с перекраской звездочек: ${summary.runsWithRecoloredAsterisks}`,
     "",
     `Открытия настроек: ${summary.settingsOpened}`,
-    `Переходы в канал: ${summary.channelLinkClicked}`,
-  ];
+    `Переходы в канал: ${summary.channelLinkClicked}`
+  );
 
   const dashboardUrl = env.POSTHOG_DASHBOARD_URL || DEFAULT_POSTHOG_DASHBOARD_URL;
 
   if (dashboardUrl) {
-    lines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с vpn)`);
+    lines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с VPN)`);
   }
 
   return lines.join("\n");
@@ -275,7 +546,7 @@ function formatAnalyticsFailureMessage(dateRange, reason, env = process.env) {
   const lines = [
     `<b>🛑 Не удалось собрать отчёт за ${escapeHtml(formatRussianDate(dateRange))}</b>`,
     "",
-    `${escapeHtml(reason)} Попробуй проверить данные <a href="${escapeHtml(dashboardUrl)}">в полном дашборде</a> (открывается только с vpn)`,
+    `${escapeHtml(reason)} Попробуй проверить данные <a href="${escapeHtml(dashboardUrl)}">в полном дашборде</a> (открывается только с VPN)`,
   ];
 
   return lines.join("\n");

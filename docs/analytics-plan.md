@@ -213,7 +213,7 @@ Email в будущем не стоит отправлять как `distinct_id
 
 ```ts
 {
-  analytics_schema_version: 2,
+  analytics_schema_version: 3,
   plugin_release: "2026-07-28",
   source: "quick_run" | "settings",
   mode: "default" | "beauty" | "development",
@@ -223,7 +223,8 @@ Email в будущем не стоит отправлять как `distinct_id
   selection_scope: "single_text" | "container" | "page" | "multi_selection",
   selected_nodes_count: number,
   selected_text_nodes_count: number,
-  identity_type: "anonymous" | "identified"
+  identity_type: "anonymous" | "identified",
+  run_id: string
 }
 ```
 
@@ -302,6 +303,18 @@ Email в будущем не стоит отправлять как `distinct_id
     | "write_text"
     | "restore_styles"
     | "unknown",
+  error_category:
+    | "font_unavailable"
+    | "layer_not_editable"
+    | "layer_changed"
+    | "mixed_or_unsupported_property"
+    | "write_text_failed"
+    | "restore_styles_failed"
+    | "typography_failed"
+    | "timeout"
+    | "unknown",
+  error_operation: string,
+  error_location: string,
   error_name: string,
   error_fingerprint: string,
   failed_text_layers_count: number | null,
@@ -325,6 +338,10 @@ Email в будущем не стоит отправлять как `distinct_id
 }
 ```
 
+`run_id` — случайный технический идентификатор одного запуска. Он одинаков у событий начала и финального результата, поэтому позволяет связать их без идентификации пользователя.
+
+`error_category` — безопасная понятная категория причины. `error_operation` — точная внутренняя операция, например загрузка шрифтов или запись текста. `error_location` — стабильная ссылка на внутреннюю область кода без полного stack trace. Исходный текст ошибки Figma в PostHog не отправляется: он используется только локально для выбора категории и создания fingerprint.
+
 Не отправлять полный stack trace, если он может содержать лишний контекст. Для дашборда достаточно имени ошибки, этапа и короткого fingerprint.
 
 ## Событие клика на канал
@@ -333,7 +350,7 @@ Email в будущем не стоит отправлять как `distinct_id
 
 ```ts
 {
-  analytics_schema_version: 2,
+  analytics_schema_version: 3,
   plugin_release: "2026-07-28",
   source: "about_tab",
   link: "channel"
@@ -396,7 +413,7 @@ async function trackAnalyticsEvent(name: string, properties: AnalyticsProperties
     ...properties,
     $geoip_disable: true,
     $process_person_profile: false,
-    analytics_schema_version: 2,
+    analytics_schema_version: 3,
     identity_type: identity.identityType,
     plugin_release: ANALYTICS_PLUGIN_RELEASE
   },
