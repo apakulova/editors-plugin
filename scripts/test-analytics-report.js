@@ -74,7 +74,7 @@ async function run() {
   const dateRange = getMoscowReportRange("yesterday", new Date("2026-07-28T06:00:00.000Z"));
   const message = formatAnalyticsMessage(dateRange, createSummary(), env);
 
-  assert(message.includes("<b>✦ Чистовик за 27 июля</b>"));
+  assert(message.includes("<b>✦ Чистовик за 27 июля (пн)</b>"));
   assert(message.includes("Запуски типографа: 28 — на 12% больше среднего за предыдущие 7 дней"));
   assert(message.includes("Успешные обработки: 20 из 25 завершённых — 80%"));
   assert(message.includes("Без финального статуса: 3 из 28 — 11%, нужно проверить доставку аналитики"));
@@ -83,12 +83,12 @@ async function run() {
   assert(message.includes("основная причина: шрифт недоступен — 4 из 5 ошибок"));
   assert(message.includes("обычное время обработки: 420 мс — без заметных изменений"));
   assert(message.includes("90% обработок укладываются в 1,8 секунды — заметно хуже, на 30%"));
-  assert(message.includes("открывается только с VPN"));
+  assert(message.includes("открывается только с vpn"));
 
   const todayRange = getMoscowReportRange("today", new Date("2026-07-28T06:00:00.000Z"));
   const todayMessage = formatAnalyticsMessage(todayRange, createSummary(), env);
 
-  assert(todayMessage.includes("<b>✦ Чистовик сегодня</b>"));
+  assert(todayMessage.includes("<b>✦ Чистовик сегодня (вт)</b>"));
   assert(todayMessage.includes("Запуски типографа: 28 — на 12% больше среднего за предыдущие 7 дней"));
   assert(todayMessage.includes("Ошибки:"));
   assert(todayMessage.includes("Производительность:"));
@@ -109,11 +109,16 @@ async function run() {
     env
   );
 
-  assert(noErrorsMessage.includes("Успешные обработки: пока нет завершённых запусков"));
-  assert(noErrorsMessage.includes("Без финального статуса: 0 — все запуски получили результат"));
-  assert(noErrorsMessage.includes("— ошибок не было"));
-  assert(noErrorsMessage.includes("обычное время обработки: пока недостаточно данных"));
-  assert(noErrorsMessage.includes("90% обработок укладываются: пока недостаточно данных"));
+  assert.strictEqual(
+    noErrorsMessage,
+    [
+      "<b>✦ Чистовик за 27 июля (пн)</b>",
+      "",
+      "Плагин никто не запускал",
+      "",
+      '<a href="https://example.test/dashboard">Полный дашборд с графиками</a> (открывается только с vpn)',
+    ].join("\n")
+  );
 
   const tiedCausesMessage = formatAnalyticsMessage(
     dateRange,
@@ -142,9 +147,9 @@ async function run() {
   assert.strictEqual(
     failureMessage,
     [
-      "<b>🛑 Не удалось собрать отчёт за 27 июля</b>",
+      "<b>🛑 Не удалось собрать отчёт за 27 июля (пн)</b>",
       "",
-      'PostHog вернул неожиданный формат данных. Попробуй проверить данные <a href="https://example.test/dashboard">в полном дашборде</a> (открывается только с VPN)',
+      'PostHog вернул неожиданный формат данных. Попробуй проверить данные <a href="https://example.test/dashboard">в полном дашборде</a> (открывается только с vpn)',
     ].join("\n")
   );
 
@@ -172,8 +177,9 @@ async function run() {
     async () => {
       const emptyMessage = await createAnalyticsMessageOrDiagnostic("yesterday", env);
 
-      assert(emptyMessage.includes("Запуски типографа: 0"));
-      assert(emptyMessage.includes("— ошибок не было"));
+      assert(emptyMessage.includes("Плагин никто не запускал"));
+      assert(!emptyMessage.includes("Запуски типографа: 0"));
+      assert(!emptyMessage.includes("Ошибки:"));
       assert(!emptyMessage.includes("Не удалось собрать отчёт"));
     }
   );

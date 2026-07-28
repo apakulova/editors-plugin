@@ -156,6 +156,13 @@ function formatRussianDate({ day, month }) {
   return `${day} ${monthNames[month - 1]}`;
 }
 
+function formatRussianWeekday({ day, month, year }) {
+  const weekdayNames = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+  const weekdayIndex = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+
+  return weekdayNames[weekdayIndex];
+}
+
 function escapeHogqlString(value) {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
@@ -443,6 +450,19 @@ function formatMainErrorCause(summary) {
 }
 
 function formatAnalyticsMessage(dateRange, summary, env = process.env) {
+  const dashboardUrl = env.POSTHOG_DASHBOARD_URL || DEFAULT_POSTHOG_DASHBOARD_URL;
+  const heading = `<b>✦ Чистовик ${escapeHtml(dateRange.label)} (${formatRussianWeekday(dateRange)})</b>`;
+
+  if (summary.typographRuns === 0) {
+    const emptyLines = [heading, "", "Плагин никто не запускал"];
+
+    if (dashboardUrl) {
+      emptyLines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с vpn)`);
+    }
+
+    return emptyLines.join("\n");
+  }
+
   const runsWithoutFinalStatus = Math.max(0, summary.typographRuns - summary.successfulRuns - summary.failedRuns);
   const completedRuns = summary.successfulRuns + summary.failedRuns;
   const successRate = completedRuns > 0 ? summary.successfulRuns / completedRuns : null;
@@ -450,7 +470,7 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   const failedRate = summary.typographRuns > 0 ? summary.failedRuns / summary.typographRuns : null;
   const baselineFailedRate = summary.baseline?.failedRate;
   const lines = [
-    `<b>✦ Чистовик ${escapeHtml(dateRange.label)}</b>`,
+    heading,
     "",
     `Запуски типографа: ${summary.typographRuns} — ${formatRunsComparison(summary.typographRuns, summary.baseline?.averageDailyRuns)}`,
     `Уникальные пользователи: ${summary.uniqueUsers}`,
@@ -532,10 +552,8 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     `Переходы в канал: ${summary.channelLinkClicked}`
   );
 
-  const dashboardUrl = env.POSTHOG_DASHBOARD_URL || DEFAULT_POSTHOG_DASHBOARD_URL;
-
   if (dashboardUrl) {
-    lines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с VPN)`);
+    lines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с vpn)`);
   }
 
   return lines.join("\n");
@@ -544,9 +562,9 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
 function formatAnalyticsFailureMessage(dateRange, reason, env = process.env) {
   const dashboardUrl = env.POSTHOG_DASHBOARD_URL || DEFAULT_POSTHOG_DASHBOARD_URL;
   const lines = [
-    `<b>🛑 Не удалось собрать отчёт за ${escapeHtml(formatRussianDate(dateRange))}</b>`,
+    `<b>🛑 Не удалось собрать отчёт за ${escapeHtml(formatRussianDate(dateRange))} (${formatRussianWeekday(dateRange)})</b>`,
     "",
-    `${escapeHtml(reason)} Попробуй проверить данные <a href="${escapeHtml(dashboardUrl)}">в полном дашборде</a> (открывается только с VPN)`,
+    `${escapeHtml(reason)} Попробуй проверить данные <a href="${escapeHtml(dashboardUrl)}">в полном дашборде</a> (открывается только с vpn)`,
   ];
 
   return lines.join("\n");
