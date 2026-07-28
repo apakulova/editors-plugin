@@ -19,8 +19,10 @@ const source = fs.readFileSync("dist/code.js", "utf8").replace(
     "globalThis.restoreTextStyles = restoreTextStyles;",
     "globalThis.loadFontsForTextNode = loadFontsForTextNode;",
     "globalThis.getFontLoadPromise = getFontLoadPromise;",
+    "globalThis.processTextNodes = processTextNodes;",
     "globalThis.createAnalyticsEventPayload = createAnalyticsEventPayload;",
     "globalThis.getAnalyticsCaptureEndpoint = getAnalyticsCaptureEndpoint;",
+    "globalThis.getTextProcessTimingAnalyticsProperties = getTextProcessTimingAnalyticsProperties;",
   ].join(" ")
 );
 const context = {
@@ -45,8 +47,10 @@ const restoreWholeTextStyle = context.globalThis.restoreWholeTextStyle;
 const restoreTextStyles = context.globalThis.restoreTextStyles;
 const loadFontsForTextNode = context.globalThis.loadFontsForTextNode;
 const getFontLoadPromise = context.globalThis.getFontLoadPromise;
+const processTextNodes = context.globalThis.processTextNodes;
 const createAnalyticsEventPayload = context.globalThis.createAnalyticsEventPayload;
 const getAnalyticsCaptureEndpoint = context.globalThis.getAnalyticsCaptureEndpoint;
+const getTextProcessTimingAnalyticsProperties = context.globalThis.getTextProcessTimingAnalyticsProperties;
 const developmentOptions = {
   mode: "development",
   processHiddenNodes: false,
@@ -85,7 +89,47 @@ assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload, "uuid"
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 2);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
+assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-28");
+assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
+assert.deepStrictEqual(
+  JSON.parse(
+    JSON.stringify(
+      getTextProcessTimingAnalyticsProperties({
+        compareText: 5,
+        developmentMarkers: 6,
+        fonts: 2,
+        readStyles: 3,
+        restoreStyles: 7,
+        typography: 1,
+        writeText: 4,
+      })
+    )
+  ),
+  {
+    timing_compare_text_ms: 5,
+    timing_development_markers_ms: 6,
+    timing_fonts_ms: 2,
+    timing_read_styles_ms: 3,
+    timing_restore_styles_ms: 7,
+    timing_typography_ms: 1,
+    timing_write_text_ms: 4,
+  }
+);
+
+function assertTextProcessCounts(result, expected) {
+  assert.deepStrictEqual(
+    {
+      changed: result.changed,
+      failed: result.failed,
+      processed: result.processed,
+      skippedHidden: result.skippedHidden,
+      skippedLocked: result.skippedLocked,
+    },
+    expected
+  );
+}
 
 function runStyleCaptureTests() {
   const baseSegment = {
@@ -281,8 +325,27 @@ expectClean("Пароль: **** 1234.", "Пароль: **** 1234.");
 expectClean("Пароль: ****-1234.", "Пароль: ****-1234.");
 expectClean("Пароль: ****−1*234.", "Пароль: ****−1*234.");
 expectClean("Пароль: ****-1*234.", "Пароль: ****-1*234.");
+expectClean("••4444", "••4444");
+expectClean("••44444", `••44${NBSP}444`);
+expectClean("**4444", "**4444");
+expectClean("**44444", `**44${NBSP}444`);
+expectClean("****4444", "****4444");
 expectClean("карта****4444", "карта****4444");
 expectClean("карта ****4444", "карта ****4444");
+expectClean("карта••4444", "карта••4444");
+expectClean("карта ••4444", "карта ••4444");
+expectClean("карта**4444", "карта**4444");
+expectClean("8841 4758 3476 9921", "8841 4758 3476 9921");
+expectClean("8841475834769921", "8841475834769921");
+expectClean("8841-4758-3476-9921", "8841-4758-3476-9921");
+expectClean("40914810810010073985", "40914810810010073985");
+expectClean("812345678901234 клиентов", `812${NBSP}345${NBSP}678${NBSP}901${NBSP}234${NBSP}клиентов`);
+expectClean("+ 7", "+ 7");
+expectClean("9777001020", `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
+expectClean("977 700 10 20", `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
+expectClean("977 700-10-20", `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
+expectClean("977-700-10-20", `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
+expectClean("+ 7 9777001020", `+7${NBSP}977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
 
 expectClean("2026-05-14", "2026-05-14");
 expectClean("10.04.2025", "10.04.2025");
@@ -433,6 +496,8 @@ const maskedCardDefault = cleanTypographyWithMetadata("карта****4444", deve
 const maskedCardRecolor = cleanTypographyWithMetadata("карта****4444", developmentRecolorOptions);
 const maskedCardWithSpaceDefault = cleanTypographyWithMetadata("карта ****4444", developmentOptions);
 const maskedCardWithSpaceRecolor = cleanTypographyWithMetadata("карта ****4444", developmentRecolorOptions);
+const maskedCardBulletsDefault = cleanTypographyWithMetadata("карта••4444", developmentOptions);
+const maskedCardBulletsRecolor = cleanTypographyWithMetadata("карта••4444", developmentRecolorOptions);
 
 assert.strictEqual(development.text, "2*\u00D7*2*=*4");
 assert.deepStrictEqual(Array.from(development.developmentMarkerIndexes), [1, 3, 5, 7]);
@@ -472,6 +537,10 @@ assert.strictEqual(maskedCardWithSpaceDefault.text, "карта ****4444");
 assert.deepStrictEqual(Array.from(maskedCardWithSpaceDefault.developmentMarkerIndexes), []);
 assert.strictEqual(maskedCardWithSpaceRecolor.text, "карта ****4444");
 assert.deepStrictEqual(Array.from(maskedCardWithSpaceRecolor.developmentMarkerIndexes), []);
+assert.strictEqual(maskedCardBulletsDefault.text, "карта••4444");
+assert.deepStrictEqual(Array.from(maskedCardBulletsDefault.developmentMarkerIndexes), []);
+assert.strictEqual(maskedCardBulletsRecolor.text, "карта••4444");
+assert.deepStrictEqual(Array.from(maskedCardBulletsRecolor.developmentMarkerIndexes), []);
 
 async function runStyleRestorationTests() {
   const calls = [];
@@ -715,11 +784,161 @@ async function runFontLoadingCacheTests() {
   assert.strictEqual(retryCache.size, 1);
 }
 
+async function runWhitespaceOnlyTextNodeTests() {
+  let fontLookupAttempts = 0;
+  const whitespaceNodes = ["", " ", `\t${NBSP}\n`].map((characters, index) => ({
+    characters,
+    getRangeAllFontNames: () => {
+      fontLookupAttempts += 1;
+      throw new Error("Whitespace-only text should not load fonts");
+    },
+    id: `whitespace-node-${index}`,
+  }));
+
+  const result = await processTextNodes(whitespaceNodes, 0, 0, beautyOptions);
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 0,
+    processed: 0,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(result.failedStage, null);
+  assert.strictEqual(result.analytics.charactersProcessedTotal, 0);
+  assert.strictEqual(result.analytics.charactersChangedTotal, 0);
+  assert.strictEqual(result.analytics.largestTextLayerCharacters, 0);
+  assert.strictEqual(result.analytics.uniqueFontsCount, 0);
+  assert.strictEqual(fontLookupAttempts, 0);
+}
+
+function createProcessTextNodeMock(id, characters, absoluteBoundingBox) {
+  const font = { family: "Inter", style: "Regular" };
+
+  return {
+    absoluteBoundingBox,
+    characters,
+    fillStyleId: "",
+    getPluginData: () => "",
+    getRangeAllFontNames: () => [font],
+    getRangeFillStyleId: () => "",
+    getRangeTextStyleId: () => "",
+    getStyledTextSegments: () => [
+      {
+        boundVariables: undefined,
+        characters,
+        end: characters.length,
+        fillStyleId: "",
+        fills: [],
+        fontName: font,
+        fontSize: 16,
+        hyperlink: null,
+        indentation: 0,
+        letterSpacing: { unit: "PERCENT", value: 0 },
+        lineHeight: { unit: "AUTO" },
+        listOptions: { type: "NONE" },
+        listSpacing: 0,
+        paragraphIndent: 0,
+        paragraphSpacing: 0,
+        start: 0,
+        textCase: "ORIGINAL",
+        textDecoration: "NONE",
+        textDecorationColor: null,
+        textDecorationOffset: null,
+        textDecorationSkipInk: null,
+        textDecorationStyle: null,
+        textDecorationThickness: null,
+        textStyleId: "phone-style-id",
+        textStyleOverrides: [],
+      },
+    ],
+    id,
+    setPluginData: () => {},
+    setTextStyleIdAsync: async () => {},
+    textStyleId: "",
+  };
+}
+
+async function runStandalonePhoneCountryPrefixContextTests() {
+  context.figma.loadFontAsync = async () => {};
+
+  const prefix = createProcessTextNodeMock("phone-prefix", "+ 7", { height: 20, width: 20, x: 0, y: 0 });
+  const tail = createProcessTextNodeMock("phone-tail", "977 700-10-20", { height: 20, width: 110, x: 26, y: 0 });
+  const result = await processTextNodes([prefix, tail], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(result, {
+    changed: 2,
+    failed: 0,
+    processed: 2,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(result.analytics.charactersProcessedTotal, 16);
+  assert.strictEqual(result.analytics.charactersChangedTotal, 16);
+  assert.strictEqual(result.analytics.largestTextLayerCharacters, 13);
+  assert.strictEqual(result.analytics.uniqueFontsCount, 1);
+  assert.strictEqual(result.analytics.styleSegmentsCount, 2);
+  assert.strictEqual(prefix.characters, "+7");
+  assert.strictEqual(tail.characters, `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
+
+  const mathPrefix = createProcessTextNodeMock("math-prefix", "+ 7", { height: 20, width: 20, x: 0, y: 0 });
+  const notPhoneTail = createProcessTextNodeMock("not-phone-tail", "100", { height: 20, width: 40, x: 26, y: 0 });
+  const mathResult = await processTextNodes([mathPrefix, notPhoneTail], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(mathResult, {
+    changed: 0,
+    failed: 0,
+    processed: 2,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(mathResult.analytics.charactersProcessedTotal, 6);
+  assert.strictEqual(mathResult.analytics.charactersChangedTotal, 0);
+  assert.strictEqual(mathResult.analytics.largestTextLayerCharacters, 3);
+  assert.strictEqual(mathPrefix.characters, "+ 7");
+}
+
+async function runProcessingFailureAnalyticsTests() {
+  const failingNode = createProcessTextNodeMock("failing-font-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalConsole = context.console;
+  context.figma.loadFontAsync = async () => {
+    throw new Error("Font is unavailable");
+  };
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([failingNode], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(result.failedStage, "load_fonts");
+  assert.strictEqual(result.analytics.charactersProcessedTotal, 8);
+  assert.strictEqual(result.analytics.charactersChangedTotal, 0);
+  assert.strictEqual(result.analytics.largestTextLayerCharacters, 8);
+  assert.strictEqual(result.analytics.uniqueFontsCount, 0);
+}
+
 runStyleCaptureTests();
 
 runStyleRestorationTests()
   .then(runWholeTextStyleRestorationTests)
   .then(runFontLoadingCacheTests)
+  .then(runWhitespaceOnlyTextNodeTests)
+  .then(runStandalonePhoneCountryPrefixContextTests)
+  .then(runProcessingFailureAnalyticsTests)
   .then(() => {
     console.log("cleanTypography tests passed");
   })

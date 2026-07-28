@@ -15,8 +15,8 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 1;
-const ANALYTICS_PLUGIN_VERSION = "1.0.0";
+const ANALYTICS_SCHEMA_VERSION = 2;
+const ANALYTICS_PLUGIN_RELEASE = "2026-07-28";
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
@@ -79,7 +79,16 @@ type PluginRunSource = "quick_run" | "settings";
 type AnalyticsRunMode = "default" | TypographMode;
 type SelectionScope = "single_text" | "container" | "page" | "multi_selection";
 type AnalyticsEventName = "settings_opened" | "plugin_run_started" | "plugin_run_completed" | "plugin_run_failed" | "channel_link_clicked";
-type AnalyticsErrorStage = "load_page" | "collect_nodes" | "load_fonts" | "clean_text" | "apply_text" | "unknown";
+type AnalyticsErrorStage =
+  | "collect_nodes"
+  | "development_markers"
+  | "load_fonts"
+  | "read_styles"
+  | "clean_text"
+  | "compare_text"
+  | "write_text"
+  | "restore_styles"
+  | "unknown";
 type AnalyticsPropertyValue = string | number | boolean | null;
 type AnalyticsProperties = Record<string, AnalyticsPropertyValue>;
 
@@ -139,14 +148,36 @@ interface TextProcessResult {
   processed: number;
   changed: number;
   failed: number;
+  failedStage: AnalyticsErrorStage | null;
   skippedHidden: number;
   skippedLocked: number;
+  analytics: TextProcessAnalytics;
 }
 
 interface TextCollectionResult {
   nodes: TextNode[];
   skippedHidden: number;
   skippedLocked: number;
+}
+
+interface TextProcessTimings {
+  typography: number;
+  fonts: number;
+  readStyles: number;
+  compareText: number;
+  writeText: number;
+  restoreStyles: number;
+  developmentMarkers: number;
+}
+
+interface TextProcessAnalytics {
+  charactersChangedTotal: number;
+  charactersProcessedTotal: number;
+  largestTextLayerCharacters: number;
+  slowestTextLayerMs: number;
+  styleSegmentsCount: number;
+  timings: TextProcessTimings;
+  uniqueFontsCount: number;
 }
 
 interface TypographyCleanResult {
@@ -167,6 +198,12 @@ interface MathNumberParseResult {
 
 interface MathOperatorParseResult {
   end: number;
+  text: string;
+}
+
+interface TextNodeLayoutInfo {
+  box: Rect;
+  id: string;
   text: string;
 }
 
@@ -245,6 +282,8 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
   const analyticsContext = createAnalyticsRunContext(options, source);
   typographRunInProgress = true;
   let analyticsStage: AnalyticsErrorStage = "unknown";
+  let collectTextDuration = 0;
+  let collection: TextCollectionResult | null = null;
   let result: TextProcessResult | null = null;
   let workingNotification: NotificationHandler | null = null;
 
@@ -254,15 +293,22 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
     figma.skipInvisibleInstanceChildren = !options.processHiddenNodes;
 
     analyticsStage = "collect_nodes";
-    const collection = await collectTargetTextNodes({
-      processHidden: options.processHiddenNodes,
-      processLocked: options.processLockedNodes,
-    });
+    collection = await measureAsyncDuration(
+      (duration) => {
+        collectTextDuration += duration;
+      },
+      () =>
+        collectTargetTextNodes({
+          processHidden: options.processHiddenNodes,
+          processLocked: options.processLockedNodes,
+        })
+    );
 
-    analyticsStage = "apply_text";
+    analyticsStage = "clean_text";
     result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
 
     if (result.failed > 0) {
+      analyticsStage = result.failedStage ?? "unknown";
       throw new Error(`Failed to process ${result.failed} text node(s)`);
     }
 
@@ -272,13 +318,22 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
     queueAnalyticsEvent("plugin_run_completed", {
       ...getRunAnalyticsProperties(analyticsContext),
       changed_anything: result.changed > 0,
-      changed_text_nodes_count: result.changed,
+      changed_text_layers_count: result.changed,
+      characters_changed_total: result.analytics.charactersChangedTotal,
+      characters_processed_total: result.analytics.charactersProcessedTotal,
       duration_ms: getAnalyticsDuration(analyticsContext),
-      failed_text_nodes_count: result.failed,
-      found_text_nodes_count: result.processed + result.skippedHidden + result.skippedLocked,
-      processed_text_nodes_count: result.processed,
+      failed_text_layers_count: result.failed,
+      found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked,
+      largest_text_layer_characters: result.analytics.largestTextLayerCharacters,
+      processed_text_layers_count: result.processed,
       skipped_hidden_count: result.skippedHidden,
       skipped_locked_count: result.skippedLocked,
+      slowest_text_layer_ms: result.analytics.slowestTextLayerMs,
+      changed_style_segments_count: result.analytics.styleSegmentsCount,
+      timing_collect_text_ms: collectTextDuration,
+      ...getTextProcessTimingAnalyticsProperties(result.analytics.timings),
+      timing_other_ms: getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings),
+      loaded_unique_fonts_count: result.analytics.uniqueFontsCount,
     });
   } catch (error) {
     console.error("[Чистовик] Failed to run typograph", error);
@@ -287,10 +342,19 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
       duration_ms: getAnalyticsDuration(analyticsContext),
       error_fingerprint: createErrorFingerprint(error),
       error_name: getErrorName(error),
-      failed_text_nodes_count: result?.failed ?? null,
-      found_text_nodes_count: result === null ? null : result.processed + result.skippedHidden + result.skippedLocked,
-      processed_text_nodes_count: result?.processed ?? null,
+      failed_text_layers_count: result?.failed ?? null,
+      found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked,
+      characters_changed_total: result?.analytics.charactersChangedTotal ?? null,
+      characters_processed_total: result?.analytics.charactersProcessedTotal ?? null,
+      largest_text_layer_characters: result?.analytics.largestTextLayerCharacters ?? null,
+      processed_text_layers_count: result?.processed ?? null,
+      slowest_text_layer_ms: result?.analytics.slowestTextLayerMs ?? null,
       stage: analyticsStage,
+      changed_style_segments_count: result?.analytics.styleSegmentsCount ?? null,
+      timing_collect_text_ms: collectTextDuration,
+      ...(result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings)),
+      timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings),
+      loaded_unique_fonts_count: result?.analytics.uniqueFontsCount ?? null,
     });
     throw error;
   } finally {
@@ -407,6 +471,52 @@ function getAnalyticsDuration(context: AnalyticsRunContext): number {
   }
 }
 
+function getTextProcessTimingAnalyticsProperties(timings: TextProcessTimings): AnalyticsProperties {
+  return {
+    timing_compare_text_ms: timings.compareText,
+    timing_development_markers_ms: timings.developmentMarkers,
+    timing_fonts_ms: timings.fonts,
+    timing_read_styles_ms: timings.readStyles,
+    timing_restore_styles_ms: timings.restoreStyles,
+    timing_typography_ms: timings.typography,
+    timing_write_text_ms: timings.writeText,
+  };
+}
+
+function getOtherAnalyticsDuration(context: AnalyticsRunContext, collectTextDuration: number, timings: TextProcessTimings): number {
+  const measuredDuration =
+    collectTextDuration +
+    timings.typography +
+    timings.fonts +
+    timings.readStyles +
+    timings.compareText +
+    timings.writeText +
+    timings.restoreStyles +
+    timings.developmentMarkers;
+
+  return Math.max(0, getAnalyticsDuration(context) - measuredDuration);
+}
+
+function measureDuration<T>(reportDuration: (duration: number) => void, operation: () => T): T {
+  const startedAt = Date.now();
+
+  try {
+    return operation();
+  } finally {
+    reportDuration(Math.max(0, Date.now() - startedAt));
+  }
+}
+
+async function measureAsyncDuration<T>(reportDuration: (duration: number) => void, operation: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+
+  try {
+    return await operation();
+  } finally {
+    reportDuration(Math.max(0, Date.now() - startedAt));
+  }
+}
+
 function queueAnalyticsEvent(event: AnalyticsEventName, properties: AnalyticsProperties = {}): void {
   try {
     const capturedAt = new Date().toISOString();
@@ -470,7 +580,7 @@ function createAnalyticsEventPayload(event: AnalyticsEventName, properties: Anal
       $process_person_profile: false,
       analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
       identity_type: identity.identityType,
-      plugin_version: ANALYTICS_PLUGIN_VERSION,
+      plugin_release: ANALYTICS_PLUGIN_RELEASE,
     },
     timestamp: capturedAt,
   };
@@ -900,43 +1010,260 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
     let processed = 0;
     let changed = 0;
     let failed = 0;
+    let failedStage: AnalyticsErrorStage | null = null;
+    const timings = createEmptyTextProcessTimings();
+    let charactersChangedTotal = 0;
+    let charactersProcessedTotal = 0;
+    let largestTextLayerCharacters = 0;
+    let slowestTextLayerMs = 0;
+    let styleSegmentsCount = 0;
     const fontLoadCache = new Map<string, Promise<void>>();
+    const standalonePhoneCountryPrefixIds = measureDuration(
+      (duration) => {
+        timings.typography += duration;
+      },
+      () => getStandalonePhoneCountryPrefixIds(textNodes)
+    );
 
     for (const textNode of textNodes) {
+      const textLayerStartedAt = Date.now();
+      let currentStage: AnalyticsErrorStage = "unknown";
+      let countedAsProcessed = false;
+
       try {
-        processed += 1;
         const oldText = textNode.characters;
-        const existingDevelopmentMarkerIndexes = getExistingDevelopmentMarkerIndexes(textNode);
-        const cleanResult = cleanTypographyWithMetadata(oldText, options, existingDevelopmentMarkerIndexes);
+
+        if (isWhitespaceOnlyText(oldText)) {
+          continue;
+        }
+
+        processed += 1;
+        countedAsProcessed = true;
+        charactersProcessedTotal += oldText.length;
+        largestTextLayerCharacters = Math.max(largestTextLayerCharacters, oldText.length);
+
+        currentStage = "development_markers";
+        const existingDevelopmentMarkerIndexes = measureDuration(
+          (duration) => {
+            timings.developmentMarkers += duration;
+          },
+          () => getExistingDevelopmentMarkerIndexes(textNode)
+        );
+
+        currentStage = "clean_text";
+        const cleanResult = measureDuration(
+          (duration) => {
+            timings.typography += duration;
+          },
+          () => {
+            const inputText = standalonePhoneCountryPrefixIds.has(textNode.id) ? normalizeStandaloneRussianPhoneCountryPrefix(oldText) : oldText;
+            return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes);
+          }
+        );
         const newText = cleanResult.text;
 
         if (newText !== oldText) {
-          await loadFontsForTextNode(textNode, fontLoadCache);
-          const styles = captureTextStyles(textNode);
-          const styleMap = buildStyleMap(oldText, newText, styles);
-          const wholeTextStyle = getWholeTextStyle(styles, oldText);
-          textNode.characters = newText;
+          currentStage = "load_fonts";
+          await measureAsyncDuration(
+            (duration) => {
+              timings.fonts += duration;
+            },
+            () => loadFontsForTextNode(textNode, fontLoadCache)
+          );
+
+          currentStage = "read_styles";
+          const styles = measureDuration(
+            (duration) => {
+              timings.readStyles += duration;
+            },
+            () => captureTextStyles(textNode)
+          );
+          styleSegmentsCount += styles.length;
+
+          currentStage = "compare_text";
+          const styleComparison = measureDuration(
+            (duration) => {
+              timings.compareText += duration;
+            },
+            () => ({
+              styleMap: buildStyleMap(oldText, newText, styles),
+              wholeTextStyle: getWholeTextStyle(styles, oldText),
+            })
+          );
+
+          currentStage = "write_text";
+          measureDuration(
+            (duration) => {
+              timings.writeText += duration;
+            },
+            () => {
+              textNode.characters = newText;
+            }
+          );
+          charactersChangedTotal += oldText.length;
+
+          currentStage = "restore_styles";
+          const { styleMap, wholeTextStyle } = styleComparison;
           if (wholeTextStyle !== null) {
-            await restoreWholeTextStyle(textNode, wholeTextStyle);
+            await measureAsyncDuration(
+              (duration) => {
+                timings.restoreStyles += duration;
+              },
+              () => restoreWholeTextStyle(textNode, wholeTextStyle)
+            );
           } else {
-            await restoreTextStyles(textNode, styleMap, styles);
+            await measureAsyncDuration(
+              (duration) => {
+                timings.restoreStyles += duration;
+              },
+              () => restoreTextStyles(textNode, styleMap, styles)
+            );
           }
-          applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
+
+          currentStage = "development_markers";
+          measureDuration(
+            (duration) => {
+              timings.developmentMarkers += duration;
+            },
+            () => applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)
+          );
           changed += 1;
-        } else if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
-          applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
+        } else {
+          currentStage = "development_markers";
+          measureDuration(
+            (duration) => {
+              timings.developmentMarkers += duration;
+            },
+            () => {
+              if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
+                applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
+              }
+            }
+          );
         }
 
-        syncDevelopmentMarkerPluginData(textNode, options, cleanResult.developmentMarkerIndexes);
+        currentStage = "development_markers";
+        measureDuration(
+          (duration) => {
+            timings.developmentMarkers += duration;
+          },
+          () => syncDevelopmentMarkerPluginData(textNode, options, cleanResult.developmentMarkerIndexes)
+        );
       } catch (error) {
         failed += 1;
+        failedStage ??= currentStage;
         console.error(`[Чистовик] Failed to process text node ${textNode.id}`, error);
+      } finally {
+        if (countedAsProcessed) {
+          slowestTextLayerMs = Math.max(slowestTextLayerMs, Math.max(0, Date.now() - textLayerStartedAt));
+        }
       }
     }
 
-    return { processed, changed, failed, skippedHidden, skippedLocked };
+    return {
+      processed,
+      changed,
+      failed,
+      failedStage,
+      skippedHidden,
+      skippedLocked,
+      analytics: {
+        charactersChangedTotal,
+        charactersProcessedTotal,
+        largestTextLayerCharacters,
+        slowestTextLayerMs,
+        styleSegmentsCount,
+        timings,
+        uniqueFontsCount: fontLoadCache.size,
+      },
+    };
   } catch (error) {
     console.error("[Чистовик] Failed to process text nodes", error);
+    throw error;
+  }
+}
+
+function createEmptyTextProcessTimings(): TextProcessTimings {
+  return {
+    typography: 0,
+    fonts: 0,
+    readStyles: 0,
+    compareText: 0,
+    writeText: 0,
+    restoreStyles: 0,
+    developmentMarkers: 0,
+  };
+}
+
+function isWhitespaceOnlyText(input: string): boolean {
+  try {
+    return /^[ \t\r\n\u00A0]*$/.test(input);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check whitespace-only text", error);
+    throw error;
+  }
+}
+
+function getStandalonePhoneCountryPrefixIds(textNodes: TextNode[]): Set<string> {
+  try {
+    const result = new Set<string>();
+    const layoutInfos = getTextNodeLayoutInfos(textNodes);
+    const phoneTails = layoutInfos.filter((info) => isRussianPhoneTailToken(info.text));
+
+    if (phoneTails.length === 0) {
+      return result;
+    }
+
+    for (const prefix of layoutInfos) {
+      if (!isStandaloneRussianPhoneCountryPrefix(prefix.text)) {
+        continue;
+      }
+
+      if (phoneTails.some((tail) => isRightAdjacentSameLineText(prefix.box, tail.box))) {
+        result.add(prefix.id);
+      }
+    }
+
+    return result;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find standalone phone country prefixes", error);
+    throw error;
+  }
+}
+
+function getTextNodeLayoutInfos(textNodes: TextNode[]): TextNodeLayoutInfo[] {
+  try {
+    const result: TextNodeLayoutInfo[] = [];
+
+    for (const textNode of textNodes) {
+      if (isWhitespaceOnlyText(textNode.characters) || textNode.absoluteBoundingBox === null) {
+        continue;
+      }
+
+      result.push({
+        box: textNode.absoluteBoundingBox,
+        id: textNode.id,
+        text: textNode.characters,
+      });
+    }
+
+    return result;
+  } catch (error) {
+    console.error("[Чистовик] Failed to collect text node layout info", error);
+    throw error;
+  }
+}
+
+function isRightAdjacentSameLineText(left: Rect, right: Rect): boolean {
+  try {
+    const leftRight = left.x + left.width;
+    const horizontalGap = right.x - leftRight;
+    const leftCenterY = left.y + left.height / 2;
+    const rightCenterY = right.y + right.height / 2;
+
+    return horizontalGap >= 0 && horizontalGap <= 16 && Math.abs(leftCenterY - rightCenterY) <= Math.max(4, Math.min(left.height, right.height) / 2);
+  } catch (error) {
+    console.error("[Чистовик] Failed to compare text layer positions", error);
     throw error;
   }
 }
@@ -2436,13 +2763,14 @@ function hasProtectedRomanRangeTokenLetters(token: string): boolean {
 
 function formatPhoneNumbers(input: string): string {
   try {
-    const phoneCandidate = /(^|[^\d])(\+?[78](?:[ \t\u00A0().\-–—‑]*\d){10})(?![ \t\u00A0().\-–—‑]*\d)(?![ \t\u00A0]*[₽$€])/g;
+    let text = input.replace(/^([ \t\u00A0]*)(9\d{2})[ \t\u00A0.\-–—‑]*(\d{3})[ \t\u00A0.\-–—‑]*(\d{2})[ \t\u00A0.\-–—‑]*(\d{2})([ \t\u00A0]*)$/, (_match: string, prefix: string, operator: string, first: string, second: string, third: string, suffix: string) => `${prefix}${operator}${NBSP}${first}${NB_HYPHEN}${second}${NB_HYPHEN}${third}${suffix}`);
+    const phoneCandidate = /(^|[^\d])((?:\+[ \t\u00A0]*)?[78](?:[ \t\u00A0().\-–—‑]*\d){10})(?![ \t\u00A0().\-–—‑]*\d)(?![ \t\u00A0]*[₽$€])/g;
 
-    return input.replace(phoneCandidate, (match, prefix: string, candidate: string, offset: number, fullText: string) => {
+    text = text.replace(phoneCandidate, (match, prefix: string, candidate: string, offset: number, fullText: string) => {
       try {
         const candidateStart = offset + prefix.length;
 
-        if (previousNonSpaceSkippingDevelopmentMarker(fullText, candidateStart) === "№") {
+        if (previousNonSpaceSkippingDevelopmentMarker(fullText, candidateStart) === "№" || isInsideProtectedNumericIdentifier(fullText, candidateStart, candidateStart + candidate.length)) {
           return match;
         }
 
@@ -2471,6 +2799,8 @@ function formatPhoneNumbers(input: string): string {
         return match;
       }
     });
+
+    return text;
   } catch (error) {
     console.error("[Чистовик] Failed to format phone numbers", error);
     throw error;
@@ -2697,7 +3027,7 @@ function normalizeSpacedYears(input: string): string {
 
 function shouldSkipNumberGrouping(fullText: string, start: number, end: number, integerPart: string): boolean {
   try {
-    if (isNumberPartOfCodeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end) || isNumberPartOfMaskedSecret(fullText, start)) {
+    if (isNumberPartOfCodeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end) || isNumberPartOfMaskedSecret(fullText, start, integerPart) || isInsideProtectedNumericIdentifier(fullText, start, end) || isInsideRussianPhoneTail(fullText, start, end)) {
       return true;
     }
 
@@ -2792,13 +3122,97 @@ function findPreviousNonSpaceSkippingDevelopmentMarkerIndex(input: string, index
   }
 }
 
-function isNumberPartOfMaskedSecret(fullText: string, start: number): boolean {
+function isNumberPartOfMaskedSecret(fullText: string, start: number, integerPart: string): boolean {
   try {
     const before = fullText.slice(Math.max(0, start - 24), start);
 
-    return /\*{2,}[\* \t\u00A0\-–—−]*$/.test(before);
+    return (/^\d{4}$/.test(integerPart) && /[\*•]{2,}$/.test(before)) || /\*{2,}[\* \t\u00A0\-–—−]+$/.test(before);
   } catch (error) {
     console.error("[Чистовик] Failed to check masked secret number", error);
+    throw error;
+  }
+}
+
+function isInsideProtectedNumericIdentifier(input: string, start: number, end: number): boolean {
+  try {
+    const bounds = getNumericIdentifierTokenBounds(input, start, end);
+    const token = input.slice(bounds.start, bounds.end);
+
+    return isProtectedNumericIdentifierToken(token);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check protected numeric identifier", error);
+    throw error;
+  }
+}
+
+function getNumericIdentifierTokenBounds(input: string, start: number, end: number): { start: number; end: number } {
+  try {
+    let tokenStart = start;
+    let tokenEnd = end;
+
+    while (tokenStart > 0 && /[\d \t\u00A0\-–—‑\*•]/.test(input[tokenStart - 1])) {
+      tokenStart -= 1;
+    }
+
+    while (tokenEnd < input.length && /[\d \t\u00A0\-–—‑\*•]/.test(input[tokenEnd])) {
+      tokenEnd += 1;
+    }
+
+    return { start: tokenStart, end: tokenEnd };
+  } catch (error) {
+    console.error("[Чистовик] Failed to get numeric identifier token bounds", error);
+    throw error;
+  }
+}
+
+function isProtectedNumericIdentifierToken(token: string): boolean {
+  try {
+    return isPaymentCardNumberToken(token) || isPaymentAccountNumberToken(token) || isCardMaskToken(token);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check protected numeric identifier token", error);
+    throw error;
+  }
+}
+
+function isPaymentCardNumberToken(token: string): boolean {
+  try {
+    const normalized = normalizeHorizontalSpaces(token);
+    const digits = normalized.replace(/\D/g, "");
+
+    if (digits.length < 16 || digits.length > 19) {
+      return false;
+    }
+
+    return /^\d{16,19}$/.test(normalized) || /^\d{4}(?:[ \u00A0‑-]\d{4}){3}$/.test(normalized);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check payment card number token", error);
+    throw error;
+  }
+}
+
+function isPaymentAccountNumberToken(token: string): boolean {
+  try {
+    return /^\d{20}$/.test(normalizeHorizontalSpaces(token));
+  } catch (error) {
+    console.error("[Чистовик] Failed to check payment account number token", error);
+    throw error;
+  }
+}
+
+function isCardMaskToken(token: string): boolean {
+  try {
+    return /^[\*•]{2,}\d{4}$/.test(normalizeHorizontalSpaces(token));
+  } catch (error) {
+    console.error("[Чистовик] Failed to check card mask token", error);
+    throw error;
+  }
+}
+
+function normalizeHorizontalSpaces(input: string): string {
+  try {
+    return input.replace(/[\t\u00A0]/g, " ");
+  } catch (error) {
+    console.error("[Чистовик] Failed to normalize horizontal spaces", error);
     throw error;
   }
 }
@@ -3534,7 +3948,7 @@ function hasMathNumberBoundaryAfter(input: string, end: number): boolean {
 
 function isInsideProtectedToken(input: string, start: number, end: number): boolean {
   try {
-    if (isInsidePhoneNumberCandidate(input, start, end)) {
+    if (isInsidePhoneNumberCandidate(input, start, end) || isInsideProtectedNumericIdentifier(input, start, end)) {
       return true;
     }
 
@@ -3596,11 +4010,63 @@ function isInsidePhoneNumberCandidate(input: string, start: number, end: number)
   try {
     const bounds = getPhoneLikeTokenBounds(input, start, end);
     const token = input.slice(bounds.start, bounds.end);
+
+    return isRussianFullPhoneToken(token) || isRussianPhoneTailToken(token);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check phone number candidate", error);
+    throw error;
+  }
+}
+
+function isInsideRussianPhoneTail(input: string, start: number, end: number): boolean {
+  try {
+    const bounds = getPhoneLikeTokenBounds(input, start, end);
+    const token = input.slice(bounds.start, bounds.end);
+
+    return isRussianPhoneTailToken(token);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check Russian phone tail", error);
+    throw error;
+  }
+}
+
+function isRussianFullPhoneToken(token: string): boolean {
+  try {
     const digits = token.replace(/\D/g, "");
 
     return digits.length === 11 && (digits[0] === "7" || digits[0] === "8");
   } catch (error) {
-    console.error("[Чистовик] Failed to check phone number candidate", error);
+    console.error("[Чистовик] Failed to check Russian full phone token", error);
+    throw error;
+  }
+}
+
+function isRussianPhoneTailToken(token: string): boolean {
+  try {
+    const normalized = normalizeHorizontalSpaces(token);
+    const digits = normalized.replace(/\D/g, "");
+
+    return digits.length === 10 && digits[0] === "9" && /^[ ]*9\d{2}[ .\-–—‑]*\d{3}[ .\-–—‑]*\d{2}[ .\-–—‑]*\d{2}[ ]*$/.test(normalized);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check Russian phone tail token", error);
+    throw error;
+  }
+}
+
+function isStandaloneRussianPhoneCountryPrefix(input: string): boolean {
+  try {
+    return /^[ \t\u00A0]*\+[ \t\u00A0]*7[ \t\u00A0]*$/.test(input);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check standalone phone country prefix", error);
+    throw error;
+  }
+}
+
+function normalizeStandaloneRussianPhoneCountryPrefix(input: string): string {
+  try {
+    return input.replace(/^[ \t\u00A0]*\+[ \t\u00A0]*7[ \t\u00A0]*$/, "+7");
+  } catch (error) {
+    console.error("[Чистовик] Failed to normalize standalone phone country prefix", error);
     throw error;
   }
 }
