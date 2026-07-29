@@ -223,6 +223,7 @@ interface MathOperatorParseResult {
 
 interface TextNodeLayoutInfo {
   box: Rect;
+  containerId: string | null;
   id: string;
   text: string;
 }
@@ -1244,20 +1245,25 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
 
           currentStage = "restore_styles";
           const { styleMap, wholeTextStyle } = styleComparison;
-          if (wholeTextStyle !== null) {
-            await measureAsyncDuration(
-              (duration) => {
-                timings.restoreStyles += duration;
-              },
-              () => restoreWholeTextStyle(textNode, wholeTextStyle)
-            );
-          } else {
-            await measureAsyncDuration(
-              (duration) => {
-                timings.restoreStyles += duration;
-              },
-              () => restoreTextStyles(textNode, styleMap, styles)
-            );
+          try {
+            if (wholeTextStyle !== null) {
+              await measureAsyncDuration(
+                (duration) => {
+                  timings.restoreStyles += duration;
+                },
+                () => restoreWholeTextStyle(textNode, wholeTextStyle)
+              );
+            } else {
+              await measureAsyncDuration(
+                (duration) => {
+                  timings.restoreStyles += duration;
+                },
+                () => restoreTextStyles(textNode, styleMap, styles)
+              );
+            }
+          } catch (error) {
+            await restoreOriginalTextAfterStyleFailure(textNode, oldText, styles);
+            throw error;
           }
 
           currentStage = "development_markers";
@@ -1325,6 +1331,22 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
   }
 }
 
+async function restoreOriginalTextAfterStyleFailure(textNode: TextNode, oldText: string, styles: StyleSegment[]): Promise<void> {
+  try {
+    textNode.characters = oldText;
+    const wholeTextStyle = getWholeTextStyle(styles, oldText);
+
+    if (wholeTextStyle !== null) {
+      await restoreWholeTextStyle(textNode, wholeTextStyle);
+      return;
+    }
+
+    await restoreTextStyles(textNode, buildStyleMap(oldText, oldText, styles), styles);
+  } catch (rollbackError) {
+    console.error(`[Чистовик] Failed to restore original text after style restoration failure for text node ${textNode.id}`, rollbackError);
+  }
+}
+
 function createEmptyTextProcessTimings(): TextProcessTimings {
   return {
     typography: 0,
@@ -1361,7 +1383,7 @@ function getStandalonePhoneCountryPrefixIds(textNodes: TextNode[]): Set<string> 
         continue;
       }
 
-      if (phoneTails.some((tail) => isRightAdjacentSameLineText(prefix.box, tail.box))) {
+      if (phoneTails.some((tail) => tail.containerId === prefix.containerId && isRightAdjacentSameLineText(prefix.box, tail.box))) {
         result.add(prefix.id);
       }
     }
@@ -1378,14 +1400,21 @@ function getTextNodeLayoutInfos(textNodes: TextNode[]): TextNodeLayoutInfo[] {
     const result: TextNodeLayoutInfo[] = [];
 
     for (const textNode of textNodes) {
-      if (isWhitespaceOnlyText(textNode.characters) || textNode.absoluteBoundingBox === null) {
+      const text = textNode.characters;
+
+      if (
+        isWhitespaceOnlyText(text) ||
+        (!isStandaloneRussianPhoneCountryPrefix(text) && !isRussianPhoneTailToken(text)) ||
+        textNode.absoluteBoundingBox === null
+      ) {
         continue;
       }
 
       result.push({
         box: textNode.absoluteBoundingBox,
+        containerId: textNode.parent?.id ?? null,
         id: textNode.id,
-        text: textNode.characters,
+        text,
       });
     }
 
@@ -1569,7 +1598,17 @@ function getWholeTextStyle(styles: StyleSegment[], oldText: string): StyleSegmen
 
     const style = styles[0];
 
-    if (style.start !== 0 || style.end !== oldText.length || style.textStyleId === "" || style.textStyleOverrides.length > 0) {
+    if (
+      style.start !== 0 ||
+      style.end !== oldText.length ||
+      style.textStyleId === "" ||
+      style.textStyleOverrides.length > 0 ||
+      style.listOptions.type !== "NONE" ||
+      style.listSpacing !== 0 ||
+      style.indentation !== 0 ||
+      style.paragraphIndent !== 0 ||
+      style.paragraphSpacing !== 0
+    ) {
       return null;
     }
 
@@ -1806,6 +1845,10 @@ async function restoreStyleIds(textNode: TextNode, start: number, end: number, s
 
 function restoreOverriddenStyleProperties(textNode: TextNode, start: number, end: number, style: StyleSegment): void {
   try {
+    if (shouldRestoreStyleOverride(style, "SEMANTIC_WEIGHT") || shouldRestoreStyleOverride(style, "SEMANTIC_ITALIC")) {
+      textNode.setRangeFontName(start, end, style.fontName);
+    }
+
     if (shouldRestoreStyleOverride(style, "HYPERLINK")) {
       restoreHyperlink(textNode, start, end, style);
     }
@@ -3325,7 +3368,7 @@ function isPaymentCardNumberToken(token: string): boolean {
       return false;
     }
 
-    return /^\d{16,19}$/.test(normalized) || /^\d{4}(?:[ \u00A0‑-]\d{4}){3}$/.test(normalized);
+    return /^\d{16,19}$/.test(normalized) || /^\d{4}(?:[ \u00A0‑–—-]\d{4}){3}(?:[ \u00A0‑–—-]\d{1,3})?$/.test(normalized);
   } catch (error) {
     console.error("[Чистовик] Failed to check payment card number token", error);
     throw error;
@@ -3334,7 +3377,9 @@ function isPaymentCardNumberToken(token: string): boolean {
 
 function isPaymentAccountNumberToken(token: string): boolean {
   try {
-    return /^\d{20}$/.test(normalizeHorizontalSpaces(token));
+    const normalized = normalizeHorizontalSpaces(token);
+
+    return /^\d{20}$/.test(normalized) || /^\d{4}(?:[ \u00A0‑–—-]\d{4}){4}$/.test(normalized);
   } catch (error) {
     console.error("[Чистовик] Failed to check payment account number token", error);
     throw error;
@@ -3540,7 +3585,21 @@ function isSameLineSentenceContinuation(fullText: string, periodIndex: number): 
 function normalizeSlashSeparatedAbbreviationDots(input: string): string {
   try {
     return input
-      .replace(new RegExp(`(^|[^${LETTERS}])([А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]*\\/[ \\t\\u00A0]*[А-Яа-яЁё])`, "g"), "$1$2")
+      .replace(
+        new RegExp(`(^|[^${LETTERS}])([А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]*\\/[ \\t\\u00A0]*[А-Яа-яЁё])`, "g"),
+        (match: string, prefix: string, abbreviation: string, offset: number, fullText: string) => {
+          try {
+            if (abbreviation.length === 1 && isPersonInitialBeforeSlash(fullText, offset + prefix.length)) {
+              return match;
+            }
+
+            return `${prefix}${abbreviation}`;
+          } catch (error) {
+            console.error("[Чистовик] Failed to normalize abbreviation dot before slash", error);
+            return match;
+          }
+        }
+      )
       .replace(new RegExp(`(^|[^${LETTERS}])((?:[А-Яа-яЁё]{1,4}[ \\t\\u00A0]*\\/[ \\t\\u00A0]*)+[А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]+[а-яё])`, "g"), (match: string, prefix: string, slashAbbreviation: string, offset: number, fullText: string) => {
         try {
           const dotIndex = offset + match.length - 1;
@@ -3557,6 +3616,15 @@ function normalizeSlashSeparatedAbbreviationDots(input: string): string {
       });
   } catch (error) {
     console.error("[Чистовик] Failed to normalize slash-separated abbreviation dots", error);
+    throw error;
+  }
+}
+
+function isPersonInitialBeforeSlash(fullText: string, initialIndex: number): boolean {
+  try {
+    return new RegExp(`[А-ЯЁ][а-яё]+[ \\t\\u00A0]+$`).test(fullText.slice(0, initialIndex));
+  } catch (error) {
+    console.error("[Чистовик] Failed to check person initial before slash", error);
     throw error;
   }
 }

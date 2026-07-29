@@ -1,0 +1,31 @@
+name: Автоматические тесты
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Сборка и тесты
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Скачать код
+        uses: actions/checkout@v4
+
+      - name: Подготовить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Собрать и проверить
+        run: npm test

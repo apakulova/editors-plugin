@@ -8,7 +8,12 @@ const EM_DASH = "\u2014";
 const MINUS = "\u2212";
 const MULTIPLY = "\u00D7";
 
-const source = fs.readFileSync("dist/code.js", "utf8").replace(
+const compiledSource = fs.readFileSync("dist/code.js", "utf8");
+
+assert.strictEqual(compiledSource.includes(".detachInstance("), false, "The plugin must not detach library instances");
+assert.strictEqual(compiledSource.includes("figma.createText("), false, "The plugin must not replace text layers with new layers");
+
+const source = compiledSource.replace(
   "void run();",
   [
     "globalThis.cleanTypography = cleanTypography;",
@@ -17,6 +22,7 @@ const source = fs.readFileSync("dist/code.js", "utf8").replace(
     "globalThis.getWholeTextStyle = getWholeTextStyle;",
     "globalThis.restoreWholeTextStyle = restoreWholeTextStyle;",
     "globalThis.restoreTextStyles = restoreTextStyles;",
+    "globalThis.buildStyleMap = buildStyleMap;",
     "globalThis.loadFontsForTextNode = loadFontsForTextNode;",
     "globalThis.getFontLoadPromise = getFontLoadPromise;",
     "globalThis.processTextNodes = processTextNodes;",
@@ -46,6 +52,7 @@ const captureTextStyles = context.globalThis.captureTextStyles;
 const getWholeTextStyle = context.globalThis.getWholeTextStyle;
 const restoreWholeTextStyle = context.globalThis.restoreWholeTextStyle;
 const restoreTextStyles = context.globalThis.restoreTextStyles;
+const buildStyleMap = context.globalThis.buildStyleMap;
 const loadFontsForTextNode = context.globalThis.loadFontsForTextNode;
 const getFontLoadPromise = context.globalThis.getFontLoadPromise;
 const processTextNodes = context.globalThis.processTextNodes;
@@ -358,7 +365,13 @@ expectClean("карта**4444", "карта**4444");
 expectClean("8841 4758 3476 9921", "8841 4758 3476 9921");
 expectClean("8841475834769921", "8841475834769921");
 expectClean("8841-4758-3476-9921", "8841-4758-3476-9921");
+expectClean("1234 5678 9012 3456 7", "1234 5678 9012 3456 7");
+expectClean("1234 5678 9012 3456 78", "1234 5678 9012 3456 78");
+expectClean("1234 5678 9012 3456 789", "1234 5678 9012 3456 789");
+expectClean("1234–5678–9012–3456", "1234–5678–9012–3456");
+expectClean("1234—5678—9012—3456", "1234—5678—9012—3456");
 expectClean("40914810810010073985", "40914810810010073985");
+expectClean("4070 2810 0000 0012 3456", "4070 2810 0000 0012 3456");
 expectClean("812345678901234 клиентов", `812${NBSP}345${NBSP}678${NBSP}901${NBSP}234${NBSP}клиентов`);
 expectClean("+ 7", "+ 7");
 expectClean("9777001020", `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
@@ -444,6 +457,8 @@ expectClean("Список, в т ч важные пункты", `Список, �
 expectClean("Период: н. в.", `Период: н.${NBSP}в.`);
 expectClean("ж/д билеты", `ж/д${NBSP}билеты`);
 expectClean("ж/д. билеты", `ж/д${NBSP}билеты`);
+expectClean("ж./д. билеты", `ж/д${NBSP}билеты`);
+expectClean("Иванов А./Петров Б.", `Иванов А./Петров${NBSP}Б.`);
 expectClean("Кешбэк за покупку ж/д билетов, оплату проезда в метро", `Кешбэк за${NBSP}покупку${NBSP}ж/д${NBSP}билетов, оплату проезда в${NBSP}метро`);
 expectClean("д/к фильм", `д/к${NBSP}фильм`);
 expectClean("п/п платеж", `п/п${NBSP}платеж`);
@@ -696,6 +711,27 @@ async function runStyleRestorationTests() {
   assert.deepStrictEqual(calls.find(([name]) => name === "boundVariable"), ["boundVariable", 0, 12, "fontSize", { id: "font-size-variable-id" }]);
   assert.strictEqual(calls.find(([name]) => name === "textStyleId"), undefined);
   assert.strictEqual(calls.find(([name]) => name === "fillStyleId"), undefined);
+
+  calls.length = 0;
+
+  await restoreTextStyles(textNode, new Array(textNode.characters.length).fill(0), [
+    {
+      ...listStyle,
+      fontName: { family: "Inter", style: "Bold Italic" },
+      hyperlink: null,
+      textDecoration: "NONE",
+      textDecorationColor: null,
+      textDecorationOffset: null,
+      textDecorationSkipInk: null,
+      textDecorationStyle: null,
+      textDecorationThickness: null,
+      textStyleOverrides: [{ type: "SEMANTIC_WEIGHT" }, { type: "SEMANTIC_ITALIC" }],
+    },
+  ]);
+
+  assert.deepStrictEqual(calls.find(([name]) => name === "textStyleId"), ["textStyleId", 0, 12, "text-style-id"]);
+  assert.deepStrictEqual(calls.find(([name]) => name === "fontName"), ["fontName", 0, 12, { family: "Inter", style: "Bold Italic" }]);
+  assert(calls.findIndex(([name]) => name === "fontName") > calls.findIndex(([name]) => name === "textStyleId"));
 }
 
 async function runWholeTextStyleRestorationTests() {
@@ -730,6 +766,11 @@ async function runWholeTextStyleRestorationTests() {
   assert.strictEqual(getWholeTextStyle([wholeStyle], "Заголовок"), wholeStyle);
   assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, textStyleOverrides: [{ type: "TEXT_DECORATION" }] }], "Заголовок"), null);
   assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, end: 4 }], "Заголовок"), null);
+  assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, listOptions: { type: "ORDERED" } }], "Заголовок"), null);
+  assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, listSpacing: 8 }], "Заголовок"), null);
+  assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, indentation: 2 }], "Заголовок"), null);
+  assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, paragraphIndent: 4 }], "Заголовок"), null);
+  assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, paragraphSpacing: 12 }], "Заголовок"), null);
 
   const calls = [];
   const textNode = {
@@ -755,6 +796,19 @@ async function runWholeTextStyleRestorationTests() {
     ["nodeTextStyleId", "heading-style-id"],
     ["textDecoration", 0, 9, "UNDERLINE"],
   ]);
+}
+
+function runRepeatedTextStyleMappingTests() {
+  const oldText = "тест тест";
+  const newText = `тест${NBSP}— тест`;
+  const styles = [
+    { end: 4, start: 0 },
+    { end: 9, start: 5 },
+  ];
+  const styleMap = buildStyleMap(oldText, newText, styles);
+
+  assert.deepStrictEqual(Array.from(styleMap.slice(0, 4)), [0, 0, 0, 0]);
+  assert.deepStrictEqual(Array.from(styleMap.slice(-4)), [1, 1, 1, 1]);
 }
 
 async function runFontLoadingCacheTests() {
@@ -833,7 +887,44 @@ async function runWhitespaceOnlyTextNodeTests() {
   assert.strictEqual(fontLookupAttempts, 0);
 }
 
-function createProcessTextNodeMock(id, characters, absoluteBoundingBox) {
+async function runUnchangedTextNodeTests() {
+  const unchangedNode = createProcessTextNodeMock("unchanged-node", "Готовый текст", { height: 20, width: 100, x: 0, y: 0 });
+  let fontLookupAttempts = 0;
+  let layoutLookupAttempts = 0;
+  let styleCaptureAttempts = 0;
+
+  Object.defineProperty(unchangedNode, "absoluteBoundingBox", {
+    get: () => {
+      layoutLookupAttempts += 1;
+      throw new Error("Ordinary text should not require layout coordinates");
+    },
+  });
+  unchangedNode.getRangeAllFontNames = () => {
+    fontLookupAttempts += 1;
+    throw new Error("Unchanged text should not load fonts");
+  };
+  unchangedNode.getStyledTextSegments = () => {
+    styleCaptureAttempts += 1;
+    throw new Error("Unchanged text should not capture styles");
+  };
+
+  const result = await processTextNodes([unchangedNode], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(fontLookupAttempts, 0);
+  assert.strictEqual(layoutLookupAttempts, 0);
+  assert.strictEqual(styleCaptureAttempts, 0);
+  assert.strictEqual(result.analytics.uniqueFontsCount, 0);
+  assert.strictEqual(result.analytics.styleSegmentsCount, 0);
+}
+
+function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId = "shared-container") {
   const font = { family: "Inter", style: "Regular" };
 
   return {
@@ -874,6 +965,7 @@ function createProcessTextNodeMock(id, characters, absoluteBoundingBox) {
       },
     ],
     id,
+    parent: parentId === null ? null : { id: parentId },
     setPluginData: () => {},
     setTextStyleIdAsync: async () => {},
     textStyleId: "",
@@ -917,6 +1009,20 @@ async function runStandalonePhoneCountryPrefixContextTests() {
   assert.strictEqual(mathResult.analytics.charactersChangedTotal, 0);
   assert.strictEqual(mathResult.analytics.largestTextLayerCharacters, 3);
   assert.strictEqual(mathPrefix.characters, "+ 7");
+
+  const unrelatedPrefix = createProcessTextNodeMock("unrelated-prefix", "+ 7", { height: 20, width: 20, x: 0, y: 0 }, "header");
+  const unrelatedTail = createProcessTextNodeMock("unrelated-tail", "977 700-10-20", { height: 20, width: 110, x: 26, y: 0 }, "footer");
+  const unrelatedResult = await processTextNodes([unrelatedPrefix, unrelatedTail], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(unrelatedResult, {
+    changed: 1,
+    failed: 0,
+    processed: 2,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(unrelatedPrefix.characters, "+ 7");
+  assert.strictEqual(unrelatedTail.characters, `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
 }
 
 async function runProcessingFailureAnalyticsTests() {
@@ -955,14 +1061,88 @@ async function runProcessingFailureAnalyticsTests() {
   assert.strictEqual(result.analytics.uniqueFontsCount, 0);
 }
 
+async function runStyleRestorationRollbackTests() {
+  const node = createProcessTextNodeMock("style-rollback-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalText = node.characters;
+  const originalConsole = context.console;
+  let styleRestorationAttempts = 0;
+
+  context.figma.loadFontAsync = async () => {};
+  node.setTextStyleIdAsync = async () => {
+    styleRestorationAttempts += 1;
+
+    if (styleRestorationAttempts === 1) {
+      throw new Error("Style restoration failed");
+    }
+  };
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, originalText);
+  assert.strictEqual(styleRestorationAttempts, 2);
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+}
+
+async function runLibraryInstanceSafetyContractTests() {
+  const instance = {
+    componentProperties: {
+      Label: { type: "TEXT", value: "Текст..." },
+    },
+    id: "instance-id",
+    mainComponent: { id: "main-component-id" },
+    type: "INSTANCE",
+  };
+  const node = createProcessTextNodeMock("instance-text-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalMainComponent = instance.mainComponent;
+  const originalComponentProperties = instance.componentProperties;
+
+  node.parent = instance;
+  context.figma.loadFontAsync = async () => {};
+
+  const result = await processTextNodes([node], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(result, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.parent, instance);
+  assert.strictEqual(instance.mainComponent, originalMainComponent);
+  assert.strictEqual(instance.componentProperties, originalComponentProperties);
+}
+
 runStyleCaptureTests();
+runRepeatedTextStyleMappingTests();
 
 runStyleRestorationTests()
   .then(runWholeTextStyleRestorationTests)
   .then(runFontLoadingCacheTests)
   .then(runWhitespaceOnlyTextNodeTests)
+  .then(runUnchangedTextNodeTests)
   .then(runStandalonePhoneCountryPrefixContextTests)
   .then(runProcessingFailureAnalyticsTests)
+  .then(runStyleRestorationRollbackTests)
+  .then(runLibraryInstanceSafetyContractTests)
   .then(() => {
     console.log("cleanTypography tests passed");
   })
