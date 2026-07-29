@@ -23,15 +23,25 @@ const source = compiledSource.replace(
     "globalThis.restoreWholeTextStyle = restoreWholeTextStyle;",
     "globalThis.restoreTextStyles = restoreTextStyles;",
     "globalThis.buildStyleMap = buildStyleMap;",
+    "globalThis.createStyleRestorationPlan = createStyleRestorationPlan;",
     "globalThis.loadFontsForTextNode = loadFontsForTextNode;",
     "globalThis.getFontLoadPromise = getFontLoadPromise;",
+    "globalThis.measureDuration = measureDuration;",
+    "globalThis.filterProcessableTextNodes = filterProcessableTextNodes;",
     "globalThis.processTextNodes = processTextNodes;",
+    "globalThis.syncDevelopmentMarkerPluginData = syncDevelopmentMarkerPluginData;",
     "globalThis.createAnalyticsEventPayload = createAnalyticsEventPayload;",
     "globalThis.createAnalyticsErrorDiagnostic = createAnalyticsErrorDiagnostic;",
     "globalThis.getAnalyticsCaptureEndpoint = getAnalyticsCaptureEndpoint;",
+    "globalThis.getFailureNotificationMessage = getFailureNotificationMessage;",
+    "globalThis.getRunAnalyticsProperties = getRunAnalyticsProperties;",
     "globalThis.getTextProcessTimingAnalyticsProperties = getTextProcessTimingAnalyticsProperties;",
   ].join(" ")
 );
+let testMonotonicNow = 0;
+const testPerformance = {
+  now: () => testMonotonicNow,
+};
 const context = {
   console,
   figma: {
@@ -40,7 +50,10 @@ const context = {
       getVariableByIdAsync: async (id) => ({ id }),
     },
   },
-  globalThis: {},
+  globalThis: {
+    performance: testPerformance,
+  },
+  performance: testPerformance,
 };
 
 vm.createContext(context);
@@ -53,12 +66,18 @@ const getWholeTextStyle = context.globalThis.getWholeTextStyle;
 const restoreWholeTextStyle = context.globalThis.restoreWholeTextStyle;
 const restoreTextStyles = context.globalThis.restoreTextStyles;
 const buildStyleMap = context.globalThis.buildStyleMap;
+const createStyleRestorationPlan = context.globalThis.createStyleRestorationPlan;
 const loadFontsForTextNode = context.globalThis.loadFontsForTextNode;
 const getFontLoadPromise = context.globalThis.getFontLoadPromise;
+const measureDuration = context.globalThis.measureDuration;
+const filterProcessableTextNodes = context.globalThis.filterProcessableTextNodes;
 const processTextNodes = context.globalThis.processTextNodes;
+const syncDevelopmentMarkerPluginData = context.globalThis.syncDevelopmentMarkerPluginData;
 const createAnalyticsEventPayload = context.globalThis.createAnalyticsEventPayload;
 const createAnalyticsErrorDiagnostic = context.globalThis.createAnalyticsErrorDiagnostic;
 const getAnalyticsCaptureEndpoint = context.globalThis.getAnalyticsCaptureEndpoint;
+const getFailureNotificationMessage = context.globalThis.getFailureNotificationMessage;
+const getRunAnalyticsProperties = context.globalThis.getRunAnalyticsProperties;
 const getTextProcessTimingAnalyticsProperties = context.globalThis.getTextProcessTimingAnalyticsProperties;
 const developmentOptions = {
   mode: "development",
@@ -98,10 +117,26 @@ assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload, "uuid"
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 3);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 4);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
-assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-28");
+assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-29");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
+
+assert.strictEqual(
+  getRunAnalyticsProperties({
+    mode: "default",
+    options: beautyOptions,
+    runId: "run_test",
+    selection: {
+      scope: "single_text",
+      selectedNodesCount: 1,
+      selectedTextNodesCount: 1,
+    },
+    source: "quick_run",
+    startedAt: 0,
+  }).performance_measurement_version,
+  2
+);
 
 assert.deepStrictEqual(
   {
@@ -120,6 +155,11 @@ assert.deepStrictEqual(
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Node is read-only"), "write_text").category, "layer_not_editable");
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unexpected write failure"), "write_text").category, "write_text_failed");
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unsupported mixed property"), "restore_styles").category, "mixed_or_unsupported_property");
+assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Original state rollback failed"), "rollback_styles").category, "rollback_failed");
+const rollbackFailureNotificationError = new Error("Failed to process text layer");
+rollbackFailureNotificationError.name = "RollbackFailureError";
+assert.strictEqual(getFailureNotificationMessage(rollbackFailureNotificationError), "Не удалось вернуть оформление. Проверьте текстовый слой 🛑");
+assert.strictEqual(getFailureNotificationMessage(new Error("Other failure")), "Ой, не получилось почистить 🛑");
 assert.deepStrictEqual(
   JSON.parse(
     JSON.stringify(
@@ -649,7 +689,8 @@ async function runStyleRestorationTests() {
   assert.deepStrictEqual(calls.find(([name]) => name === "textDecorationColor"), ["textDecorationColor", 0, 12, { color: { b: 0, g: 0, r: 0 }, type: "SOLID" }]);
   assert.deepStrictEqual(calls.find(([name]) => name === "textDecorationSkipInk"), ["textDecorationSkipInk", 0, 12, true]);
   assert.deepStrictEqual(calls.find(([name]) => name === "hyperlink"), ["hyperlink", 0, 12, { type: "URL", value: "https://example.com" }]);
-  assert.strictEqual(calls.find(([name]) => name === "boundVariable"), undefined);
+  assert.deepStrictEqual(calls.find(([name]) => name === "boundVariable"), ["boundVariable", 0, 12, "fontSize", { id: "font-size-variable-id" }]);
+  assert(calls.findIndex(([name]) => name === "boundVariable") > calls.findIndex(([name]) => name === "textStyleId"));
   assert.strictEqual(calls.find(([name]) => name === "fontName"), undefined);
   assert.strictEqual(calls.find(([name]) => name === "fills"), undefined);
   assert(calls.findIndex(([name]) => name === "fillStyleId") > calls.findIndex(([name]) => name === "textStyleId"));
@@ -732,6 +773,39 @@ async function runStyleRestorationTests() {
   assert.deepStrictEqual(calls.find(([name]) => name === "textStyleId"), ["textStyleId", 0, 12, "text-style-id"]);
   assert.deepStrictEqual(calls.find(([name]) => name === "fontName"), ["fontName", 0, 12, { family: "Inter", style: "Bold Italic" }]);
   assert(calls.findIndex(([name]) => name === "fontName") > calls.findIndex(([name]) => name === "textStyleId"));
+
+  calls.length = 0;
+  let variableLookupAttempts = 0;
+  context.figma.variables.getVariableByIdAsync = async (id) => {
+    variableLookupAttempts += 1;
+    return { id };
+  };
+  const detachedVariableStyle = {
+    ...listStyle,
+    fillStyleId: "",
+    hyperlink: null,
+    textDecoration: "NONE",
+    textDecorationColor: null,
+    textDecorationOffset: null,
+    textDecorationSkipInk: null,
+    textDecorationStyle: null,
+    textDecorationThickness: null,
+    textStyleId: "",
+    textStyleOverrides: [],
+  };
+
+  await restoreTextStyles(textNode, [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1], [
+    detachedVariableStyle,
+    {
+      ...detachedVariableStyle,
+      characters: "списка",
+      end: 12,
+      start: 6,
+    },
+  ]);
+
+  assert.strictEqual(variableLookupAttempts, 1);
+  context.figma.variables.getVariableByIdAsync = async (id) => ({ id });
 }
 
 async function runWholeTextStyleRestorationTests() {
@@ -771,6 +845,36 @@ async function runWholeTextStyleRestorationTests() {
   assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, indentation: 2 }], "Заголовок"), null);
   assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, paragraphIndent: 4 }], "Заголовок"), null);
   assert.strictEqual(getWholeTextStyle([{ ...wholeStyle, paragraphSpacing: 12 }], "Заголовок"), null);
+  assert.strictEqual(
+    getWholeTextStyle(
+      [
+        {
+          ...wholeStyle,
+          boundVariables: {
+            fontSize: { id: "font-size-variable-id", type: "VARIABLE_ALIAS" },
+          },
+        },
+      ],
+      "Заголовок"
+    ),
+    null
+  );
+
+  const wholeStylePlan = createStyleRestorationPlan("Заголовок", "Заголовок…", [wholeStyle]);
+
+  assert.strictEqual(wholeStylePlan.wholeTextStyle, wholeStyle);
+  assert.deepStrictEqual(Array.from(wholeStylePlan.styleMap), []);
+
+  const listStylePlan = createStyleRestorationPlan("Заголовок", "Заголовок…", [
+    {
+      ...wholeStyle,
+      listOptions: { type: "ORDERED" },
+    },
+  ]);
+
+  assert.strictEqual(listStylePlan.wholeTextStyle, null);
+  assert.strictEqual(listStylePlan.styleMap.length, "Заголовок…".length);
+  assert(listStylePlan.styleMap.every((styleIndex) => styleIndex === 0));
 
   const calls = [];
   const textNode = {
@@ -811,9 +915,44 @@ function runRepeatedTextStyleMappingTests() {
   assert.deepStrictEqual(Array.from(styleMap.slice(-4)), [1, 1, 1, 1]);
 }
 
+function runLongTextStyleMappingTests() {
+  const firstPart = "а".repeat(1600);
+  const secondPart = "б".repeat(1600);
+  const oldText = firstPart + secondPart;
+  const newText = `${firstPart}—${secondPart}`;
+  const styleMap = buildStyleMap(oldText, newText, [
+    { end: firstPart.length, start: 0 },
+    { end: oldText.length, start: firstPart.length },
+  ]);
+
+  assert.strictEqual(styleMap.length, newText.length);
+  assert.strictEqual(styleMap[0], 0);
+  assert.strictEqual(styleMap[firstPart.length - 1], 0);
+  assert.strictEqual(styleMap[firstPart.length + 1], 1);
+  assert.strictEqual(styleMap[styleMap.length - 1], 1);
+}
+
+function runHighPrecisionTimingTests() {
+  let measuredDuration = null;
+
+  testMonotonicNow = 10;
+  measureDuration(
+    (duration) => {
+      measuredDuration = duration;
+    },
+    () => {
+      testMonotonicNow = 10.375;
+    }
+  );
+
+  assert.strictEqual(measuredDuration, 0.375);
+  testMonotonicNow = 0;
+}
+
 async function runFontLoadingCacheTests() {
   const loadCalls = [];
   const fontLoadCache = new Map();
+  const loadedFontKeys = new Set();
   const interRegular = { family: "Inter", style: "Regular" };
   const interBold = { family: "Inter", style: "Bold" };
   const regularNode = {
@@ -831,12 +970,13 @@ async function runFontLoadingCacheTests() {
     loadCalls.push(`${font.family}\n${font.style}`);
   };
 
-  await loadFontsForTextNode(regularNode, fontLoadCache);
-  await loadFontsForTextNode(regularNode, fontLoadCache);
-  await loadFontsForTextNode(mixedNode, fontLoadCache);
+  await loadFontsForTextNode(regularNode, fontLoadCache, loadedFontKeys);
+  await loadFontsForTextNode(regularNode, fontLoadCache, loadedFontKeys);
+  await loadFontsForTextNode(mixedNode, fontLoadCache, loadedFontKeys);
 
   assert.deepStrictEqual(loadCalls, ["Inter\nRegular", "Inter\nBold"]);
   assert.strictEqual(fontLoadCache.size, 2);
+  assert.strictEqual(loadedFontKeys.size, 2);
 
   let retryAttempts = 0;
   const retryCache = new Map();
@@ -850,12 +990,15 @@ async function runFontLoadingCacheTests() {
   };
 
   await assert.rejects(getFontLoadPromise(retryFont, retryCache), /Temporary font load failure/);
-  assert.strictEqual(retryCache.size, 0);
-
-  await getFontLoadPromise(retryFont, retryCache);
-
-  assert.strictEqual(retryAttempts, 2);
   assert.strictEqual(retryCache.size, 1);
+
+  await assert.rejects(getFontLoadPromise(retryFont, retryCache), /Temporary font load failure/);
+
+  assert.strictEqual(retryAttempts, 1);
+  assert.strictEqual(retryCache.size, 1);
+
+  await getFontLoadPromise(retryFont, new Map());
+  assert.strictEqual(retryAttempts, 2);
 }
 
 async function runWhitespaceOnlyTextNodeTests() {
@@ -885,6 +1028,40 @@ async function runWhitespaceOnlyTextNodeTests() {
   assert.strictEqual(result.analytics.largestTextLayerCharacters, 0);
   assert.strictEqual(result.analytics.uniqueFontsCount, 0);
   assert.strictEqual(fontLookupAttempts, 0);
+}
+
+function runParentStateCacheTests() {
+  let hiddenReads = 0;
+  let lockedReads = 0;
+  const root = { id: "root", parent: null };
+  const sharedParent = {
+    get locked() {
+      lockedReads += 1;
+      return false;
+    },
+    get visible() {
+      hiddenReads += 1;
+      return true;
+    },
+    id: "shared-parent",
+    parent: root,
+  };
+  const nodes = ["first-child", "second-child"].map((id) => ({
+    id,
+    locked: false,
+    parent: sharedParent,
+    visible: true,
+  }));
+  const result = filterProcessableTextNodes(nodes, {
+    processHidden: false,
+    processLocked: false,
+  });
+
+  assert.strictEqual(result.nodes.length, 2);
+  assert.strictEqual(result.skippedHidden, 0);
+  assert.strictEqual(result.skippedLocked, 0);
+  assert.strictEqual(lockedReads, 2);
+  assert.strictEqual(hiddenReads, 2);
 }
 
 async function runUnchangedTextNodeTests() {
@@ -922,6 +1099,38 @@ async function runUnchangedTextNodeTests() {
   assert.strictEqual(styleCaptureAttempts, 0);
   assert.strictEqual(result.analytics.uniqueFontsCount, 0);
   assert.strictEqual(result.analytics.styleSegmentsCount, 0);
+}
+
+function runDevelopmentMarkerPluginDataTests() {
+  const values = new Map();
+  const writes = [];
+  const node = {
+    characters: "Текст",
+    getPluginData: (key) => values.get(key) || "",
+    id: "plugin-data-node",
+    setPluginData: (key, value) => {
+      writes.push([key, value]);
+      values.set(key, value);
+    },
+  };
+
+  syncDevelopmentMarkerPluginData(node, beautyOptions, []);
+  assert.deepStrictEqual(writes, []);
+
+  values.set("developmentMarkerText", "Старый текст");
+  values.set("developmentMarkerIndexes", "[1]");
+  syncDevelopmentMarkerPluginData(node, beautyOptions, []);
+  assert.deepStrictEqual(writes, [
+    ["developmentMarkerText", ""],
+    ["developmentMarkerIndexes", ""],
+  ]);
+
+  writes.length = 0;
+  node.characters = "Т*екст";
+  values.set("developmentMarkerText", "Т*екст");
+  values.set("developmentMarkerIndexes", "[1]");
+  syncDevelopmentMarkerPluginData(node, developmentOptions, [1]);
+  assert.deepStrictEqual(writes, []);
 }
 
 function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId = "shared-container") {
@@ -1099,6 +1308,89 @@ async function runStyleRestorationRollbackTests() {
   assert.strictEqual(styleRestorationAttempts, 2);
   assert.strictEqual(result.failedStage, "restore_styles");
   assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(result.analytics.charactersChangedTotal, 0);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert.strictEqual(result.analytics.styleSegmentsCount, 0);
+}
+
+async function runFailedStyleRollbackTests() {
+  const failingNode = createProcessTextNodeMock("failed-style-rollback-node", "Первый...", { height: 20, width: 80, x: 0, y: 0 });
+  const untouchedNode = createProcessTextNodeMock("untouched-after-rollback-node", "Второй...", { height: 20, width: 80, x: 0, y: 30 });
+  const originalText = failingNode.characters;
+  const originalConsole = context.console;
+
+  context.figma.loadFontAsync = async () => {};
+  failingNode.setTextStyleIdAsync = async () => {
+    throw new Error("Persistent style restoration failure");
+  };
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([failingNode, untouchedNode], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(failingNode.characters, originalText);
+  assert.strictEqual(untouchedNode.characters, "Второй...");
+  assert.strictEqual(result.failedStage, "rollback_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
+  assert.strictEqual(result.analytics.charactersChangedTotal, 0);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
+  assert.strictEqual(result.analytics.styleSegmentsCount, 0);
+}
+
+async function runPrioritizedRollbackFailureTests() {
+  const fontFailureNode = createProcessTextNodeMock("first-font-failure-node", "Первый...", { height: 20, width: 80, x: 0, y: 0 });
+  const rollbackFailureNode = createProcessTextNodeMock("second-rollback-failure-node", "Второй...", { height: 20, width: 80, x: 0, y: 30 });
+  const originalConsole = context.console;
+
+  fontFailureNode.getRangeAllFontNames = () => [{ family: "Missing Font", style: "Regular" }];
+  rollbackFailureNode.setTextStyleIdAsync = async () => {
+    throw new Error("Persistent style restoration failure");
+  };
+  context.figma.loadFontAsync = async (font) => {
+    if (font.family === "Missing Font") {
+      throw new Error("Font is unavailable");
+    }
+  };
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([fontFailureNode, rollbackFailureNode], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 2,
+    processed: 2,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(result.failedStage, "rollback_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
 }
 
 async function runLibraryInstanceSafetyContractTests() {
@@ -1131,8 +1423,70 @@ async function runLibraryInstanceSafetyContractTests() {
   assert.strictEqual(instance.componentProperties, originalComponentProperties);
 }
 
+async function runIntegratedMixedStyleProcessingTests() {
+  const node = createProcessTextNodeMock("integrated-mixed-style-node", "Один... Два", { height: 20, width: 120, x: 0, y: 0 });
+  const calls = [];
+  const baseStyle = node.getStyledTextSegments()[0];
+
+  node.getRangeTextStyleId = () => "body-style-id";
+  node.getStyledTextSegments = () => [
+    {
+      ...baseStyle,
+      boundVariables: {
+        fontSize: { id: "integrated-font-size-variable", type: "VARIABLE_ALIAS" },
+      },
+      characters: "Один...",
+      end: 7,
+      textStyleId: "body-style-id",
+    },
+    {
+      ...baseStyle,
+      characters: " Два",
+      end: 11,
+      fontName: { family: "Inter", style: "Bold" },
+      start: 7,
+      textStyleId: "body-style-id",
+      textStyleOverrides: [{ type: "SEMANTIC_WEIGHT" }],
+    },
+  ];
+  node.setRangeFills = (start, end, value) => calls.push(["fills", start, end, value]);
+  node.setRangeBoundVariable = (start, end, field, value) => calls.push(["boundVariable", start, end, field, value]);
+  node.setRangeFontName = (start, end, value) => calls.push(["fontName", start, end, value]);
+  node.setRangeIndentation = (start, end, value) => calls.push(["indentation", start, end, value]);
+  node.setRangeListOptions = (start, end, value) => calls.push(["listOptions", start, end, value]);
+  node.setRangeParagraphIndent = (start, end, value) => calls.push(["paragraphIndent", start, end, value]);
+  node.setRangeParagraphSpacing = (start, end, value) => calls.push(["paragraphSpacing", start, end, value]);
+  node.setRangeTextStyleIdAsync = async (start, end, value) => calls.push(["textStyleId", start, end, value]);
+  context.figma.loadFontAsync = async () => {};
+  context.figma.variables.getVariableByIdAsync = async (id) => ({ id });
+
+  const result = await processTextNodes([node], 0, 0, beautyOptions);
+  const textStyleCalls = calls.filter(([name]) => name === "textStyleId");
+  const boldCall = calls.find(([name]) => name === "fontName");
+  const boundVariableCall = calls.find(([name]) => name === "boundVariable");
+
+  assertTextProcessCounts(result, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, "Один… Два");
+  assert.strictEqual(textStyleCalls.length, 2);
+  assert.strictEqual(textStyleCalls[0][1], 0);
+  assert.strictEqual(textStyleCalls[1][2], node.characters.length);
+  assert.deepStrictEqual(boldCall.slice(1), [textStyleCalls[1][1], node.characters.length, { family: "Inter", style: "Bold" }]);
+  assert.deepStrictEqual(boundVariableCall.slice(3), ["fontSize", { id: "integrated-font-size-variable" }]);
+  assert(calls.indexOf(boundVariableCall) > calls.indexOf(textStyleCalls[0]));
+}
+
 runStyleCaptureTests();
 runRepeatedTextStyleMappingTests();
+runLongTextStyleMappingTests();
+runHighPrecisionTimingTests();
+runDevelopmentMarkerPluginDataTests();
+runParentStateCacheTests();
 
 runStyleRestorationTests()
   .then(runWholeTextStyleRestorationTests)
@@ -1142,7 +1496,10 @@ runStyleRestorationTests()
   .then(runStandalonePhoneCountryPrefixContextTests)
   .then(runProcessingFailureAnalyticsTests)
   .then(runStyleRestorationRollbackTests)
+  .then(runFailedStyleRollbackTests)
+  .then(runPrioritizedRollbackFailureTests)
   .then(runLibraryInstanceSafetyContractTests)
+  .then(runIntegratedMixedStyleProcessingTests)
   .then(() => {
     console.log("cleanTypography tests passed");
   })

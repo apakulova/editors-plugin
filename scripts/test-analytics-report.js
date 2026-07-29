@@ -2,6 +2,7 @@ const assert = require("assert");
 
 const {
   createAnalyticsMessageOrDiagnostic,
+  fetchPostHogSummary,
   fetchWeeklyErrorsSummary,
   fetchWeeklyPerformanceSummary,
   formatAnalyticsFailureMessage,
@@ -88,6 +89,7 @@ function createSummary(overrides = {}) {
     baseline: {
       averageDailyRuns: 25,
       failedRate: 0.04,
+      performanceRuns: 175,
       medianDurationMs: 400,
       p90DurationMs: 1385,
     },
@@ -101,6 +103,7 @@ function createSummary(overrides = {}) {
     modeBeauty: 0,
     modeDefault: 28,
     modeDevelopment: 0,
+    performanceRuns: 20,
     p90DurationMs: 1800,
     runsWithHiddenNodes: 0,
     runsWithLockedNodes: 0,
@@ -149,6 +152,26 @@ async function run() {
   assert(todayMessage.includes("Ошибки:"));
   assert(todayMessage.includes("Производительность:"));
   assert(todayMessage.includes("основные причины — недоступен шрифт (4 из 5 ошибок), не удалось записать текст (1 из 5 ошибок)"));
+
+  const oldMeasurementMessage = formatAnalyticsMessage(
+    dateRange,
+    createSummary({
+      baseline: {
+        averageDailyRuns: 25,
+        failedRate: 0.04,
+        medianDurationMs: 0,
+        p90DurationMs: 0,
+        performanceRuns: 0,
+      },
+      medianDurationMs: 0,
+      p90DurationMs: 0,
+      performanceRuns: 0,
+    }),
+    env
+  );
+
+  assert(oldMeasurementMessage.includes("обычное время обработки: пока недостаточно данных"));
+  assert(oldMeasurementMessage.includes("90% обработок укладываются: пока недостаточно данных"));
 
   const noErrorsMessage = formatAnalyticsMessage(
     dateRange,
@@ -269,6 +292,23 @@ async function run() {
   assert(insufficientPerformanceMessage.includes("Слишком мало запусков за последние 7 дней, чтобы оценить скорость"));
   assert(!insufficientPerformanceMessage.includes("Среднее время:"));
 
+  const unexplainedDelayMessage = formatWeeklyPerformanceMessage(
+    weeklyRange,
+    {
+      averageDurationMs: 420,
+      baseline: { averageDurationMs: 400, successfulRuns: 20 },
+      otherMs: 300,
+      p90DurationMs: 800,
+      slowestDurationMs: 1000,
+      successfulRuns: 20,
+      typographyMs: 100,
+    },
+    env
+  );
+
+  assert(unexplainedDelayMessage.includes("— остальные операции: 300 мс"));
+  assert(!unexplainedDelayMessage.includes("📍 Основная задержка — остальные операции"));
+
   const weeklyErrorsMessage = formatWeeklyErrorsMessage(
     weeklyRange,
     {
@@ -350,8 +390,26 @@ async function run() {
 
   await withMockedFetch(
     [
+      { results: [[3, 28, 20, 18, 5, 1, 420, 1800, 28, 0, 0, 13, 14, 1, 0, 0, 0, 0, 0, 0]] },
+      { results: [[175, 7, 160, 400, 1385]] },
+      { results: [["font_unavailable", 5]] },
+    ],
+    async (calls) => {
+      const summary = await fetchPostHogSummary(dateRange, env);
+
+      assert.strictEqual(summary.successfulRuns, 20);
+      assert.strictEqual(summary.performanceRuns, 18);
+      assert.strictEqual(summary.failedRuns, 5);
+      assert.strictEqual(summary.baseline.performanceRuns, 160);
+      assert.strictEqual(summary.medianDurationMs, 420);
+      assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
+    }
+  );
+
+  await withMockedFetch(
+    [
       { results: [] },
-      { results: [[0, 0, 0, 0]] },
+      { results: [[0, 0, 0, 0, 0]] },
       { results: [] },
     ],
     async () => {
@@ -365,8 +423,8 @@ async function run() {
 
   await withMockedFetch(
     [
-      { results: [Array(19).fill(0)] },
-      { results: [[0, 0, 0, 0]] },
+      { results: [Array(20).fill(0)] },
+      { results: [[0, 0, 0, 0, 0]] },
       { results: [] },
     ],
     async () => {
@@ -384,12 +442,13 @@ async function run() {
       { results: [[164, 420, 1800, 12400, 10, 20, 310, 0, 0, 0, 74, 0, 6]] },
       { results: [[150, 338.71, 1600, 9000, 8, 18, 250, 0, 0, 0, 55, 0, 5]] },
     ],
-    async () => {
+    async (calls) => {
       const summary = await fetchWeeklyPerformanceSummary(weeklyRange, env);
 
       assert.strictEqual(summary.successfulRuns, 164);
       assert.strictEqual(summary.fontsMs, 310);
       assert.strictEqual(summary.baseline.averageDurationMs, 338.71);
+      assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
     }
   );
 

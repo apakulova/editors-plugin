@@ -15,8 +15,9 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 3;
-const ANALYTICS_PLUGIN_RELEASE = "2026-07-28";
+const ANALYTICS_SCHEMA_VERSION = 4;
+const ANALYTICS_PLUGIN_RELEASE = "2026-07-29";
+const PERFORMANCE_MEASUREMENT_VERSION = 2;
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
@@ -88,6 +89,7 @@ type AnalyticsErrorStage =
   | "compare_text"
   | "write_text"
   | "restore_styles"
+  | "rollback_styles"
   | "unknown";
 type AnalyticsErrorCategory =
   | "font_unavailable"
@@ -96,6 +98,7 @@ type AnalyticsErrorCategory =
   | "mixed_or_unsupported_property"
   | "write_text_failed"
   | "restore_styles_failed"
+  | "rollback_failed"
   | "typography_failed"
   | "timeout"
   | "unknown";
@@ -194,10 +197,17 @@ interface TextProcessAnalytics {
   charactersChangedTotal: number;
   charactersProcessedTotal: number;
   largestTextLayerCharacters: number;
+  rollbackAttemptedLayersCount: number;
+  rollbackFailedLayersCount: number;
   slowestTextLayerMs: number;
   styleSegmentsCount: number;
   timings: TextProcessTimings;
   uniqueFontsCount: number;
+}
+
+interface StyleRestorationPlan {
+  styleMap: number[];
+  wholeTextStyle: StyleSegment | null;
 }
 
 interface TypographyCleanResult {
@@ -248,7 +258,7 @@ async function run(): Promise<void> {
     await runTypograph(getDefaultRunOptions(), "quick_run");
   } catch (error) {
     console.error("[Чистовик] Failed to clean typography", error);
-    figma.notify("Ой, не получилось почистить 🛑", { error: true, timeout: 4000 });
+    figma.notify(getFailureNotificationMessage(error), { error: true, timeout: 4000 });
   } finally {
     if (shouldClosePlugin) {
       await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
@@ -286,7 +296,7 @@ function openSettingsUI(): void {
         }
       } catch (error) {
         console.error("[Чистовик] Failed to handle UI message", error);
-        figma.notify("Ой, не получилось почистить 🛑", { error: true, timeout: 4000 });
+        figma.notify(getFailureNotificationMessage(error), { error: true, timeout: 4000 });
       }
     };
   } catch (error) {
@@ -330,7 +340,13 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
 
     if (result.failed > 0) {
       analyticsStage = result.failedStage ?? "unknown";
-      throw new Error(`Failed to process ${result.failed} text node(s)`);
+      const processingError = new Error(`Failed to process ${result.failed} text node(s)`);
+
+      if (result.failureDiagnostic?.category === "rollback_failed") {
+        processingError.name = "RollbackFailureError";
+      }
+
+      throw processingError;
     }
 
     cancelNotificationSafely(workingNotification);
@@ -347,6 +363,8 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
       found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked,
       largest_text_layer_characters: result.analytics.largestTextLayerCharacters,
       processed_text_layers_count: result.processed,
+      rollback_attempted_layers_count: result.analytics.rollbackAttemptedLayersCount,
+      rollback_failed_layers_count: result.analytics.rollbackFailedLayersCount,
       skipped_hidden_count: result.skippedHidden,
       skipped_locked_count: result.skippedLocked,
       slowest_text_layer_ms: result.analytics.slowestTextLayerMs,
@@ -373,6 +391,8 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
       characters_processed_total: result?.analytics.charactersProcessedTotal ?? null,
       largest_text_layer_characters: result?.analytics.largestTextLayerCharacters ?? null,
       processed_text_layers_count: result?.processed ?? null,
+      rollback_attempted_layers_count: result?.analytics.rollbackAttemptedLayersCount ?? null,
+      rollback_failed_layers_count: result?.analytics.rollbackFailedLayersCount ?? null,
       slowest_text_layer_ms: result?.analytics.slowestTextLayerMs ?? null,
       stage: analyticsStage,
       changed_style_segments_count: result?.analytics.styleSegmentsCount ?? null,
@@ -405,6 +425,18 @@ function cancelNotificationSafely(notification: NotificationHandler | null): voi
   }
 }
 
+function getFailureNotificationMessage(error: unknown): string {
+  try {
+    if (getErrorName(error) === "RollbackFailureError") {
+      return "Не удалось вернуть оформление. Проверьте текстовый слой 🛑";
+    }
+  } catch {
+    // Fall back to the regular error message.
+  }
+
+  return "Ой, не получилось почистить 🛑";
+}
+
 function createAnalyticsRunContext(options: PluginRunOptions, source: PluginRunSource): AnalyticsRunContext {
   try {
     return {
@@ -413,7 +445,7 @@ function createAnalyticsRunContext(options: PluginRunOptions, source: PluginRunS
       runId: createAnalyticsRunId(),
       selection: getSelectionAnalyticsSummary(figma.currentPage.selection),
       source,
-      startedAt: Date.now(),
+      startedAt: getMonotonicTimeMs(),
     };
   } catch {
     return {
@@ -426,7 +458,7 @@ function createAnalyticsRunContext(options: PluginRunOptions, source: PluginRunS
         selectedTextNodesCount: 0,
       },
       source,
-      startedAt: Date.now(),
+      startedAt: getMonotonicTimeMs(),
     };
   }
 }
@@ -480,6 +512,7 @@ function getRunAnalyticsProperties(context: AnalyticsRunContext): AnalyticsPrope
       process_hidden_nodes: context.options.processHiddenNodes,
       process_locked_nodes: context.options.processLockedNodes,
       recolor_existing_asterisks: context.options.recolorExistingAsterisks,
+      performance_measurement_version: PERFORMANCE_MEASUREMENT_VERSION,
       run_id: context.runId,
       selected_nodes_count: context.selection.selectedNodesCount,
       selected_text_nodes_count: context.selection.selectedTextNodesCount,
@@ -493,7 +526,7 @@ function getRunAnalyticsProperties(context: AnalyticsRunContext): AnalyticsPrope
 
 function getAnalyticsDuration(context: AnalyticsRunContext): number {
   try {
-    return Math.max(0, Date.now() - context.startedAt);
+    return Math.max(0, getMonotonicTimeMs() - context.startedAt);
   } catch {
     return 0;
   }
@@ -526,23 +559,37 @@ function getOtherAnalyticsDuration(context: AnalyticsRunContext, collectTextDura
 }
 
 function measureDuration<T>(reportDuration: (duration: number) => void, operation: () => T): T {
-  const startedAt = Date.now();
+  const startedAt = getMonotonicTimeMs();
 
   try {
     return operation();
   } finally {
-    reportDuration(Math.max(0, Date.now() - startedAt));
+    reportDuration(Math.max(0, getMonotonicTimeMs() - startedAt));
   }
 }
 
 async function measureAsyncDuration<T>(reportDuration: (duration: number) => void, operation: () => Promise<T>): Promise<T> {
-  const startedAt = Date.now();
+  const startedAt = getMonotonicTimeMs();
 
   try {
     return await operation();
   } finally {
-    reportDuration(Math.max(0, Date.now() - startedAt));
+    reportDuration(Math.max(0, getMonotonicTimeMs() - startedAt));
   }
+}
+
+function getMonotonicTimeMs(): number {
+  try {
+    const runtime = globalThis as unknown as { performance?: { now?: () => number } };
+
+    if (typeof runtime.performance?.now === "function") {
+      return runtime.performance.now();
+    }
+  } catch {
+    // Date.now is a safe fallback in runtimes without the high-resolution timer.
+  }
+
+  return Date.now();
 }
 
 function queueAnalyticsEvent(event: AnalyticsEventName, properties: AnalyticsProperties = {}): void {
@@ -890,6 +937,10 @@ function classifyAnalyticsError(error: unknown, stage: AnalyticsErrorStage): Ana
     return "restore_styles_failed";
   }
 
+  if (stage === "rollback_styles") {
+    return "rollback_failed";
+  }
+
   if (stage === "clean_text" || stage === "compare_text") {
     return "typography_failed";
   }
@@ -906,6 +957,7 @@ function getAnalyticsErrorOperation(stage: AnalyticsErrorStage): string {
     load_fonts: "load_text_layer_fonts",
     read_styles: "capture_text_layer_styles",
     restore_styles: "restore_text_layer_styles",
+    rollback_styles: "restore_original_text_layer_state",
     unknown: "unknown",
     write_text: "write_clean_text",
   };
@@ -922,6 +974,7 @@ function getAnalyticsErrorLocation(stage: AnalyticsErrorStage): string {
     load_fonts: "src/code.ts:loadFontsForTextNode",
     read_styles: "src/code.ts:captureTextStyles",
     restore_styles: "src/code.ts:restoreTextStyles",
+    rollback_styles: "src/code.ts:restoreOriginalTextAfterStyleFailure",
     unknown: "src/code.ts:runTypograph",
     write_text: "src/code.ts:processTextNodes/write_clean_text",
   };
@@ -1071,11 +1124,13 @@ function filterProcessableTextNodes(textNodes: TextNode[], options: { processHid
     const nodes: TextNode[] = [];
     let skippedHidden = 0;
     let skippedLocked = 0;
+    const hiddenStateCache = new Map<string, boolean>();
+    const lockedStateCache = new Map<string, boolean>();
 
     for (const textNode of textNodes) {
-      if (!options.processLocked && isLockedForProcessing(textNode)) {
+      if (!options.processLocked && isLockedForProcessing(textNode, lockedStateCache)) {
         skippedLocked += 1;
-      } else if (!options.processHidden && isHiddenForProcessing(textNode)) {
+      } else if (!options.processHidden && isHiddenForProcessing(textNode, hiddenStateCache)) {
         skippedHidden += 1;
       } else {
         nodes.push(textNode);
@@ -1089,38 +1144,70 @@ function filterProcessableTextNodes(textNodes: TextNode[], options: { processHid
   }
 }
 
-function isLockedForProcessing(node: BaseNode): boolean {
+function isLockedForProcessing(node: BaseNode, cache: Map<string, boolean> = new Map<string, boolean>()): boolean {
   try {
+    const visited: BaseNode[] = [];
     let current: BaseNode | null = node;
+    let locked = false;
 
     while (current !== null) {
+      const cached = cache.get(current.id);
+
+      if (cached !== undefined) {
+        locked = cached;
+        break;
+      }
+
+      visited.push(current);
+
       if (hasLockedProperty(current) && current.locked) {
-        return true;
+        locked = true;
+        break;
       }
 
       current = current.parent;
     }
 
-    return false;
+    for (const visitedNode of visited) {
+      cache.set(visitedNode.id, locked);
+    }
+
+    return locked;
   } catch (error) {
     console.error("[Чистовик] Failed to check locked node state", error);
     throw error;
   }
 }
 
-function isHiddenForProcessing(node: BaseNode): boolean {
+function isHiddenForProcessing(node: BaseNode, cache: Map<string, boolean> = new Map<string, boolean>()): boolean {
   try {
+    const visited: BaseNode[] = [];
     let current: BaseNode | null = node;
+    let hidden = false;
 
     while (current !== null) {
+      const cached = cache.get(current.id);
+
+      if (cached !== undefined) {
+        hidden = cached;
+        break;
+      }
+
+      visited.push(current);
+
       if (hasVisibleProperty(current) && !current.visible) {
-        return true;
+        hidden = true;
+        break;
       }
 
       current = current.parent;
     }
 
-    return false;
+    for (const visitedNode of visited) {
+      cache.set(visitedNode.id, hidden);
+    }
+
+    return hidden;
   } catch (error) {
     console.error("[Чистовик] Failed to check hidden node state", error);
     throw error;
@@ -1156,20 +1243,27 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
     let charactersChangedTotal = 0;
     let charactersProcessedTotal = 0;
     let largestTextLayerCharacters = 0;
+    let rollbackAttemptedLayersCount = 0;
+    let rollbackFailedLayersCount = 0;
     let slowestTextLayerMs = 0;
     let styleSegmentsCount = 0;
     const fontLoadCache = new Map<string, Promise<void>>();
-    const standalonePhoneCountryPrefixIds = measureDuration(
-      (duration) => {
-        timings.typography += duration;
-      },
-      () => getStandalonePhoneCountryPrefixIds(textNodes)
-    );
+    const loadedFontKeys = new Set<string>();
+    const standalonePhoneCountryPrefixIds =
+      textNodes.length < 2
+        ? new Set<string>()
+        : measureDuration(
+            (duration) => {
+              timings.typography += duration;
+            },
+            () => getStandalonePhoneCountryPrefixIds(textNodes)
+          );
 
     for (const textNode of textNodes) {
-      const textLayerStartedAt = Date.now();
+      const textLayerStartedAt = getMonotonicTimeMs();
       let currentStage: AnalyticsErrorStage = "unknown";
       let countedAsProcessed = false;
+      let shouldStopProcessing = false;
 
       try {
         const oldText = textNode.characters;
@@ -1209,7 +1303,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
             (duration) => {
               timings.fonts += duration;
             },
-            () => loadFontsForTextNode(textNode, fontLoadCache)
+            () => loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys)
           );
 
           currentStage = "read_styles";
@@ -1219,17 +1313,12 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
             },
             () => captureTextStyles(textNode)
           );
-          styleSegmentsCount += styles.length;
-
           currentStage = "compare_text";
           const styleComparison = measureDuration(
             (duration) => {
               timings.compareText += duration;
             },
-            () => ({
-              styleMap: buildStyleMap(oldText, newText, styles),
-              wholeTextStyle: getWholeTextStyle(styles, oldText),
-            })
+            () => createStyleRestorationPlan(oldText, newText, styles)
           );
 
           currentStage = "write_text";
@@ -1241,8 +1330,6 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
               textNode.characters = newText;
             }
           );
-          charactersChangedTotal += oldText.length;
-
           currentStage = "restore_styles";
           const { styleMap, wholeTextStyle } = styleComparison;
           try {
@@ -1262,10 +1349,27 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
               );
             }
           } catch (error) {
-            await restoreOriginalTextAfterStyleFailure(textNode, oldText, styles);
+            rollbackAttemptedLayersCount += 1;
+            currentStage = "rollback_styles";
+            const rollbackSucceeded = await measureAsyncDuration(
+              (duration) => {
+                timings.restoreStyles += duration;
+              },
+              () => restoreOriginalTextAfterStyleFailure(textNode, oldText, styles)
+            );
+
+            if (!rollbackSucceeded) {
+              rollbackFailedLayersCount += 1;
+              shouldStopProcessing = true;
+              throw new Error("Failed to restore original text layer state");
+            }
+
+            currentStage = "restore_styles";
             throw error;
           }
 
+          charactersChangedTotal += oldText.length;
+          styleSegmentsCount += styles.length;
           currentStage = "development_markers";
           measureDuration(
             (duration) => {
@@ -1297,13 +1401,24 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
         );
       } catch (error) {
         failed += 1;
-        failedStage ??= currentStage;
-        failureDiagnostic ??= createAnalyticsErrorDiagnostic(error, currentStage);
+        if (shouldStopProcessing) {
+          failedStage = "rollback_styles";
+          failureDiagnostic = createAnalyticsErrorDiagnostic(error, "rollback_styles");
+        } else {
+          const diagnostic = createAnalyticsErrorDiagnostic(error, currentStage);
+          failedStage ??= currentStage;
+          failureDiagnostic ??= diagnostic;
+        }
+
         console.error(`[Чистовик] Failed to process text node ${textNode.id}`, error);
       } finally {
         if (countedAsProcessed) {
-          slowestTextLayerMs = Math.max(slowestTextLayerMs, Math.max(0, Date.now() - textLayerStartedAt));
+          slowestTextLayerMs = Math.max(slowestTextLayerMs, Math.max(0, getMonotonicTimeMs() - textLayerStartedAt));
         }
+      }
+
+      if (shouldStopProcessing) {
+        break;
       }
     }
 
@@ -1319,10 +1434,12 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
         charactersChangedTotal,
         charactersProcessedTotal,
         largestTextLayerCharacters,
+        rollbackAttemptedLayersCount,
+        rollbackFailedLayersCount,
         slowestTextLayerMs,
         styleSegmentsCount,
         timings,
-        uniqueFontsCount: fontLoadCache.size,
+        uniqueFontsCount: loadedFontKeys.size,
       },
     };
   } catch (error) {
@@ -1331,19 +1448,21 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
   }
 }
 
-async function restoreOriginalTextAfterStyleFailure(textNode: TextNode, oldText: string, styles: StyleSegment[]): Promise<void> {
+async function restoreOriginalTextAfterStyleFailure(textNode: TextNode, oldText: string, styles: StyleSegment[]): Promise<boolean> {
   try {
     textNode.characters = oldText;
     const wholeTextStyle = getWholeTextStyle(styles, oldText);
 
     if (wholeTextStyle !== null) {
       await restoreWholeTextStyle(textNode, wholeTextStyle);
-      return;
+      return true;
     }
 
     await restoreTextStyles(textNode, buildStyleMap(oldText, oldText, styles), styles);
+    return true;
   } catch (rollbackError) {
     console.error(`[Чистовик] Failed to restore original text after style restoration failure for text node ${textNode.id}`, rollbackError);
+    return false;
   }
 }
 
@@ -1439,7 +1558,11 @@ function isRightAdjacentSameLineText(left: Rect, right: Rect): boolean {
   }
 }
 
-async function loadFontsForTextNode(textNode: TextNode, fontLoadCache: Map<string, Promise<void>>): Promise<void> {
+async function loadFontsForTextNode(
+  textNode: TextNode,
+  fontLoadCache: Map<string, Promise<void>>,
+  loadedFontKeys: Set<string> = new Set<string>()
+): Promise<void> {
   try {
     const fonts = new Map<string, FontName>();
 
@@ -1451,14 +1574,14 @@ async function loadFontsForTextNode(textNode: TextNode, fontLoadCache: Map<strin
       fonts.set(`${font.family}\n${font.style}`, font);
     }
 
-    await Promise.all(Array.from(fonts.values(), (font) => getFontLoadPromise(font, fontLoadCache)));
+    await Promise.all(Array.from(fonts.values(), (font) => getFontLoadPromise(font, fontLoadCache, loadedFontKeys)));
   } catch (error) {
     console.error(`[Чистовик] Failed to load fonts for text node ${textNode.id}`, error);
     throw error;
   }
 }
 
-function getFontLoadPromise(font: FontName, fontLoadCache: Map<string, Promise<void>>): Promise<void> {
+function getFontLoadPromise(font: FontName, fontLoadCache: Map<string, Promise<void>>, loadedFontKeys: Set<string> = new Set<string>()): Promise<void> {
   const key = `${font.family}\n${font.style}`;
   const cachedPromise = fontLoadCache.get(key);
 
@@ -1466,12 +1589,8 @@ function getFontLoadPromise(font: FontName, fontLoadCache: Map<string, Promise<v
     return cachedPromise;
   }
 
-  const loadPromise = figma.loadFontAsync(font).catch((error) => {
-    if (fontLoadCache.get(key) === loadPromise) {
-      fontLoadCache.delete(key);
-    }
-
-    throw error;
+  const loadPromise = figma.loadFontAsync(font).then(() => {
+    loadedFontKeys.add(key);
   });
 
   fontLoadCache.set(key, loadPromise);
@@ -1603,6 +1722,7 @@ function getWholeTextStyle(styles: StyleSegment[], oldText: string): StyleSegmen
       style.end !== oldText.length ||
       style.textStyleId === "" ||
       style.textStyleOverrides.length > 0 ||
+      hasBoundStyleVariables(style) ||
       style.listOptions.type !== "NONE" ||
       style.listSpacing !== 0 ||
       style.indentation !== 0 ||
@@ -1616,6 +1736,14 @@ function getWholeTextStyle(styles: StyleSegment[], oldText: string): StyleSegmen
   } catch (error) {
     console.error("[Чистовик] Failed to detect whole text style", error);
     throw error;
+  }
+}
+
+function hasBoundStyleVariables(style: StyleSegment): boolean {
+  try {
+    return style.boundVariables !== undefined && Object.keys(style.boundVariables).length > 0;
+  } catch {
+    return true;
   }
 }
 
@@ -1640,6 +1768,34 @@ function hasTextDecoration(style: StyleSegment): boolean {
   return style.textDecoration !== "NONE";
 }
 
+function createStyleRestorationPlan(oldText: string, newText: string, styles: StyleSegment[]): StyleRestorationPlan {
+  try {
+    const wholeTextStyle = getWholeTextStyle(styles, oldText);
+
+    if (wholeTextStyle !== null) {
+      return {
+        styleMap: [],
+        wholeTextStyle,
+      };
+    }
+
+    if (styles.length === 1) {
+      return {
+        styleMap: new Array<number>(newText.length).fill(0),
+        wholeTextStyle: null,
+      };
+    }
+
+    return {
+      styleMap: buildStyleMap(oldText, newText, styles),
+      wholeTextStyle: null,
+    };
+  } catch (error) {
+    console.error("[Чистовик] Failed to create style restoration plan", error);
+    throw error;
+  }
+}
+
 function buildStyleMap(oldText: string, newText: string, styles: StyleSegment[]): number[] {
   try {
     const oldIndexToStyle = new Array<number>(oldText.length).fill(0);
@@ -1650,6 +1806,10 @@ function buildStyleMap(oldText: string, newText: string, styles: StyleSegment[])
       for (let index = segment.start; index < segment.end; index += 1) {
         oldIndexToStyle[index] = styleIndex;
       }
+    }
+
+    if (oldText === newText) {
+      return oldIndexToStyle.slice(0, newText.length);
     }
 
     const oldIndexMap = buildOldIndexMap(oldText, newText);
@@ -1753,6 +1913,7 @@ async function restoreTextStyles(textNode: TextNode, styleMap: number[], styles:
 
     let start = 0;
     let currentStyleIndex = styleMap[0] ?? 0;
+    const variableCache = new Map<string, Promise<Variable | null>>();
 
     for (let index = 1; index <= styleMap.length; index += 1) {
       const nextStyleIndex = styleMap[index] ?? -1;
@@ -1761,7 +1922,7 @@ async function restoreTextStyles(textNode: TextNode, styleMap: number[], styles:
         continue;
       }
 
-      await applyStyleSegment(textNode, start, index, styles[currentStyleIndex]);
+      await applyStyleSegment(textNode, start, index, styles[currentStyleIndex], variableCache);
       start = index;
       currentStyleIndex = nextStyleIndex;
     }
@@ -1771,7 +1932,13 @@ async function restoreTextStyles(textNode: TextNode, styleMap: number[], styles:
   }
 }
 
-async function applyStyleSegment(textNode: TextNode, start: number, end: number, style: StyleSegment): Promise<void> {
+async function applyStyleSegment(
+  textNode: TextNode,
+  start: number,
+  end: number,
+  style: StyleSegment,
+  variableCache: Map<string, Promise<Variable | null>>
+): Promise<void> {
   try {
     if (start >= end) {
       return;
@@ -1786,10 +1953,8 @@ async function applyStyleSegment(textNode: TextNode, start: number, end: number,
     textNode.setRangeIndentation(start, end, style.indentation);
     textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
     textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
-    if (style.textStyleId === "") {
-      await restoreBoundVariables(textNode, start, end, style);
-    }
     await restoreStyleIds(textNode, start, end, style);
+    await restoreBoundVariables(textNode, start, end, style, variableCache);
     restoreOverriddenStyleProperties(textNode, start, end, style);
   } catch (error) {
     console.error("[Чистовик] Failed to apply style segment", error);
@@ -1912,7 +2077,13 @@ function restoreHyperlink(textNode: TextNode, start: number, end: number, style:
   }
 }
 
-async function restoreBoundVariables(textNode: TextNode, start: number, end: number, style: StyleSegment): Promise<void> {
+async function restoreBoundVariables(
+  textNode: TextNode,
+  start: number,
+  end: number,
+  style: StyleSegment,
+  variableCache: Map<string, Promise<Variable | null>>
+): Promise<void> {
   try {
     if (style.boundVariables === undefined) {
       return;
@@ -1921,7 +2092,14 @@ async function restoreBoundVariables(textNode: TextNode, start: number, end: num
     const entries = Object.entries(style.boundVariables) as Array<[VariableBindableTextField, VariableAlias]>;
 
     for (const [field, variableAlias] of entries) {
-      const variable = await figma.variables.getVariableByIdAsync(variableAlias.id);
+      let variablePromise = variableCache.get(variableAlias.id);
+
+      if (variablePromise === undefined) {
+        variablePromise = figma.variables.getVariableByIdAsync(variableAlias.id);
+        variableCache.set(variableAlias.id, variablePromise);
+      }
+
+      const variable = await variablePromise;
 
       if (variable !== null) {
         textNode.setRangeBoundVariable(start, end, field, variable);
@@ -2058,15 +2236,26 @@ function getStoredDevelopmentMarkerIndexes(textNode: TextNode): number[] {
 function syncDevelopmentMarkerPluginData(textNode: TextNode, options: PluginRunOptions, markerIndexes: number[]): void {
   try {
     if (options.mode === "development" && markerIndexes.length > 0) {
-      textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, textNode.characters);
-      textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, JSON.stringify(markerIndexes));
+      setPluginDataIfChanged(textNode, DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, textNode.characters);
+      setPluginDataIfChanged(textNode, DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, JSON.stringify(markerIndexes));
       return;
     }
 
-    textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, "");
-    textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, "");
+    setPluginDataIfChanged(textNode, DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, "");
+    setPluginDataIfChanged(textNode, DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, "");
   } catch (error) {
     console.error(`[Чистовик] Failed to sync development marker plugin data for text node ${textNode.id}`, error);
+    throw error;
+  }
+}
+
+function setPluginDataIfChanged(textNode: TextNode, key: string, value: string): void {
+  try {
+    if (textNode.getPluginData(key) !== value) {
+      textNode.setPluginData(key, value);
+    }
+  } catch (error) {
+    console.error(`[Чистовик] Failed to update plugin data for text node ${textNode.id}`, error);
     throw error;
   }
 }

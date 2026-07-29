@@ -16,8 +16,9 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 3;
-const ANALYTICS_PLUGIN_RELEASE = "2026-07-28";
+const ANALYTICS_SCHEMA_VERSION = 4;
+const ANALYTICS_PLUGIN_RELEASE = "2026-07-29";
+const PERFORMANCE_MEASUREMENT_VERSION = 2;
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
@@ -65,7 +66,7 @@ async function run() {
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean typography", error);
-        figma.notify("Ой, не получилось почистить 🛑", { error: true, timeout: 4000 });
+        figma.notify(getFailureNotificationMessage(error), { error: true, timeout: 4000 });
     }
     finally {
         if (shouldClosePlugin) {
@@ -101,7 +102,7 @@ function openSettingsUI() {
             }
             catch (error) {
                 console.error("[Чистовик] Failed to handle UI message", error);
-                figma.notify("Ой, не получилось почистить 🛑", { error: true, timeout: 4000 });
+                figma.notify(getFailureNotificationMessage(error), { error: true, timeout: 4000 });
             }
         };
     }
@@ -111,7 +112,7 @@ function openSettingsUI() {
     }
 }
 async function runTypograph(options, source) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     if (typographRunInProgress) {
         return;
     }
@@ -137,17 +138,21 @@ async function runTypograph(options, source) {
         result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
         if (result.failed > 0) {
             analyticsStage = (_a = result.failedStage) !== null && _a !== void 0 ? _a : "unknown";
-            throw new Error(`Failed to process ${result.failed} text node(s)`);
+            const processingError = new Error(`Failed to process ${result.failed} text node(s)`);
+            if (((_b = result.failureDiagnostic) === null || _b === void 0 ? void 0 : _b.category) === "rollback_failed") {
+                processingError.name = "RollbackFailureError";
+            }
+            throw processingError;
         }
         cancelNotificationSafely(workingNotification);
         workingNotification = null;
         notifyCleanResult(result);
-        queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_layers_count: result.changed, characters_changed_total: result.analytics.charactersChangedTotal, characters_processed_total: result.analytics.charactersProcessedTotal, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_layers_count: result.failed, found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked, largest_text_layer_characters: result.analytics.largestTextLayerCharacters, processed_text_layers_count: result.processed, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked, slowest_text_layer_ms: result.analytics.slowestTextLayerMs, changed_style_segments_count: result.analytics.styleSegmentsCount, timing_collect_text_ms: collectTextDuration }), getTextProcessTimingAnalyticsProperties(result.analytics.timings)), { timing_other_ms: getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: result.analytics.uniqueFontsCount }));
+        queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_layers_count: result.changed, characters_changed_total: result.analytics.charactersChangedTotal, characters_processed_total: result.analytics.charactersProcessedTotal, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_layers_count: result.failed, found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked, largest_text_layer_characters: result.analytics.largestTextLayerCharacters, processed_text_layers_count: result.processed, rollback_attempted_layers_count: result.analytics.rollbackAttemptedLayersCount, rollback_failed_layers_count: result.analytics.rollbackFailedLayersCount, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked, slowest_text_layer_ms: result.analytics.slowestTextLayerMs, changed_style_segments_count: result.analytics.styleSegmentsCount, timing_collect_text_ms: collectTextDuration }), getTextProcessTimingAnalyticsProperties(result.analytics.timings)), { timing_other_ms: getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: result.analytics.uniqueFontsCount }));
     }
     catch (error) {
         console.error("[Чистовик] Failed to run typograph", error);
-        const errorDiagnostic = (_b = result === null || result === void 0 ? void 0 : result.failureDiagnostic) !== null && _b !== void 0 ? _b : createAnalyticsErrorDiagnostic(error, analyticsStage);
-        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_c = result === null || result === void 0 ? void 0 : result.failed) !== null && _c !== void 0 ? _c : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_d = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _d !== void 0 ? _d : null, characters_processed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _e !== void 0 ? _e : null, largest_text_layer_characters: (_f = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _f !== void 0 ? _f : null, processed_text_layers_count: (_g = result === null || result === void 0 ? void 0 : result.processed) !== null && _g !== void 0 ? _g : null, slowest_text_layer_ms: (_h = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _h !== void 0 ? _h : null, stage: analyticsStage, changed_style_segments_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _j !== void 0 ? _j : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _k !== void 0 ? _k : null }));
+        const errorDiagnostic = (_c = result === null || result === void 0 ? void 0 : result.failureDiagnostic) !== null && _c !== void 0 ? _c : createAnalyticsErrorDiagnostic(error, analyticsStage);
+        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_d = result === null || result === void 0 ? void 0 : result.failed) !== null && _d !== void 0 ? _d : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _e !== void 0 ? _e : null, characters_processed_total: (_f = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _f !== void 0 ? _f : null, largest_text_layer_characters: (_g = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _g !== void 0 ? _g : null, processed_text_layers_count: (_h = result === null || result === void 0 ? void 0 : result.processed) !== null && _h !== void 0 ? _h : null, rollback_attempted_layers_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.rollbackAttemptedLayersCount) !== null && _j !== void 0 ? _j : null, rollback_failed_layers_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.rollbackFailedLayersCount) !== null && _k !== void 0 ? _k : null, slowest_text_layer_ms: (_l = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _l !== void 0 ? _l : null, stage: analyticsStage, changed_style_segments_count: (_m = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _m !== void 0 ? _m : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_o = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _o !== void 0 ? _o : null }));
         throw error;
     }
     finally {
@@ -171,6 +176,17 @@ function cancelNotificationSafely(notification) {
         console.error("[Чистовик] Failed to cancel notification", error);
     }
 }
+function getFailureNotificationMessage(error) {
+    try {
+        if (getErrorName(error) === "RollbackFailureError") {
+            return "Не удалось вернуть оформление. Проверьте текстовый слой 🛑";
+        }
+    }
+    catch (_a) {
+        // Fall back to the regular error message.
+    }
+    return "Ой, не получилось почистить 🛑";
+}
 function createAnalyticsRunContext(options, source) {
     try {
         return {
@@ -179,7 +195,7 @@ function createAnalyticsRunContext(options, source) {
             runId: createAnalyticsRunId(),
             selection: getSelectionAnalyticsSummary(figma.currentPage.selection),
             source,
-            startedAt: Date.now(),
+            startedAt: getMonotonicTimeMs(),
         };
     }
     catch (_a) {
@@ -193,7 +209,7 @@ function createAnalyticsRunContext(options, source) {
                 selectedTextNodesCount: 0,
             },
             source,
-            startedAt: Date.now(),
+            startedAt: getMonotonicTimeMs(),
         };
     }
 }
@@ -243,6 +259,7 @@ function getRunAnalyticsProperties(context) {
             process_hidden_nodes: context.options.processHiddenNodes,
             process_locked_nodes: context.options.processLockedNodes,
             recolor_existing_asterisks: context.options.recolorExistingAsterisks,
+            performance_measurement_version: PERFORMANCE_MEASUREMENT_VERSION,
             run_id: context.runId,
             selected_nodes_count: context.selection.selectedNodesCount,
             selected_text_nodes_count: context.selection.selectedTextNodesCount,
@@ -256,7 +273,7 @@ function getRunAnalyticsProperties(context) {
 }
 function getAnalyticsDuration(context) {
     try {
-        return Math.max(0, Date.now() - context.startedAt);
+        return Math.max(0, getMonotonicTimeMs() - context.startedAt);
     }
     catch (_a) {
         return 0;
@@ -285,22 +302,35 @@ function getOtherAnalyticsDuration(context, collectTextDuration, timings) {
     return Math.max(0, getAnalyticsDuration(context) - measuredDuration);
 }
 function measureDuration(reportDuration, operation) {
-    const startedAt = Date.now();
+    const startedAt = getMonotonicTimeMs();
     try {
         return operation();
     }
     finally {
-        reportDuration(Math.max(0, Date.now() - startedAt));
+        reportDuration(Math.max(0, getMonotonicTimeMs() - startedAt));
     }
 }
 async function measureAsyncDuration(reportDuration, operation) {
-    const startedAt = Date.now();
+    const startedAt = getMonotonicTimeMs();
     try {
         return await operation();
     }
     finally {
-        reportDuration(Math.max(0, Date.now() - startedAt));
+        reportDuration(Math.max(0, getMonotonicTimeMs() - startedAt));
     }
+}
+function getMonotonicTimeMs() {
+    var _a;
+    try {
+        const runtime = globalThis;
+        if (typeof ((_a = runtime.performance) === null || _a === void 0 ? void 0 : _a.now) === "function") {
+            return runtime.performance.now();
+        }
+    }
+    catch (_b) {
+        // Date.now is a safe fallback in runtimes without the high-resolution timer.
+    }
+    return Date.now();
 }
 function queueAnalyticsEvent(event, properties = {}) {
     try {
@@ -584,6 +614,9 @@ function classifyAnalyticsError(error, stage) {
     if (stage === "restore_styles" || stage === "development_markers") {
         return "restore_styles_failed";
     }
+    if (stage === "rollback_styles") {
+        return "rollback_failed";
+    }
     if (stage === "clean_text" || stage === "compare_text") {
         return "typography_failed";
     }
@@ -598,6 +631,7 @@ function getAnalyticsErrorOperation(stage) {
         load_fonts: "load_text_layer_fonts",
         read_styles: "capture_text_layer_styles",
         restore_styles: "restore_text_layer_styles",
+        rollback_styles: "restore_original_text_layer_state",
         unknown: "unknown",
         write_text: "write_clean_text",
     };
@@ -612,6 +646,7 @@ function getAnalyticsErrorLocation(stage) {
         load_fonts: "src/code.ts:loadFontsForTextNode",
         read_styles: "src/code.ts:captureTextStyles",
         restore_styles: "src/code.ts:restoreTextStyles",
+        rollback_styles: "src/code.ts:restoreOriginalTextAfterStyleFailure",
         unknown: "src/code.ts:runTypograph",
         write_text: "src/code.ts:processTextNodes/write_clean_text",
     };
@@ -749,11 +784,13 @@ function filterProcessableTextNodes(textNodes, options) {
         const nodes = [];
         let skippedHidden = 0;
         let skippedLocked = 0;
+        const hiddenStateCache = new Map();
+        const lockedStateCache = new Map();
         for (const textNode of textNodes) {
-            if (!options.processLocked && isLockedForProcessing(textNode)) {
+            if (!options.processLocked && isLockedForProcessing(textNode, lockedStateCache)) {
                 skippedLocked += 1;
             }
-            else if (!options.processHidden && isHiddenForProcessing(textNode)) {
+            else if (!options.processHidden && isHiddenForProcessing(textNode, hiddenStateCache)) {
                 skippedHidden += 1;
             }
             else {
@@ -767,32 +804,56 @@ function filterProcessableTextNodes(textNodes, options) {
         throw error;
     }
 }
-function isLockedForProcessing(node) {
+function isLockedForProcessing(node, cache = new Map()) {
     try {
+        const visited = [];
         let current = node;
+        let locked = false;
         while (current !== null) {
+            const cached = cache.get(current.id);
+            if (cached !== undefined) {
+                locked = cached;
+                break;
+            }
+            visited.push(current);
             if (hasLockedProperty(current) && current.locked) {
-                return true;
+                locked = true;
+                break;
             }
             current = current.parent;
         }
-        return false;
+        for (const visitedNode of visited) {
+            cache.set(visitedNode.id, locked);
+        }
+        return locked;
     }
     catch (error) {
         console.error("[Чистовик] Failed to check locked node state", error);
         throw error;
     }
 }
-function isHiddenForProcessing(node) {
+function isHiddenForProcessing(node, cache = new Map()) {
     try {
+        const visited = [];
         let current = node;
+        let hidden = false;
         while (current !== null) {
+            const cached = cache.get(current.id);
+            if (cached !== undefined) {
+                hidden = cached;
+                break;
+            }
+            visited.push(current);
             if (hasVisibleProperty(current) && !current.visible) {
-                return true;
+                hidden = true;
+                break;
             }
             current = current.parent;
         }
-        return false;
+        for (const visitedNode of visited) {
+            cache.set(visitedNode.id, hidden);
+        }
+        return hidden;
     }
     catch (error) {
         console.error("[Чистовик] Failed to check hidden node state", error);
@@ -828,16 +889,22 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         let charactersChangedTotal = 0;
         let charactersProcessedTotal = 0;
         let largestTextLayerCharacters = 0;
+        let rollbackAttemptedLayersCount = 0;
+        let rollbackFailedLayersCount = 0;
         let slowestTextLayerMs = 0;
         let styleSegmentsCount = 0;
         const fontLoadCache = new Map();
-        const standalonePhoneCountryPrefixIds = measureDuration((duration) => {
-            timings.typography += duration;
-        }, () => getStandalonePhoneCountryPrefixIds(textNodes));
+        const loadedFontKeys = new Set();
+        const standalonePhoneCountryPrefixIds = textNodes.length < 2
+            ? new Set()
+            : measureDuration((duration) => {
+                timings.typography += duration;
+            }, () => getStandalonePhoneCountryPrefixIds(textNodes));
         for (const textNode of textNodes) {
-            const textLayerStartedAt = Date.now();
+            const textLayerStartedAt = getMonotonicTimeMs();
             let currentStage = "unknown";
             let countedAsProcessed = false;
+            let shouldStopProcessing = false;
             try {
                 const oldText = textNode.characters;
                 if (isWhitespaceOnlyText(oldText)) {
@@ -863,26 +930,21 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     currentStage = "load_fonts";
                     await measureAsyncDuration((duration) => {
                         timings.fonts += duration;
-                    }, () => loadFontsForTextNode(textNode, fontLoadCache));
+                    }, () => loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys));
                     currentStage = "read_styles";
                     const styles = measureDuration((duration) => {
                         timings.readStyles += duration;
                     }, () => captureTextStyles(textNode));
-                    styleSegmentsCount += styles.length;
                     currentStage = "compare_text";
                     const styleComparison = measureDuration((duration) => {
                         timings.compareText += duration;
-                    }, () => ({
-                        styleMap: buildStyleMap(oldText, newText, styles),
-                        wholeTextStyle: getWholeTextStyle(styles, oldText),
-                    }));
+                    }, () => createStyleRestorationPlan(oldText, newText, styles));
                     currentStage = "write_text";
                     measureDuration((duration) => {
                         timings.writeText += duration;
                     }, () => {
                         textNode.characters = newText;
                     });
-                    charactersChangedTotal += oldText.length;
                     currentStage = "restore_styles";
                     const { styleMap, wholeTextStyle } = styleComparison;
                     try {
@@ -898,9 +960,21 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         }
                     }
                     catch (error) {
-                        await restoreOriginalTextAfterStyleFailure(textNode, oldText, styles);
+                        rollbackAttemptedLayersCount += 1;
+                        currentStage = "rollback_styles";
+                        const rollbackSucceeded = await measureAsyncDuration((duration) => {
+                            timings.restoreStyles += duration;
+                        }, () => restoreOriginalTextAfterStyleFailure(textNode, oldText, styles));
+                        if (!rollbackSucceeded) {
+                            rollbackFailedLayersCount += 1;
+                            shouldStopProcessing = true;
+                            throw new Error("Failed to restore original text layer state");
+                        }
+                        currentStage = "restore_styles";
                         throw error;
                     }
+                    charactersChangedTotal += oldText.length;
+                    styleSegmentsCount += styles.length;
                     currentStage = "development_markers";
                     measureDuration((duration) => {
                         timings.developmentMarkers += duration;
@@ -924,14 +998,24 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             }
             catch (error) {
                 failed += 1;
-                failedStage !== null && failedStage !== void 0 ? failedStage : (failedStage = currentStage);
-                failureDiagnostic !== null && failureDiagnostic !== void 0 ? failureDiagnostic : (failureDiagnostic = createAnalyticsErrorDiagnostic(error, currentStage));
+                if (shouldStopProcessing) {
+                    failedStage = "rollback_styles";
+                    failureDiagnostic = createAnalyticsErrorDiagnostic(error, "rollback_styles");
+                }
+                else {
+                    const diagnostic = createAnalyticsErrorDiagnostic(error, currentStage);
+                    failedStage !== null && failedStage !== void 0 ? failedStage : (failedStage = currentStage);
+                    failureDiagnostic !== null && failureDiagnostic !== void 0 ? failureDiagnostic : (failureDiagnostic = diagnostic);
+                }
                 console.error(`[Чистовик] Failed to process text node ${textNode.id}`, error);
             }
             finally {
                 if (countedAsProcessed) {
-                    slowestTextLayerMs = Math.max(slowestTextLayerMs, Math.max(0, Date.now() - textLayerStartedAt));
+                    slowestTextLayerMs = Math.max(slowestTextLayerMs, Math.max(0, getMonotonicTimeMs() - textLayerStartedAt));
                 }
+            }
+            if (shouldStopProcessing) {
+                break;
             }
         }
         return {
@@ -946,10 +1030,12 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 charactersChangedTotal,
                 charactersProcessedTotal,
                 largestTextLayerCharacters,
+                rollbackAttemptedLayersCount,
+                rollbackFailedLayersCount,
                 slowestTextLayerMs,
                 styleSegmentsCount,
                 timings,
-                uniqueFontsCount: fontLoadCache.size,
+                uniqueFontsCount: loadedFontKeys.size,
             },
         };
     }
@@ -964,12 +1050,14 @@ async function restoreOriginalTextAfterStyleFailure(textNode, oldText, styles) {
         const wholeTextStyle = getWholeTextStyle(styles, oldText);
         if (wholeTextStyle !== null) {
             await restoreWholeTextStyle(textNode, wholeTextStyle);
-            return;
+            return true;
         }
         await restoreTextStyles(textNode, buildStyleMap(oldText, oldText, styles), styles);
+        return true;
     }
     catch (rollbackError) {
         console.error(`[Чистовик] Failed to restore original text after style restoration failure for text node ${textNode.id}`, rollbackError);
+        return false;
     }
 }
 function createEmptyTextProcessTimings() {
@@ -1053,7 +1141,7 @@ function isRightAdjacentSameLineText(left, right) {
         throw error;
     }
 }
-async function loadFontsForTextNode(textNode, fontLoadCache) {
+async function loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys = new Set()) {
     try {
         const fonts = new Map();
         if (textNode.characters.length === 0) {
@@ -1062,24 +1150,21 @@ async function loadFontsForTextNode(textNode, fontLoadCache) {
         for (const font of textNode.getRangeAllFontNames(0, textNode.characters.length)) {
             fonts.set(`${font.family}\n${font.style}`, font);
         }
-        await Promise.all(Array.from(fonts.values(), (font) => getFontLoadPromise(font, fontLoadCache)));
+        await Promise.all(Array.from(fonts.values(), (font) => getFontLoadPromise(font, fontLoadCache, loadedFontKeys)));
     }
     catch (error) {
         console.error(`[Чистовик] Failed to load fonts for text node ${textNode.id}`, error);
         throw error;
     }
 }
-function getFontLoadPromise(font, fontLoadCache) {
+function getFontLoadPromise(font, fontLoadCache, loadedFontKeys = new Set()) {
     const key = `${font.family}\n${font.style}`;
     const cachedPromise = fontLoadCache.get(key);
     if (cachedPromise !== undefined) {
         return cachedPromise;
     }
-    const loadPromise = figma.loadFontAsync(font).catch((error) => {
-        if (fontLoadCache.get(key) === loadPromise) {
-            fontLoadCache.delete(key);
-        }
-        throw error;
+    const loadPromise = figma.loadFontAsync(font).then(() => {
+        loadedFontKeys.add(key);
     });
     fontLoadCache.set(key, loadPromise);
     return loadPromise;
@@ -1163,6 +1248,7 @@ function getWholeTextStyle(styles, oldText) {
             style.end !== oldText.length ||
             style.textStyleId === "" ||
             style.textStyleOverrides.length > 0 ||
+            hasBoundStyleVariables(style) ||
             style.listOptions.type !== "NONE" ||
             style.listSpacing !== 0 ||
             style.indentation !== 0 ||
@@ -1175,6 +1261,14 @@ function getWholeTextStyle(styles, oldText) {
     catch (error) {
         console.error("[Чистовик] Failed to detect whole text style", error);
         throw error;
+    }
+}
+function hasBoundStyleVariables(style) {
+    try {
+        return style.boundVariables !== undefined && Object.keys(style.boundVariables).length > 0;
+    }
+    catch (_a) {
+        return true;
     }
 }
 async function restoreWholeTextStyle(textNode, style) {
@@ -1195,6 +1289,31 @@ async function restoreWholeTextStyle(textNode, style) {
 function hasTextDecoration(style) {
     return style.textDecoration !== "NONE";
 }
+function createStyleRestorationPlan(oldText, newText, styles) {
+    try {
+        const wholeTextStyle = getWholeTextStyle(styles, oldText);
+        if (wholeTextStyle !== null) {
+            return {
+                styleMap: [],
+                wholeTextStyle,
+            };
+        }
+        if (styles.length === 1) {
+            return {
+                styleMap: new Array(newText.length).fill(0),
+                wholeTextStyle: null,
+            };
+        }
+        return {
+            styleMap: buildStyleMap(oldText, newText, styles),
+            wholeTextStyle: null,
+        };
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to create style restoration plan", error);
+        throw error;
+    }
+}
 function buildStyleMap(oldText, newText, styles) {
     try {
         const oldIndexToStyle = new Array(oldText.length).fill(0);
@@ -1203,6 +1322,9 @@ function buildStyleMap(oldText, newText, styles) {
             for (let index = segment.start; index < segment.end; index += 1) {
                 oldIndexToStyle[index] = styleIndex;
             }
+        }
+        if (oldText === newText) {
+            return oldIndexToStyle.slice(0, newText.length);
         }
         const oldIndexMap = buildOldIndexMap(oldText, newText);
         return oldIndexMap.map((oldIndex) => {
@@ -1298,12 +1420,13 @@ async function restoreTextStyles(textNode, styleMap, styles) {
         }
         let start = 0;
         let currentStyleIndex = (_a = styleMap[0]) !== null && _a !== void 0 ? _a : 0;
+        const variableCache = new Map();
         for (let index = 1; index <= styleMap.length; index += 1) {
             const nextStyleIndex = (_b = styleMap[index]) !== null && _b !== void 0 ? _b : -1;
             if (nextStyleIndex === currentStyleIndex && index < styleMap.length) {
                 continue;
             }
-            await applyStyleSegment(textNode, start, index, styles[currentStyleIndex]);
+            await applyStyleSegment(textNode, start, index, styles[currentStyleIndex], variableCache);
             start = index;
             currentStyleIndex = nextStyleIndex;
         }
@@ -1313,7 +1436,7 @@ async function restoreTextStyles(textNode, styleMap, styles) {
         throw error;
     }
 }
-async function applyStyleSegment(textNode, start, end, style) {
+async function applyStyleSegment(textNode, start, end, style, variableCache) {
     try {
         if (start >= end) {
             return;
@@ -1327,10 +1450,8 @@ async function applyStyleSegment(textNode, start, end, style) {
         textNode.setRangeIndentation(start, end, style.indentation);
         textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
         textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
-        if (style.textStyleId === "") {
-            await restoreBoundVariables(textNode, start, end, style);
-        }
         await restoreStyleIds(textNode, start, end, style);
+        await restoreBoundVariables(textNode, start, end, style, variableCache);
         restoreOverriddenStyleProperties(textNode, start, end, style);
     }
     catch (error) {
@@ -1442,14 +1563,19 @@ function restoreHyperlink(textNode, start, end, style) {
         throw error;
     }
 }
-async function restoreBoundVariables(textNode, start, end, style) {
+async function restoreBoundVariables(textNode, start, end, style, variableCache) {
     try {
         if (style.boundVariables === undefined) {
             return;
         }
         const entries = Object.entries(style.boundVariables);
         for (const [field, variableAlias] of entries) {
-            const variable = await figma.variables.getVariableByIdAsync(variableAlias.id);
+            let variablePromise = variableCache.get(variableAlias.id);
+            if (variablePromise === undefined) {
+                variablePromise = figma.variables.getVariableByIdAsync(variableAlias.id);
+                variableCache.set(variableAlias.id, variablePromise);
+            }
+            const variable = await variablePromise;
             if (variable !== null) {
                 textNode.setRangeBoundVariable(start, end, field, variable);
             }
@@ -1573,15 +1699,26 @@ function getStoredDevelopmentMarkerIndexes(textNode) {
 function syncDevelopmentMarkerPluginData(textNode, options, markerIndexes) {
     try {
         if (options.mode === "development" && markerIndexes.length > 0) {
-            textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, textNode.characters);
-            textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, JSON.stringify(markerIndexes));
+            setPluginDataIfChanged(textNode, DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, textNode.characters);
+            setPluginDataIfChanged(textNode, DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, JSON.stringify(markerIndexes));
             return;
         }
-        textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, "");
-        textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, "");
+        setPluginDataIfChanged(textNode, DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, "");
+        setPluginDataIfChanged(textNode, DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, "");
     }
     catch (error) {
         console.error(`[Чистовик] Failed to sync development marker plugin data for text node ${textNode.id}`, error);
+        throw error;
+    }
+}
+function setPluginDataIfChanged(textNode, key, value) {
+    try {
+        if (textNode.getPluginData(key) !== value) {
+            textNode.setPluginData(key, value);
+        }
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to update plugin data for text node ${textNode.id}`, error);
         throw error;
     }
 }

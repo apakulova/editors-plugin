@@ -6,10 +6,12 @@ const DEFAULT_POSTHOG_DASHBOARD_URL = "https://eu.posthog.com/project/184090/das
 const DEFAULT_POSTHOG_PERFORMANCE_DASHBOARD_URL = "https://eu.posthog.com/project/184090/dashboard/854930";
 const POSTHOG_UNEXPECTED_RESPONSE_REASON = "PostHog вернул неожиданный формат данных.";
 const MIN_WEEKLY_PERFORMANCE_RUNS = 10;
+const PERFORMANCE_MEASUREMENT_VERSION = 2;
 const SUMMARY_COLUMNS = [
   "uniqueUsers",
   "typographRuns",
   "successfulRuns",
+  "performanceRuns",
   "failedRuns",
   "affectedUsers",
   "medianDurationMs",
@@ -30,6 +32,7 @@ const SUMMARY_COLUMNS = [
 const BASELINE_COLUMNS = [
   "typographRuns",
   "failedRuns",
+  "performanceRuns",
   "medianDurationMs",
   "p90DurationMs",
 ];
@@ -40,6 +43,7 @@ const ERROR_CATEGORY_LABELS = {
   mixed_or_unsupported_property: "смешанное или неподдерживаемое свойство",
   write_text_failed: "не удалось записать текст",
   restore_styles_failed: "не удалось вернуть оформление",
+  rollback_failed: "не удалось вернуть исходное состояние",
   typography_failed: "ошибка правил типографики",
   timeout: "превышено время ожидания",
   unknown: "причина неизвестна",
@@ -247,10 +251,11 @@ SELECT
   uniqExactIf(distinct_id, event = 'plugin_run_started') AS unique_users,
   countIf(event = 'plugin_run_started') AS typograph_runs,
   countIf(event = 'plugin_run_completed') AS successful_runs,
+  countIf(event = 'plugin_run_completed' AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS performance_runs,
   countIf(event = 'plugin_run_failed') AS failed_runs,
   uniqExactIf(distinct_id, event = 'plugin_run_failed') AS affected_users,
-  quantileIf(0.5)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms)) AS median_duration_ms,
-  quantileIf(0.9)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms)) AS p90_duration_ms,
+  quantileIf(0.5)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms) AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS median_duration_ms,
+  quantileIf(0.9)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms) AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS p90_duration_ms,
   countIf(event = 'plugin_run_started' AND properties.mode = 'default') AS mode_default,
   countIf(event = 'plugin_run_started' AND properties.mode = 'beauty') AS mode_beauty,
   countIf(event = 'plugin_run_started' AND properties.mode = 'development') AS mode_development,
@@ -285,8 +290,9 @@ function getBaselineAnalyticsQuery(start, end) {
 SELECT
   countIf(event = 'plugin_run_started') AS typograph_runs,
   countIf(event = 'plugin_run_failed') AS failed_runs,
-  quantileIf(0.5)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms)) AS median_duration_ms,
-  quantileIf(0.9)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms)) AS p90_duration_ms
+  countIf(event = 'plugin_run_completed' AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS performance_runs,
+  quantileIf(0.5)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms) AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS median_duration_ms,
+  quantileIf(0.9)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms) AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS p90_duration_ms
 FROM events
 WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
   AND timestamp < toDateTime('${endDateTime}', 'UTC')
@@ -336,6 +342,7 @@ FROM events
 WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
   AND timestamp < toDateTime('${endDateTime}', 'UTC')
   AND event = 'plugin_run_completed'
+  AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}'
   AND ifNull(properties.is_test_event, false) != true
 `;
 }
@@ -442,6 +449,7 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
     baseline: {
       averageDailyRuns: baseline.typographRuns / 7,
       failedRate: baseline.typographRuns > 0 ? baseline.failedRuns / baseline.typographRuns : null,
+      performanceRuns: baseline.performanceRuns,
       medianDurationMs: baseline.medianDurationMs,
       p90DurationMs: baseline.p90DurationMs,
     },
@@ -749,7 +757,7 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   const medianDuration = formatDuration(summary.medianDurationMs);
   const p90Duration = formatDuration(summary.p90DurationMs);
 
-  if (medianDuration === null || summary.successfulRuns === 0) {
+  if (medianDuration === null || summary.performanceRuns === 0) {
     lines.push("— обычное время обработки: пока недостаточно данных");
   } else {
     lines.push(
@@ -762,7 +770,7 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     );
   }
 
-  if (p90Duration === null || summary.successfulRuns < 10) {
+  if (p90Duration === null || summary.performanceRuns < MIN_WEEKLY_PERFORMANCE_RUNS) {
     lines.push("— 90% обработок укладываются: пока недостаточно данных");
   } else {
     lines.push(
@@ -775,7 +783,10 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     );
   }
 
-  const performanceInsight = formatPerformanceInsight(summary.medianDurationMs, summary.baseline?.medianDurationMs);
+  const performanceInsight =
+    summary.performanceRuns > 0 && (summary.baseline?.performanceRuns || 0) > 0
+      ? formatPerformanceInsight(summary.medianDurationMs, summary.baseline?.medianDurationMs)
+      : null;
 
   if (performanceInsight) {
     lines.push("", performanceInsight);
@@ -850,6 +861,7 @@ function formatWeeklyPerformanceInsight(currentAverage, baselineAverage, baselin
 function getPerformanceBreakdown(summary) {
   return PERFORMANCE_TIMING_COLUMNS
     .map((item) => ({
+      key: item.key,
       label: item.label,
       value: Number(summary[item.key] || 0),
     }))
@@ -898,7 +910,7 @@ function formatWeeklyPerformanceMessage(dateRange, summary, env = process.env) {
     lines.push("", performanceInsight);
   }
 
-  if (breakdown.length > 0) {
+  if (breakdown.length > 0 && breakdown[0].key !== "otherMs") {
     lines.push(`📍 Основная задержка — ${breakdown[0].label}`);
   }
 

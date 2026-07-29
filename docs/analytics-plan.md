@@ -213,8 +213,9 @@ Email в будущем не стоит отправлять как `distinct_id
 
 ```ts
 {
-  analytics_schema_version: 3,
-  plugin_release: "2026-07-28",
+  analytics_schema_version: 4,
+  plugin_release: "2026-07-29",
+  performance_measurement_version: 2,
   source: "quick_run" | "settings",
   mode: "default" | "beauty" | "development",
   process_locked_nodes: boolean,
@@ -246,6 +247,8 @@ Email в будущем не стоит отправлять как `distinct_id
   slowest_text_layer_ms: number,
   changed_style_segments_count: number,
   loaded_unique_fonts_count: number,
+  rollback_attempted_layers_count: number,
+  rollback_failed_layers_count: number,
   timing_collect_text_ms: number,
   timing_typography_ms: number,
   timing_fonts_ms: number,
@@ -259,6 +262,8 @@ Email в будущем не стоит отправлять как `distinct_id
 ```
 
 `characters_processed_total` — точная сумма символов во всех непустых текстовых слоях, которые были проверены правилами. `characters_changed_total` — сумма исходных длин только тех слоев, где текст действительно изменился. `changed_style_segments_count` и `loaded_unique_fonts_count` относятся к измененным слоям: плагин не должен читать оформление и загружать шрифты у уже чистого текста только ради аналитики.
+
+`performance_measurement_version: 2` отмечает события с точными монотонными замерами этапов. Недельный отчёт по скорости использует только такие события, поэтому старые запуски без полной диагностики не считаются достаточной выборкой. `rollback_attempted_layers_count` показывает число попыток вернуть исходное состояние после ошибки оформления, а `rollback_failed_layers_count` — число слоёв, которые обязательно нужно проверить вручную.
 
 Один запуск отправляет одно событие завершения. Отдельные события по каждому слою и по каждому этапу не создаются. Названия слоев, тексты и названия шрифтов не отправляются.
 
@@ -284,6 +289,8 @@ Email в будущем не стоит отправлять как `distinct_id
 | `slowest_text_layer_ms` | Самый медленный слой | Время самого долгого текстового слоя без его текста и названия |
 | `changed_style_segments_count` | Фрагменты оформления | Сколько фрагментов с отдельным оформлением прочитано в изменённых слоях |
 | `loaded_unique_fonts_count` | Загруженные шрифты | Сколько уникальных пар шрифт/начертание пришлось загрузить для изменённых слоёв |
+| `rollback_attempted_layers_count` | Попытки вернуть исходное состояние | Сколько слоёв плагин пытался вернуть после ошибки восстановления оформления |
+| `rollback_failed_layers_count` | Не удалось вернуть исходное состояние | Сколько аварийных возвратов завершились ошибкой; после такого слоя обработка останавливается |
 | `plugin_release` | Дата публикации | Московская дата версии плагина в формате `YYYY-MM-DD`; при двух публикациях за день добавляется `.1`, `.2` |
 
 Основной дашборд должен исключать события с `is_test_event: true`. Для сравнения скорости использовать не только среднее, но и обычное время большинства запусков, медленные 10% запусков и долю запусков дольше `500 ms`, `1 s`, `2 s` и `5 s`.
@@ -302,6 +309,7 @@ Email в будущем не стоит отправлять как `distinct_id
     | "compare_text"
     | "write_text"
     | "restore_styles"
+    | "rollback_styles"
     | "unknown",
   error_category:
     | "font_unavailable"
@@ -310,6 +318,7 @@ Email в будущем не стоит отправлять как `distinct_id
     | "mixed_or_unsupported_property"
     | "write_text_failed"
     | "restore_styles_failed"
+    | "rollback_failed"
     | "typography_failed"
     | "timeout"
     | "unknown",
@@ -320,6 +329,8 @@ Email в будущем не стоит отправлять как `distinct_id
   failed_text_layers_count: number | null,
   found_text_layers_count: number | null,
   processed_text_layers_count: number | null,
+  rollback_attempted_layers_count: number | null,
+  rollback_failed_layers_count: number | null,
   characters_processed_total: number | null,
   characters_changed_total: number | null,
   largest_text_layer_characters: number | null,
@@ -350,8 +361,8 @@ Email в будущем не стоит отправлять как `distinct_id
 
 ```ts
 {
-  analytics_schema_version: 3,
-  plugin_release: "2026-07-28",
+  analytics_schema_version: 4,
+  plugin_release: "2026-07-29",
   source: "about_tab",
   link: "channel"
 }
@@ -413,7 +424,7 @@ async function trackAnalyticsEvent(name: string, properties: AnalyticsProperties
     ...properties,
     $geoip_disable: true,
     $process_person_profile: false,
-    analytics_schema_version: 3,
+    analytics_schema_version: 4,
     identity_type: identity.identityType,
     plugin_release: ANALYTICS_PLUGIN_RELEASE
   },
