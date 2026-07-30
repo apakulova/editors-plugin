@@ -170,8 +170,23 @@ async function run() {
     env
   );
 
-  assert(oldMeasurementMessage.includes("обычное время обработки: пока недостаточно данных"));
-  assert(oldMeasurementMessage.includes("90% обработок укладываются: пока недостаточно данных"));
+  assert(!oldMeasurementMessage.includes("Производительность:"));
+  assert(!oldMeasurementMessage.includes("пока недостаточно данных"));
+
+  const partialPerformanceMessage = formatAnalyticsMessage(
+    dateRange,
+    createSummary({
+      medianDurationMs: 420,
+      p90DurationMs: 1800,
+      performanceRuns: 1,
+    }),
+    env
+  );
+
+  assert(partialPerformanceMessage.includes("Производительность:"));
+  assert(partialPerformanceMessage.includes("обычное время обработки: 420 мс"));
+  assert(!partialPerformanceMessage.includes("90% обработок"));
+  assert(!partialPerformanceMessage.includes("пока недостаточно данных"));
 
   const noErrorsMessage = formatAnalyticsMessage(
     dateRange,

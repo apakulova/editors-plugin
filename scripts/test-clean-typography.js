@@ -12,6 +12,7 @@ const compiledSource = fs.readFileSync("dist/code.js", "utf8");
 
 assert.strictEqual(compiledSource.includes(".detachInstance("), false, "The plugin must not detach library instances");
 assert.strictEqual(compiledSource.includes("figma.createText("), false, "The plugin must not replace text layers with new layers");
+assert.strictEqual(compiledSource.includes("typographRunInProgress"), false, "A repeated run must not end with a silent early return");
 
 const source = compiledSource.replace(
   "void run();",
@@ -34,8 +35,11 @@ const source = compiledSource.replace(
     "globalThis.createAnalyticsErrorDiagnostic = createAnalyticsErrorDiagnostic;",
     "globalThis.getAnalyticsCaptureEndpoint = getAnalyticsCaptureEndpoint;",
     "globalThis.getFailureNotificationMessage = getFailureNotificationMessage;",
+    "globalThis.getCleanResultNotificationMessage = getCleanResultNotificationMessage;",
     "globalThis.getRunAnalyticsProperties = getRunAnalyticsProperties;",
     "globalThis.getTextProcessTimingAnalyticsProperties = getTextProcessTimingAnalyticsProperties;",
+    "globalThis.presentRunOutcome = presentRunOutcome;",
+    "globalThis.runTypograph = runTypograph;",
   ].join(" ")
 );
 let testMonotonicNow = 0;
@@ -43,6 +47,7 @@ const testPerformance = {
   now: () => testMonotonicNow,
 };
 const context = {
+  clearTimeout,
   console,
   figma: {
     mixed: Symbol("mixed"),
@@ -54,6 +59,7 @@ const context = {
     performance: testPerformance,
   },
   performance: testPerformance,
+  setTimeout,
 };
 
 vm.createContext(context);
@@ -77,8 +83,11 @@ const createAnalyticsEventPayload = context.globalThis.createAnalyticsEventPaylo
 const createAnalyticsErrorDiagnostic = context.globalThis.createAnalyticsErrorDiagnostic;
 const getAnalyticsCaptureEndpoint = context.globalThis.getAnalyticsCaptureEndpoint;
 const getFailureNotificationMessage = context.globalThis.getFailureNotificationMessage;
+const getCleanResultNotificationMessage = context.globalThis.getCleanResultNotificationMessage;
 const getRunAnalyticsProperties = context.globalThis.getRunAnalyticsProperties;
 const getTextProcessTimingAnalyticsProperties = context.globalThis.getTextProcessTimingAnalyticsProperties;
+const presentRunOutcome = context.globalThis.presentRunOutcome;
+const runTypograph = context.globalThis.runTypograph;
 const developmentOptions = {
   mode: "development",
   processHiddenNodes: false,
@@ -158,8 +167,31 @@ assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unsupported mixed p
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Original state rollback failed"), "rollback_styles").category, "rollback_failed");
 const rollbackFailureNotificationError = new Error("Failed to process text layer");
 rollbackFailureNotificationError.name = "RollbackFailureError";
-assert.strictEqual(getFailureNotificationMessage(rollbackFailureNotificationError), "Не удалось вернуть оформление. Проверьте текстовый слой 🛑");
+assert.strictEqual(
+  getFailureNotificationMessage(rollbackFailureNotificationError),
+  "Плагин случайно сломал какие-то стили — проверьте текстовые слои 🛑"
+);
 assert.strictEqual(getFailureNotificationMessage(new Error("Other failure")), "Ой, не получилось почистить 🛑");
+assert.strictEqual(
+  getCleanResultNotificationMessage({ changed: 1, skippedHidden: 0, skippedLocked: 0 }),
+  "Теперь всё чисто 🔥🔥🔥"
+);
+assert.strictEqual(
+  getCleanResultNotificationMessage({ changed: 0, skippedHidden: 0, skippedLocked: 0 }),
+  "Всё уже было чисто 👌"
+);
+assert.strictEqual(
+  getCleanResultNotificationMessage({ changed: 1, skippedHidden: 0, skippedLocked: 1 }),
+  "Замочки не тронуты, в остальном — теперь всё чисто 🔥🔥🔥"
+);
+assert.strictEqual(
+  getCleanResultNotificationMessage({ changed: 0, skippedHidden: 1, skippedLocked: 0 }),
+  "Скрытые слои не тронуты, а остальное уже было чисто 👌"
+);
+assert.strictEqual(
+  getCleanResultNotificationMessage({ changed: 1, skippedHidden: 1, skippedLocked: 1 }),
+  "Замочки и скрытые слои не тронуты, в остальном — теперь всё чисто 🔥🔥🔥"
+);
 assert.deepStrictEqual(
   JSON.parse(
     JSON.stringify(
@@ -424,6 +456,37 @@ expectClean("2026-05-14", "2026-05-14");
 expectClean("10.04.2025", "10.04.2025");
 expectClean("v2.0.1", "v2.0.1");
 expectClean("192.168.0.1", "192.168.0.1");
+expectClean("1.1 Как использовать", `1.1${NBSP}Как использовать`);
+expectClean("1.2 Что с этим делать", `1.2${NBSP}Что с${NBSP}этим делать`);
+expectClean("Раздел 1.1", "Раздел 1.1");
+expectClean("§ 2.2", `§${NBSP}2.2`);
+expectClean("ст. 35.1", "ст. 35.1");
+expectClean("п. 2.1", "п. 2.1");
+expectClean("Глава 3.2", "Глава 3.2");
+expectClean("подпункт 4.3", "подпункт 4.3");
+expectClean("3,1 Как использовать", `3.1${NBSP}Как использовать`);
+expectClean("Раздел 1,1", "Раздел 1.1");
+expectClean("§ 2,2", `§${NBSP}2.2`);
+expectClean("ст. 35,1", "ст. 35.1");
+expectClean("п. 2,1", "п. 2.1");
+expectClean("пункт 5,5 эмоции", `пункт 5.5${NBSP}эмоции`);
+expectClean("Вес 4,5 кг", `Вес 4,5${NBSP}кг`);
+expectClean("4,5 кг разговоров", `4,5${NBSP}кг разговоров`);
+expectClean("Цена 5,5 ₽", `Цена 5,5${NBSP}₽`);
+expectClean("контрольный пункт 5,5 км", `контрольный пункт 5,5${NBSP}км`);
+expectClean("контрольный пункт 5.5 км", `контрольный пункт 5,5${NBSP}км`);
+expectClean("пункт 5,5%", "пункт 5,5%");
+expectClean("пункт 10,04 кг", `пункт 10,04${NBSP}кг`);
+expectClean("пункт назначения стоит 5,5 ₽", `пункт назначения стоит 5,5${NBSP}₽`);
+expectClean("Коэффициент 5,5", "Коэффициент 5,5");
+const legalNumbering = cleanTypography("Это зафиксировано в ст. 35 п. 2.1 УК РФ");
+assert(legalNumbering.includes("ст. 35"));
+assert(legalNumbering.includes("п. 2.1"));
+assert.strictEqual(legalNumbering.includes("2,1"), false);
+const repairedLegalNumbering = cleanTypography("Это зафиксировано в ст. 35 п. 2,1 УК РФ");
+assert(repairedLegalNumbering.includes("ст. 35"));
+assert(repairedLegalNumbering.includes("п. 2.1"));
+assert.strictEqual(repairedLegalNumbering.includes("2,1"), false);
 expectClean("https://example.com/2/2", "https://example.com/2/2");
 expectClean("mail@example.com", "mail@example.com");
 expectClean("x1+2", "x1+2");
@@ -530,6 +593,21 @@ expectDevelopmentIdempotent("далеко ли холодно ли стало", 
 expectDevelopmentIdempotent("знал б ты, всё ж можно ль иначе", "знал*б ты, всё*ж можно*ль иначе");
 expectDevelopmentIdempotent("Это же не баг, а фича ли?", "Это*же не*баг, а*фича*ли?");
 expectDevelopmentIdempotent("Доход 100 млн и 5 млрд.", "Доход 100*млн и*5*млрд");
+expectDevelopmentIdempotent("1.1 Как использовать", "1.1*Как использовать");
+expectDevelopmentIdempotent("Раздел 1.1", "Раздел 1.1");
+expectDevelopmentIdempotent("§ 2.2", "§*2.2");
+expectDevelopmentIdempotent("ст. 35.1", "ст. 35.1");
+expectDevelopmentIdempotent("п. 2.1", "п. 2.1");
+expectDevelopmentIdempotent("3,1 Как использовать", "3.1*Как использовать");
+expectDevelopmentIdempotent("Раздел 1,1", "Раздел 1.1");
+expectDevelopmentIdempotent("§ 2,2", "§*2.2");
+expectDevelopmentIdempotent("ст. 35,1", "ст. 35.1");
+expectDevelopmentIdempotent("п. 2,1", "п. 2.1");
+expectDevelopmentIdempotent("пункт 5,5 эмоции", "пункт 5.5*эмоции");
+expectDevelopmentIdempotent("контрольный пункт 5,5 км", "контрольный пункт 5,5*км");
+expectDevelopmentIdempotent("контрольный пункт 5.5 км", "контрольный пункт 5,5*км");
+expectDevelopmentIdempotent("4,5 кг разговоров", "4,5*кг разговоров");
+expectDevelopmentIdempotent("Вес 1.5 кг.", "Вес 1,5*кг");
 expectDevelopmentIdempotent("Формула: 2 * 2 = 4.", `Формула: 2*${MULTIPLY}*2*=*4.`);
 expectDevelopmentIdempotent("Формула: 2*2=4.", `Формула: 2*${MULTIPLY}*2*=*4.`);
 expectDevelopmentIdempotent("Формула 2*2=4", `Формула 2*${MULTIPLY}*2*=*4`);
@@ -621,6 +699,8 @@ async function runStyleRestorationTests() {
   const calls = [];
   const textNode = {
     characters: "Пункт списка",
+    getRangeFillStyleId: () => "fill-style-id",
+    getRangeTextStyleId: () => "text-style-id",
     setRangeFills: (start, end, value) => calls.push(["fills", start, end, value]),
     setRangeFillStyleIdAsync: async (start, end, value) => calls.push(["fillStyleId", start, end, value]),
     setRangeFontName: (start, end, value) => calls.push(["fontName", start, end, value]),
@@ -696,6 +776,23 @@ async function runStyleRestorationTests() {
   assert(calls.findIndex(([name]) => name === "fillStyleId") > calls.findIndex(([name]) => name === "textStyleId"));
   assert(calls.findIndex(([name]) => name === "textDecoration") > calls.findIndex(([name]) => name === "textStyleId"));
   assert(calls.findIndex(([name]) => name === "hyperlink") > calls.findIndex(([name]) => name === "textStyleId"));
+
+  calls.length = 0;
+
+  await restoreTextStyles(textNode, new Array(textNode.characters.length).fill(0), [listStyle], true);
+
+  assert.strictEqual(calls.find(([name]) => name === "textStyleId"), undefined);
+  assert.strictEqual(calls.find(([name]) => name === "fillStyleId"), undefined);
+
+  calls.length = 0;
+
+  textNode.getRangeFillStyleId = () => "";
+  textNode.getRangeTextStyleId = () => "";
+
+  await restoreTextStyles(textNode, new Array(textNode.characters.length).fill(0), [listStyle], true);
+
+  assert.deepStrictEqual(calls.find(([name]) => name === "textStyleId"), ["textStyleId", 0, 12, "text-style-id"]);
+  assert.deepStrictEqual(calls.find(([name]) => name === "fillStyleId"), ["fillStyleId", 0, 12, "fill-style-id"]);
 
   calls.length = 0;
 
@@ -864,6 +961,7 @@ async function runWholeTextStyleRestorationTests() {
 
   assert.strictEqual(wholeStylePlan.wholeTextStyle, wholeStyle);
   assert.deepStrictEqual(Array.from(wholeStylePlan.styleMap), []);
+  assert.strictEqual(wholeStylePlan.verifyUniformLinkedStyle, true);
 
   const listStylePlan = createStyleRestorationPlan("Заголовок", "Заголовок…", [
     {
@@ -875,10 +973,29 @@ async function runWholeTextStyleRestorationTests() {
   assert.strictEqual(listStylePlan.wholeTextStyle, null);
   assert.strictEqual(listStylePlan.styleMap.length, "Заголовок…".length);
   assert(listStylePlan.styleMap.every((styleIndex) => styleIndex === 0));
+  assert.strictEqual(listStylePlan.verifyUniformLinkedStyle, true);
+
+  const mixedStylePlan = createStyleRestorationPlan("Заголовок", "Заголовок…", [
+    {
+      ...wholeStyle,
+      characters: "Заг",
+      end: 3,
+    },
+    {
+      ...wholeStyle,
+      characters: "оловок",
+      end: 9,
+      start: 3,
+    },
+  ]);
+
+  assert.strictEqual(mixedStylePlan.verifyUniformLinkedStyle, false);
 
   const calls = [];
   const textNode = {
     characters: "Заголовок",
+    getRangeFillStyleId: () => "",
+    getRangeTextStyleId: () => "heading-style-id",
     id: "node-id",
     setRangeTextDecoration: (start, end, value) => calls.push(["textDecoration", start, end, value]),
     setFillStyleIdAsync: async (value) => calls.push(["nodeFillStyleId", value]),
@@ -888,6 +1005,36 @@ async function runWholeTextStyleRestorationTests() {
   await restoreWholeTextStyle(textNode, wholeStyle);
 
   assert.deepStrictEqual(calls, [["nodeTextStyleId", "heading-style-id"]]);
+
+  calls.length = 0;
+
+  await restoreWholeTextStyle(textNode, wholeStyle, true);
+
+  assert.deepStrictEqual(calls, []);
+
+  calls.length = 0;
+
+  const linkedFillStyle = {
+    ...wholeStyle,
+    fillStyleId: "heading-fill-style-id",
+  };
+  textNode.getRangeFillStyleId = () => "heading-fill-style-id";
+
+  await restoreWholeTextStyle(textNode, linkedFillStyle, true);
+
+  assert.deepStrictEqual(calls, []);
+
+  calls.length = 0;
+
+  textNode.getRangeFillStyleId = () => "";
+  textNode.getRangeTextStyleId = () => "";
+
+  await restoreWholeTextStyle(textNode, linkedFillStyle, true);
+
+  assert.deepStrictEqual(calls, [
+    ["nodeTextStyleId", "heading-style-id"],
+    ["nodeFillStyleId", "heading-fill-style-id"],
+  ]);
 
   calls.length = 0;
 
@@ -1136,7 +1283,7 @@ function runDevelopmentMarkerPluginDataTests() {
 function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId = "shared-container") {
   const font = { family: "Inter", style: "Regular" };
 
-  return {
+  const node = {
     absoluteBoundingBox,
     characters,
     fillStyleId: "",
@@ -1147,8 +1294,8 @@ function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId
     getStyledTextSegments: () => [
       {
         boundVariables: undefined,
-        characters,
-        end: characters.length,
+        characters: node.characters,
+        end: node.characters.length,
         fillStyleId: "",
         fills: [],
         fontName: font,
@@ -1179,6 +1326,185 @@ function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId
     setTextStyleIdAsync: async () => {},
     textStyleId: "",
   };
+
+  return node;
+}
+
+async function runPreservedLibraryStyleOptimizationTests() {
+  const node = createProcessTextNodeMock("preserved-library-style-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalTextStyle = node.getStyledTextSegments()[0];
+  let redundantStyleRestorations = 0;
+
+  context.figma.loadFontAsync = async () => {};
+  node.getRangeTextStyleId = () => "phone-style-id";
+  node.getStyledTextSegments = () => [
+    {
+      ...originalTextStyle,
+      characters: node.characters,
+      end: node.characters.length,
+    },
+  ];
+  node.setTextStyleIdAsync = async () => {
+    redundantStyleRestorations += 1;
+  };
+
+  const result = await processTextNodes([node], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(result, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, "Текст…");
+  assert.strictEqual(redundantStyleRestorations, 0);
+  assert.strictEqual(result.requiresStyleWarning, false);
+
+  const fillLinkedNode = createProcessTextNodeMock("preserved-library-fill-style-node", "Заливка...", { height: 20, width: 100, x: 0, y: 30 });
+  const originalStyle = fillLinkedNode.getStyledTextSegments()[0];
+  let redundantFillStyleRestorations = 0;
+
+  fillLinkedNode.fillStyleId = "library-fill-style-id";
+  fillLinkedNode.textStyleId = "";
+  fillLinkedNode.getRangeFillStyleId = () => "library-fill-style-id";
+  fillLinkedNode.getRangeTextStyleId = () => "";
+  fillLinkedNode.getStyledTextSegments = () => [
+    {
+      ...originalStyle,
+      characters: fillLinkedNode.characters,
+      end: fillLinkedNode.characters.length,
+      fillStyleId: "library-fill-style-id",
+      textStyleId: "",
+    },
+  ];
+  fillLinkedNode.setRangeFills = () => {};
+  fillLinkedNode.setRangeFillStyleIdAsync = async () => {
+    redundantFillStyleRestorations += 1;
+  };
+  fillLinkedNode.setRangeFontName = () => {};
+  fillLinkedNode.setRangeFontSize = () => {};
+  fillLinkedNode.setRangeHyperlink = () => {};
+  fillLinkedNode.setRangeIndentation = () => {};
+  fillLinkedNode.setRangeLetterSpacing = () => {};
+  fillLinkedNode.setRangeLineHeight = () => {};
+  fillLinkedNode.setRangeListOptions = () => {};
+  fillLinkedNode.setRangeParagraphIndent = () => {};
+  fillLinkedNode.setRangeParagraphSpacing = () => {};
+  fillLinkedNode.setRangeTextCase = () => {};
+  fillLinkedNode.setRangeTextDecoration = () => {};
+
+  const fillLinkedResult = await processTextNodes([fillLinkedNode], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(fillLinkedResult, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(fillLinkedNode.characters, "Заливка…");
+  assert.strictEqual(redundantFillStyleRestorations, 0);
+  assert.strictEqual(fillLinkedResult.requiresStyleWarning, false);
+}
+
+async function runLibraryStyleVerificationRollbackTests() {
+  const node = createProcessTextNodeMock("library-style-verification-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalText = node.characters;
+  const originalGetStyledTextSegments = node.getStyledTextSegments;
+  const originalConsole = context.console;
+  let rollbackStyleRestorations = 0;
+
+  context.figma.loadFontAsync = async () => {};
+  node.getRangeTextStyleId = () => "phone-style-id";
+  node.getStyledTextSegments = () => {
+    const originalStyle = originalGetStyledTextSegments()[0];
+
+    return [
+      {
+        ...originalStyle,
+        characters: node.characters,
+        end: node.characters.length,
+        fontSize: node.characters === originalText ? 16 : 18,
+      },
+    ];
+  };
+  node.setTextStyleIdAsync = async () => {
+    rollbackStyleRestorations += 1;
+  };
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, originalText);
+  assert.strictEqual(rollbackStyleRestorations, 1);
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(result.requiresStyleWarning, false);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+}
+
+async function runDetectedRollbackDamageTests() {
+  const node = createProcessTextNodeMock("detected-rollback-damage-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalGetStyledTextSegments = node.getStyledTextSegments;
+  const originalConsole = context.console;
+  let styleCaptureCalls = 0;
+
+  context.figma.loadFontAsync = async () => {};
+  node.getRangeTextStyleId = () => "phone-style-id";
+  node.getStyledTextSegments = () => {
+    styleCaptureCalls += 1;
+    const originalStyle = originalGetStyledTextSegments()[0];
+
+    return [
+      {
+        ...originalStyle,
+        fontSize: styleCaptureCalls === 1 ? 16 : 18,
+      },
+    ];
+  };
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(result.failedStage, "rollback_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
+  assert.strictEqual(result.requiresStyleWarning, true);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
 }
 
 async function runStandalonePhoneCountryPrefixContextTests() {
@@ -1481,6 +1807,154 @@ async function runIntegratedMixedStyleProcessingTests() {
   assert(calls.indexOf(boundVariableCall) > calls.indexOf(textStyleCalls[0]));
 }
 
+async function runNotificationLifecycleTests() {
+  const notifications = [];
+  const closePluginCalls = [];
+
+  context.figma.closePlugin = (message) => {
+    closePluginCalls.push(message);
+  };
+  context.figma.notify = (message, options) => {
+    const notification = {
+      cancelCalls: 0,
+      handler: {
+        cancel() {
+          notification.cancelCalls += 1;
+        },
+      },
+      message,
+      options,
+    };
+
+    notifications.push(notification);
+    return notification.handler;
+  };
+
+  presentRunOutcome({ error: false, message: "Теперь всё чисто 🔥🔥🔥" }, "settings", true);
+  assert.strictEqual(notifications.length, 1);
+  assert.strictEqual(notifications[0].message, "Теперь всё чисто 🔥🔥🔥");
+  assert.strictEqual(notifications[0].options.error, false);
+  assert.strictEqual(notifications[0].options.timeout, 4000);
+  assert.strictEqual(closePluginCalls.length, 0, "The settings window must stay open after a final notification");
+
+  notifications.length = 0;
+  presentRunOutcome({ error: true, message: "Ой, не получилось почистить 🛑" }, "settings", true);
+  assert.strictEqual(notifications.length, 1);
+  assert.strictEqual(notifications[0].options.error, true);
+  assert.strictEqual(closePluginCalls.length, 0, "The settings window must stay open after an error");
+
+  notifications.length = 0;
+  presentRunOutcome({ error: false, message: "Теперь всё чисто 🔥🔥🔥" }, "quick_run", true);
+  assert.strictEqual(notifications.length, 1);
+  assert.strictEqual(closePluginCalls.length, 0, "Quick run must not close before the final notification leaves the queue");
+  assert.strictEqual(typeof notifications[0].options.onDequeue, "function");
+  notifications[0].options.onDequeue("timeout");
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepStrictEqual(closePluginCalls, [undefined]);
+
+  notifications.length = 0;
+  closePluginCalls.length = 0;
+  presentRunOutcome({ error: true, message: "Ой, не получилось почистить 🛑" }, "quick_run", false);
+  assert.strictEqual(notifications.length, 0);
+  assert.deepStrictEqual(closePluginCalls, ["Ой, не получилось почистить 🛑"]);
+
+  notifications.length = 0;
+  closePluginCalls.length = 0;
+  context.figma.notify = () => {
+    throw new Error("Notification API failed");
+  };
+  const originalConsole = context.console;
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  try {
+    presentRunOutcome({ error: true, message: "Ой, не получилось почистить 🛑" }, "quick_run", true);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assert.deepStrictEqual(closePluginCalls, ["Ой, не получилось почистить 🛑"]);
+
+  notifications.length = 0;
+  closePluginCalls.length = 0;
+  let releasePageLoad;
+  const pageLoad = new Promise((resolve) => {
+    releasePageLoad = resolve;
+  });
+
+  context.figma.clientStorage = {
+    getAsync: async () => null,
+    setAsync: async () => {},
+  };
+  context.figma.currentPage = {
+    findAllWithCriteria: () => [],
+    loadAsync: () => pageLoad,
+    selection: [],
+  };
+  context.figma.notify = (message, options) => {
+    const notification = {
+      cancelCalls: 0,
+      handler: {
+        cancel() {
+          notification.cancelCalls += 1;
+        },
+      },
+      message,
+      options,
+    };
+
+    notifications.push(notification);
+    return notification.handler;
+  };
+
+  const firstRun = runTypograph(beautyOptions, "quick_run");
+  const repeatedRun = runTypograph(beautyOptions, "quick_run");
+
+  assert.strictEqual(firstRun, repeatedRun, "A repeated signal must join the current run");
+  assert.strictEqual(notifications.length, 1, "A repeated signal must not create a second progress notification");
+
+  releasePageLoad();
+  await firstRun;
+
+  assert.strictEqual(notifications.length, 2);
+  assert.strictEqual(notifications[0].message, "Чистовик работает...");
+  assert.strictEqual(notifications[0].cancelCalls, 1);
+  assert.strictEqual(notifications[1].message, "Всё уже было чисто 👌");
+  assert.strictEqual(closePluginCalls.length, 0, "The plugin must wait until the final notification is visible");
+
+  notifications[1].options.onDequeue("timeout");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepStrictEqual(closePluginCalls, [undefined]);
+
+  notifications.length = 0;
+  closePluginCalls.length = 0;
+  const uiMessages = [];
+  context.figma.currentPage = {
+    findAllWithCriteria: () => [],
+    loadAsync: async () => {},
+    selection: [],
+  };
+  context.figma.ui = {
+    postMessage: (message) => {
+      uiMessages.push(message);
+    },
+  };
+
+  await runTypograph(beautyOptions, "settings");
+
+  assert.strictEqual(notifications.length, 2);
+  assert.strictEqual(notifications[0].message, "Чистовик работает...");
+  assert.strictEqual(notifications[0].cancelCalls, 1);
+  assert.strictEqual(notifications[1].message, "Всё уже было чисто 👌");
+  assert.strictEqual(notifications[1].options.error, false);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(notifications[1].options, "onDequeue"), false);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(uiMessages)), [{ type: "typograph-run-finished" }]);
+  assert.strictEqual(closePluginCalls.length, 0, "The settings window must remain open when its spinner stops");
+}
+
 runStyleCaptureTests();
 runRepeatedTextStyleMappingTests();
 runLongTextStyleMappingTests();
@@ -1493,6 +1967,9 @@ runStyleRestorationTests()
   .then(runFontLoadingCacheTests)
   .then(runWhitespaceOnlyTextNodeTests)
   .then(runUnchangedTextNodeTests)
+  .then(runPreservedLibraryStyleOptimizationTests)
+  .then(runLibraryStyleVerificationRollbackTests)
+  .then(runDetectedRollbackDamageTests)
   .then(runStandalonePhoneCountryPrefixContextTests)
   .then(runProcessingFailureAnalyticsTests)
   .then(runStyleRestorationRollbackTests)
@@ -1500,6 +1977,7 @@ runStyleRestorationTests()
   .then(runPrioritizedRollbackFailureTests)
   .then(runLibraryInstanceSafetyContractTests)
   .then(runIntegratedMixedStyleProcessingTests)
+  .then(runNotificationLifecycleTests)
   .then(() => {
     console.log("cleanTypography tests passed");
   })

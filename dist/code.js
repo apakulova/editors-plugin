@@ -23,6 +23,8 @@ const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
 const ANALYTICS_MAX_QUEUED_EVENTS = 100;
+const FINAL_NOTIFICATION_CLOSE_FALLBACK_MS = 6000;
+const FINAL_NOTIFICATION_TIMEOUT_MS = 4000;
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
@@ -53,12 +55,10 @@ const STYLE_FIELDS = [
 const pendingAnalyticsEvents = [];
 let analyticsIdentityPromise = null;
 let analyticsQueueOperation = Promise.resolve();
-let typographRunInProgress = false;
+let typographRunPromise = null;
 async function run() {
-    let shouldClosePlugin = true;
     try {
         if (figma.command === COMMAND_OPEN_SETTINGS) {
-            shouldClosePlugin = false;
             openSettingsUI();
             return;
         }
@@ -66,13 +66,10 @@ async function run() {
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean typography", error);
-        figma.notify(getFailureNotificationMessage(error), { error: true, timeout: 4000 });
-    }
-    finally {
-        if (shouldClosePlugin) {
-            await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
-            figma.closePlugin();
-        }
+        presentRunOutcome({
+            error: true,
+            message: getFailureNotificationMessage(error),
+        }, "quick_run", true);
     }
 }
 function openSettingsUI() {
@@ -102,7 +99,11 @@ function openSettingsUI() {
             }
             catch (error) {
                 console.error("[Чистовик] Failed to handle UI message", error);
-                figma.notify(getFailureNotificationMessage(error), { error: true, timeout: 4000 });
+                presentRunOutcome({
+                    error: true,
+                    message: getFailureNotificationMessage(error),
+                }, "settings", true);
+                postTypographRunFinished();
             }
         };
     }
@@ -111,18 +112,36 @@ function openSettingsUI() {
         throw error;
     }
 }
-async function runTypograph(options, source) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
-    if (typographRunInProgress) {
-        return;
+function runTypograph(options, source) {
+    if (typographRunPromise !== null) {
+        return typographRunPromise;
     }
+    const currentRunPromise = executeTypographRun(options, source);
+    typographRunPromise = currentRunPromise;
+    void currentRunPromise.then(() => {
+        if (typographRunPromise === currentRunPromise) {
+            typographRunPromise = null;
+        }
+    }, () => {
+        if (typographRunPromise === currentRunPromise) {
+            typographRunPromise = null;
+        }
+    });
+    return currentRunPromise;
+}
+async function executeTypographRun(options, source) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const analyticsContext = createAnalyticsRunContext(options, source);
-    typographRunInProgress = true;
     let analyticsStage = "unknown";
     let collectTextDuration = 0;
     let collection = null;
     let result = null;
     let workingNotification = null;
+    let outcome = {
+        error: true,
+        message: "Ой, не получилось почистить 🛑",
+    };
+    let workingNotificationCancelled = true;
     try {
         workingNotification = figma.notify("Чистовик работает...", { timeout: Infinity });
         queueAnalyticsEvent("plugin_run_started", getRunAnalyticsProperties(analyticsContext));
@@ -139,47 +158,123 @@ async function runTypograph(options, source) {
         if (result.failed > 0) {
             analyticsStage = (_a = result.failedStage) !== null && _a !== void 0 ? _a : "unknown";
             const processingError = new Error(`Failed to process ${result.failed} text node(s)`);
-            if (((_b = result.failureDiagnostic) === null || _b === void 0 ? void 0 : _b.category) === "rollback_failed") {
+            if (((_b = result.failureDiagnostic) === null || _b === void 0 ? void 0 : _b.category) === "rollback_failed" || result.requiresStyleWarning) {
                 processingError.name = "RollbackFailureError";
             }
             throw processingError;
         }
-        cancelNotificationSafely(workingNotification);
-        workingNotification = null;
-        notifyCleanResult(result);
+        outcome = {
+            error: false,
+            message: getCleanResultNotificationMessage(result),
+        };
         queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_layers_count: result.changed, characters_changed_total: result.analytics.charactersChangedTotal, characters_processed_total: result.analytics.charactersProcessedTotal, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_layers_count: result.failed, found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked, largest_text_layer_characters: result.analytics.largestTextLayerCharacters, processed_text_layers_count: result.processed, rollback_attempted_layers_count: result.analytics.rollbackAttemptedLayersCount, rollback_failed_layers_count: result.analytics.rollbackFailedLayersCount, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked, slowest_text_layer_ms: result.analytics.slowestTextLayerMs, changed_style_segments_count: result.analytics.styleSegmentsCount, timing_collect_text_ms: collectTextDuration }), getTextProcessTimingAnalyticsProperties(result.analytics.timings)), { timing_other_ms: getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: result.analytics.uniqueFontsCount }));
     }
     catch (error) {
         console.error("[Чистовик] Failed to run typograph", error);
         const errorDiagnostic = (_c = result === null || result === void 0 ? void 0 : result.failureDiagnostic) !== null && _c !== void 0 ? _c : createAnalyticsErrorDiagnostic(error, analyticsStage);
         queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_d = result === null || result === void 0 ? void 0 : result.failed) !== null && _d !== void 0 ? _d : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _e !== void 0 ? _e : null, characters_processed_total: (_f = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _f !== void 0 ? _f : null, largest_text_layer_characters: (_g = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _g !== void 0 ? _g : null, processed_text_layers_count: (_h = result === null || result === void 0 ? void 0 : result.processed) !== null && _h !== void 0 ? _h : null, rollback_attempted_layers_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.rollbackAttemptedLayersCount) !== null && _j !== void 0 ? _j : null, rollback_failed_layers_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.rollbackFailedLayersCount) !== null && _k !== void 0 ? _k : null, slowest_text_layer_ms: (_l = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _l !== void 0 ? _l : null, stage: analyticsStage, changed_style_segments_count: (_m = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _m !== void 0 ? _m : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_o = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _o !== void 0 ? _o : null }));
-        throw error;
+        outcome = {
+            error: true,
+            message: getFailureNotificationMessage(error),
+        };
     }
     finally {
-        cancelNotificationSafely(workingNotification);
-        typographRunInProgress = false;
+        workingNotificationCancelled = cancelNotificationSafely(workingNotification);
         if (source === "settings") {
-            try {
-                figma.ui.postMessage({ type: "typograph-run-finished" });
-            }
-            catch (error) {
-                console.error("[Чистовик] Failed to reset typograph UI state", error);
-            }
+            postTypographRunFinished();
         }
+    }
+    presentRunOutcome(outcome, source, workingNotificationCancelled);
+}
+function postTypographRunFinished() {
+    try {
+        figma.ui.postMessage({ type: "typograph-run-finished" });
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to reset typograph UI state", error);
     }
 }
 function cancelNotificationSafely(notification) {
     try {
         notification === null || notification === void 0 ? void 0 : notification.cancel();
+        return true;
     }
     catch (error) {
         console.error("[Чистовик] Failed to cancel notification", error);
+        return false;
+    }
+}
+function presentRunOutcome(outcome, source, workingNotificationCancelled) {
+    if (source === "settings") {
+        try {
+            figma.notify(outcome.message, {
+                error: outcome.error,
+                timeout: FINAL_NOTIFICATION_TIMEOUT_MS,
+            });
+        }
+        catch (error) {
+            console.error("[Чистовик] Failed to show final settings notification", error);
+        }
+        return;
+    }
+    if (!workingNotificationCancelled) {
+        closePluginWithMessageSafely(outcome.message);
+        return;
+    }
+    let notificationFinished = false;
+    let closeFallback = null;
+    const finishQuickRun = () => {
+        if (notificationFinished) {
+            return;
+        }
+        notificationFinished = true;
+        if (closeFallback !== null) {
+            clearTimeout(closeFallback);
+        }
+        void closeQuickPluginAfterAnalyticsGrace();
+    };
+    try {
+        figma.notify(outcome.message, {
+            error: outcome.error,
+            onDequeue: finishQuickRun,
+            timeout: FINAL_NOTIFICATION_TIMEOUT_MS,
+        });
+        if (!notificationFinished) {
+            closeFallback = setTimeout(() => {
+                if (notificationFinished) {
+                    return;
+                }
+                notificationFinished = true;
+                closePluginWithMessageSafely(outcome.message);
+            }, FINAL_NOTIFICATION_CLOSE_FALLBACK_MS);
+        }
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to show final quick-run notification", error);
+        closePluginWithMessageSafely(outcome.message);
+    }
+}
+async function closeQuickPluginAfterAnalyticsGrace() {
+    try {
+        await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
+        figma.closePlugin();
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to close quick-run plugin", error);
+    }
+}
+function closePluginWithMessageSafely(message) {
+    try {
+        figma.closePlugin(message);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to close plugin with final message", error);
     }
 }
 function getFailureNotificationMessage(error) {
     try {
         if (getErrorName(error) === "RollbackFailureError") {
-            return "Не удалось вернуть оформление. Проверьте текстовый слой 🛑";
+            return "Плагин случайно сломал какие-то стили — проверьте текстовые слои 🛑";
         }
     }
     catch (_a) {
@@ -695,27 +790,22 @@ function getRunOptionsFromMessage(message) {
         throw error;
     }
 }
-function notifyCleanResult(result) {
+function getCleanResultNotificationMessage(result) {
     try {
         if (result.skippedLocked > 0 || result.skippedHidden > 0) {
             const skippedLabel = getSkippedLayerLabel(result);
             if (result.changed > 0) {
-                figma.notify(`${skippedLabel} не тронуты, в остальном — теперь всё чисто 🔥🔥🔥`, { timeout: 4000 });
+                return `${skippedLabel} не тронуты, в остальном — теперь всё чисто 🔥🔥🔥`;
             }
-            else {
-                figma.notify(`${skippedLabel} не тронуты, а остальное уже было чисто 👌`, { timeout: 4000 });
-            }
-            return;
+            return `${skippedLabel} не тронуты, а остальное уже было чисто 👌`;
         }
         if (result.changed > 0) {
-            figma.notify("Теперь всё чисто 🔥🔥🔥", { timeout: 4000 });
+            return "Теперь всё чисто 🔥🔥🔥";
         }
-        else {
-            figma.notify("Всё уже было чисто 👌", { timeout: 4000 });
-        }
+        return "Всё уже было чисто 👌";
     }
     catch (error) {
-        console.error("[Чистовик] Failed to notify result", error);
+        console.error("[Чистовик] Failed to prepare result notification", error);
         throw error;
     }
 }
@@ -885,6 +975,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         let failed = 0;
         let failureDiagnostic = null;
         let failedStage = null;
+        let requiresStyleWarning = false;
         const timings = createEmptyTextProcessTimings();
         let charactersChangedTotal = 0;
         let charactersProcessedTotal = 0;
@@ -946,17 +1037,20 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         textNode.characters = newText;
                     });
                     currentStage = "restore_styles";
-                    const { styleMap, wholeTextStyle } = styleComparison;
+                    const { styleMap, verifyUniformLinkedStyle, wholeTextStyle } = styleComparison;
                     try {
                         if (wholeTextStyle !== null) {
                             await measureAsyncDuration((duration) => {
                                 timings.restoreStyles += duration;
-                            }, () => restoreWholeTextStyle(textNode, wholeTextStyle));
+                            }, () => restoreWholeTextStyle(textNode, wholeTextStyle, verifyUniformLinkedStyle));
                         }
                         else {
                             await measureAsyncDuration((duration) => {
                                 timings.restoreStyles += duration;
-                            }, () => restoreTextStyles(textNode, styleMap, styles));
+                            }, () => restoreTextStyles(textNode, styleMap, styles, verifyUniformLinkedStyle));
+                        }
+                        if (verifyUniformLinkedStyle && !verifyUniformStylePreservation(textNode, styles[0])) {
+                            throw new Error("Linked style verification failed");
                         }
                     }
                     catch (error) {
@@ -967,6 +1061,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         }, () => restoreOriginalTextAfterStyleFailure(textNode, oldText, styles));
                         if (!rollbackSucceeded) {
                             rollbackFailedLayersCount += 1;
+                            requiresStyleWarning = true;
                             shouldStopProcessing = true;
                             throw new Error("Failed to restore original text layer state");
                         }
@@ -1024,6 +1119,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             failed,
             failureDiagnostic,
             failedStage,
+            requiresStyleWarning,
             skippedHidden,
             skippedLocked,
             analytics: {
@@ -1050,13 +1146,36 @@ async function restoreOriginalTextAfterStyleFailure(textNode, oldText, styles) {
         const wholeTextStyle = getWholeTextStyle(styles, oldText);
         if (wholeTextStyle !== null) {
             await restoreWholeTextStyle(textNode, wholeTextStyle);
-            return true;
         }
-        await restoreTextStyles(textNode, buildStyleMap(oldText, oldText, styles), styles);
-        return true;
+        else {
+            await restoreTextStyles(textNode, buildStyleMap(oldText, oldText, styles), styles);
+        }
+        return verifyRestoredOriginalTextState(textNode, oldText, styles);
     }
     catch (rollbackError) {
         console.error(`[Чистовик] Failed to restore original text after style restoration failure for text node ${textNode.id}`, rollbackError);
+        return false;
+    }
+}
+function verifyRestoredOriginalTextState(textNode, oldText, originalStyles) {
+    try {
+        if (textNode.characters !== oldText) {
+            return false;
+        }
+        const restoredStyles = captureTextStyles(textNode);
+        if (restoredStyles.length !== originalStyles.length) {
+            return false;
+        }
+        return originalStyles.every((originalStyle, index) => {
+            const restoredStyle = restoredStyles[index];
+            if (restoredStyle.start !== originalStyle.start || restoredStyle.end !== originalStyle.end) {
+                return false;
+            }
+            return STYLE_FIELDS.every((field) => areStyleValuesEqual(restoredStyle[field], originalStyle[field]));
+        });
+    }
+    catch (verificationError) {
+        console.error(`[Чистовик] Failed to verify original text layer state for text node ${textNode.id}`, verificationError);
         return false;
     }
 }
@@ -1271,10 +1390,14 @@ function hasBoundStyleVariables(style) {
         return true;
     }
 }
-async function restoreWholeTextStyle(textNode, style) {
+async function restoreWholeTextStyle(textNode, style, skipUnchangedLinkedStyleIds = false) {
     try {
-        await textNode.setTextStyleIdAsync(style.textStyleId);
-        if (style.fillStyleId !== "") {
+        const rangeEnd = textNode.characters.length;
+        if (!skipUnchangedLinkedStyleIds || textNode.getRangeTextStyleId(0, rangeEnd) !== style.textStyleId) {
+            await textNode.setTextStyleIdAsync(style.textStyleId);
+        }
+        if (style.fillStyleId !== "" &&
+            (!skipUnchangedLinkedStyleIds || textNode.getRangeFillStyleId(0, rangeEnd) !== style.fillStyleId)) {
             await textNode.setFillStyleIdAsync(style.fillStyleId);
         }
         if (hasTextDecoration(style)) {
@@ -1292,27 +1415,86 @@ function hasTextDecoration(style) {
 function createStyleRestorationPlan(oldText, newText, styles) {
     try {
         const wholeTextStyle = getWholeTextStyle(styles, oldText);
+        const verifyUniformLinkedStyle = canVerifyUniformLinkedStyle(oldText, styles);
         if (wholeTextStyle !== null) {
             return {
                 styleMap: [],
                 wholeTextStyle,
+                verifyUniformLinkedStyle,
             };
         }
         if (styles.length === 1) {
             return {
                 styleMap: new Array(newText.length).fill(0),
                 wholeTextStyle: null,
+                verifyUniformLinkedStyle,
             };
         }
         return {
             styleMap: buildStyleMap(oldText, newText, styles),
             wholeTextStyle: null,
+            verifyUniformLinkedStyle: false,
         };
     }
     catch (error) {
         console.error("[Чистовик] Failed to create style restoration plan", error);
         throw error;
     }
+}
+function canVerifyUniformLinkedStyle(oldText, styles) {
+    try {
+        if (styles.length !== 1) {
+            return false;
+        }
+        const style = styles[0];
+        const coversWholeText = style.start === 0 && style.end === oldText.length;
+        const hasLibraryLink = style.textStyleId !== "" || style.fillStyleId !== "";
+        return coversWholeText && hasLibraryLink;
+    }
+    catch (_a) {
+        return false;
+    }
+}
+function verifyUniformStylePreservation(textNode, originalStyle) {
+    try {
+        const currentStyles = captureTextStyles(textNode);
+        if (currentStyles.length !== 1) {
+            return false;
+        }
+        const currentStyle = currentStyles[0];
+        if (currentStyle.start !== 0 || currentStyle.end !== textNode.characters.length) {
+            return false;
+        }
+        if ((originalStyle.textStyleId !== "" && currentStyle.textStyleId !== originalStyle.textStyleId) ||
+            (originalStyle.fillStyleId !== "" && currentStyle.fillStyleId !== originalStyle.fillStyleId)) {
+            return false;
+        }
+        return STYLE_FIELDS.every((field) => areStyleValuesEqual(currentStyle[field], originalStyle[field]));
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to verify style preservation for text node ${textNode.id}`, error);
+        return false;
+    }
+}
+function areStyleValuesEqual(left, right) {
+    if (Object.is(left, right)) {
+        return true;
+    }
+    if (Array.isArray(left) || Array.isArray(right)) {
+        return (Array.isArray(left) &&
+            Array.isArray(right) &&
+            left.length === right.length &&
+            left.every((value, index) => areStyleValuesEqual(value, right[index])));
+    }
+    if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) {
+        return false;
+    }
+    const leftRecord = left;
+    const rightRecord = right;
+    const leftKeys = Object.keys(leftRecord).sort();
+    const rightKeys = Object.keys(rightRecord).sort();
+    return (leftKeys.length === rightKeys.length &&
+        leftKeys.every((key, index) => key === rightKeys[index] && areStyleValuesEqual(leftRecord[key], rightRecord[key])));
 }
 function buildStyleMap(oldText, newText, styles) {
     try {
@@ -1412,7 +1594,7 @@ function buildGreedyOldIndexMap(oldText, newText) {
         throw error;
     }
 }
-async function restoreTextStyles(textNode, styleMap, styles) {
+async function restoreTextStyles(textNode, styleMap, styles, skipUnchangedLinkedStyleIds = false) {
     var _a, _b;
     try {
         if (textNode.characters.length === 0 || styles.length === 0 || styleMap.length === 0) {
@@ -1426,7 +1608,7 @@ async function restoreTextStyles(textNode, styleMap, styles) {
             if (nextStyleIndex === currentStyleIndex && index < styleMap.length) {
                 continue;
             }
-            await applyStyleSegment(textNode, start, index, styles[currentStyleIndex], variableCache);
+            await applyStyleSegment(textNode, start, index, styles[currentStyleIndex], variableCache, skipUnchangedLinkedStyleIds);
             start = index;
             currentStyleIndex = nextStyleIndex;
         }
@@ -1436,7 +1618,7 @@ async function restoreTextStyles(textNode, styleMap, styles) {
         throw error;
     }
 }
-async function applyStyleSegment(textNode, start, end, style, variableCache) {
+async function applyStyleSegment(textNode, start, end, style, variableCache, skipUnchangedLinkedStyleIds) {
     try {
         if (start >= end) {
             return;
@@ -1450,7 +1632,7 @@ async function applyStyleSegment(textNode, start, end, style, variableCache) {
         textNode.setRangeIndentation(start, end, style.indentation);
         textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
         textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
-        await restoreStyleIds(textNode, start, end, style);
+        await restoreStyleIds(textNode, start, end, style, skipUnchangedLinkedStyleIds);
         await restoreBoundVariables(textNode, start, end, style, variableCache);
         restoreOverriddenStyleProperties(textNode, start, end, style);
     }
@@ -1488,12 +1670,14 @@ function restoreDetachedFillProperties(textNode, start, end, style) {
         throw error;
     }
 }
-async function restoreStyleIds(textNode, start, end, style) {
+async function restoreStyleIds(textNode, start, end, style, skipUnchangedLinkedStyleIds) {
     try {
-        if (style.textStyleId !== "") {
+        if (style.textStyleId !== "" &&
+            (!skipUnchangedLinkedStyleIds || textNode.getRangeTextStyleId(start, end) !== style.textStyleId)) {
             await textNode.setRangeTextStyleIdAsync(start, end, style.textStyleId);
         }
-        if (style.fillStyleId !== "") {
+        if (style.fillStyleId !== "" &&
+            (!skipUnchangedLinkedStyleIds || textNode.getRangeFillStyleId(start, end) !== style.fillStyleId)) {
             await textNode.setRangeFillStyleIdAsync(start, end, style.fillStyleId);
         }
     }
@@ -2559,7 +2743,8 @@ function formatPhoneNumbers(input) {
 }
 function formatNumbersAndMoney(input) {
     try {
-        let text = normalizeWesternGroupedNumbers(input);
+        let text = normalizeDottedNumberingSeparators(input);
+        text = normalizeWesternGroupedNumbers(text);
         text = text.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart, decimalPart, offset, fullText) => {
             try {
                 if (isProtectedDottedNumber(fullText, offset, offset + match.length)) {
@@ -2592,6 +2777,26 @@ function formatNumbersAndMoney(input) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to format numbers and money", error);
+        throw error;
+    }
+}
+function normalizeDottedNumberingSeparators(input) {
+    try {
+        return input.replace(/\b\d+(?:,\d+)+\b/g, (match, offset, fullText) => {
+            try {
+                if (!isDottedNumbering(fullText, offset, offset + match.length)) {
+                    return match;
+                }
+                return match.replace(/,/g, ".");
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to restore dotted numbering separator", error);
+                return match;
+            }
+        });
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to restore dotted numbering separators", error);
         throw error;
     }
 }
@@ -2641,7 +2846,9 @@ function normalizeGroupedNumberSpaces(input) {
 }
 function isProtectedDottedNumber(fullText, start, end) {
     try {
-        if (isNumberPartOfCodeToken(fullText, start, end) || isNumberPartOfDate(fullText, start, end)) {
+        if (isNumberPartOfCodeToken(fullText, start, end) ||
+            isNumberPartOfDate(fullText, start, end) ||
+            isDottedNumbering(fullText, start, end)) {
             return true;
         }
         let tokenStart = start;
@@ -2658,6 +2865,28 @@ function isProtectedDottedNumber(fullText, start, end) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to check dotted number exception", error);
+        throw error;
+    }
+}
+function isDottedNumbering(fullText, start, end) {
+    try {
+        const textBeforeNumber = fullText.slice(0, start);
+        const documentNumberingContext = /(?:^|[^A-Za-zА-Яа-яЁё])(?:раздел|подраздел|глава|пункт|подпункт|статья|часть|гл\.?|п\.?|ст\.?|ч\.?|§|№)[ \t\u00A0]*$/i;
+        if (documentNumberingContext.test(textBeforeNumber)) {
+            return !isFollowedByDecimalUnitOrCurrency(fullText, end);
+        }
+        const lineStart = Math.max(fullText.lastIndexOf("\n", start - 1), fullText.lastIndexOf("\r", start - 1)) + 1;
+        const textBeforeNumberOnLine = fullText.slice(lineStart, start);
+        const textAfterNumber = fullText.slice(end);
+        const startsLine = /^[ \t\u00A0]*$/.test(textBeforeNumberOnLine);
+        const followedByHeading = /^[ \t\u00A0]+[А-ЯЁA-Z]/.test(textAfterNumber);
+        if (!startsLine || !followedByHeading) {
+            return false;
+        }
+        return !isFollowedByDecimalUnitOrCurrency(fullText, end);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check dotted numbering", error);
         throw error;
     }
 }

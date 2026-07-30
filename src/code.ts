@@ -22,6 +22,8 @@ const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
 const ANALYTICS_MAX_QUEUED_EVENTS = 100;
+const FINAL_NOTIFICATION_CLOSE_FALLBACK_MS = 6000;
+const FINAL_NOTIFICATION_TIMEOUT_MS = 4000;
 const LETTERS = "A-Za-zА-Яа-яЁё";
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
@@ -117,6 +119,11 @@ interface PluginUIMessage {
   type?: string;
 }
 
+interface PluginRunOutcome {
+  error: boolean;
+  message: string;
+}
+
 interface AnalyticsIdentity {
   anonymousId: string;
   distinctId: string;
@@ -164,6 +171,7 @@ interface TextProcessResult {
   failed: number;
   failureDiagnostic: AnalyticsErrorDiagnostic | null;
   failedStage: AnalyticsErrorStage | null;
+  requiresStyleWarning: boolean;
   skippedHidden: number;
   skippedLocked: number;
   analytics: TextProcessAnalytics;
@@ -208,6 +216,7 @@ interface TextProcessAnalytics {
 interface StyleRestorationPlan {
   styleMap: number[];
   wholeTextStyle: StyleSegment | null;
+  verifyUniformLinkedStyle: boolean;
 }
 
 interface TypographyCleanResult {
@@ -243,14 +252,11 @@ type StyleSegment = Pick<StyledTextSegment, PreservedStyleField | "characters" |
 const pendingAnalyticsEvents: Promise<void>[] = [];
 let analyticsIdentityPromise: Promise<AnalyticsIdentity> | null = null;
 let analyticsQueueOperation: Promise<void> = Promise.resolve();
-let typographRunInProgress = false;
+let typographRunPromise: Promise<void> | null = null;
 
 async function run(): Promise<void> {
-  let shouldClosePlugin = true;
-
   try {
     if (figma.command === COMMAND_OPEN_SETTINGS) {
-      shouldClosePlugin = false;
       openSettingsUI();
       return;
     }
@@ -258,12 +264,14 @@ async function run(): Promise<void> {
     await runTypograph(getDefaultRunOptions(), "quick_run");
   } catch (error) {
     console.error("[Чистовик] Failed to clean typography", error);
-    figma.notify(getFailureNotificationMessage(error), { error: true, timeout: 4000 });
-  } finally {
-    if (shouldClosePlugin) {
-      await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
-      figma.closePlugin();
-    }
+    presentRunOutcome(
+      {
+        error: true,
+        message: getFailureNotificationMessage(error),
+      },
+      "quick_run",
+      true
+    );
   }
 }
 
@@ -296,7 +304,15 @@ function openSettingsUI(): void {
         }
       } catch (error) {
         console.error("[Чистовик] Failed to handle UI message", error);
-        figma.notify(getFailureNotificationMessage(error), { error: true, timeout: 4000 });
+        presentRunOutcome(
+          {
+            error: true,
+            message: getFailureNotificationMessage(error),
+          },
+          "settings",
+          true
+        );
+        postTypographRunFinished();
       }
     };
   } catch (error) {
@@ -305,18 +321,42 @@ function openSettingsUI(): void {
   }
 }
 
-async function runTypograph(options: PluginRunOptions, source: PluginRunSource): Promise<void> {
-  if (typographRunInProgress) {
-    return;
+function runTypograph(options: PluginRunOptions, source: PluginRunSource): Promise<void> {
+  if (typographRunPromise !== null) {
+    return typographRunPromise;
   }
 
+  const currentRunPromise = executeTypographRun(options, source);
+  typographRunPromise = currentRunPromise;
+
+  void currentRunPromise.then(
+    () => {
+      if (typographRunPromise === currentRunPromise) {
+        typographRunPromise = null;
+      }
+    },
+    () => {
+      if (typographRunPromise === currentRunPromise) {
+        typographRunPromise = null;
+      }
+    }
+  );
+
+  return currentRunPromise;
+}
+
+async function executeTypographRun(options: PluginRunOptions, source: PluginRunSource): Promise<void> {
   const analyticsContext = createAnalyticsRunContext(options, source);
-  typographRunInProgress = true;
   let analyticsStage: AnalyticsErrorStage = "unknown";
   let collectTextDuration = 0;
   let collection: TextCollectionResult | null = null;
   let result: TextProcessResult | null = null;
   let workingNotification: NotificationHandler | null = null;
+  let outcome: PluginRunOutcome = {
+    error: true,
+    message: "Ой, не получилось почистить 🛑",
+  };
+  let workingNotificationCancelled = true;
 
   try {
     workingNotification = figma.notify("Чистовик работает...", { timeout: Infinity });
@@ -342,16 +382,17 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
       analyticsStage = result.failedStage ?? "unknown";
       const processingError = new Error(`Failed to process ${result.failed} text node(s)`);
 
-      if (result.failureDiagnostic?.category === "rollback_failed") {
+      if (result.failureDiagnostic?.category === "rollback_failed" || result.requiresStyleWarning) {
         processingError.name = "RollbackFailureError";
       }
 
       throw processingError;
     }
 
-    cancelNotificationSafely(workingNotification);
-    workingNotification = null;
-    notifyCleanResult(result);
+    outcome = {
+      error: false,
+      message: getCleanResultNotificationMessage(result),
+    };
     queueAnalyticsEvent("plugin_run_completed", {
       ...getRunAnalyticsProperties(analyticsContext),
       changed_anything: result.changed > 0,
@@ -401,34 +442,119 @@ async function runTypograph(options: PluginRunOptions, source: PluginRunSource):
       timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings),
       loaded_unique_fonts_count: result?.analytics.uniqueFontsCount ?? null,
     });
-    throw error;
+    outcome = {
+      error: true,
+      message: getFailureNotificationMessage(error),
+    };
   } finally {
-    cancelNotificationSafely(workingNotification);
-
-    typographRunInProgress = false;
+    workingNotificationCancelled = cancelNotificationSafely(workingNotification);
 
     if (source === "settings") {
-      try {
-        figma.ui.postMessage({ type: "typograph-run-finished" });
-      } catch (error) {
-        console.error("[Чистовик] Failed to reset typograph UI state", error);
-      }
+      postTypographRunFinished();
     }
+  }
+
+  presentRunOutcome(outcome, source, workingNotificationCancelled);
+}
+
+function postTypographRunFinished(): void {
+  try {
+    figma.ui.postMessage({ type: "typograph-run-finished" });
+  } catch (error) {
+    console.error("[Чистовик] Failed to reset typograph UI state", error);
   }
 }
 
-function cancelNotificationSafely(notification: NotificationHandler | null): void {
+function cancelNotificationSafely(notification: NotificationHandler | null): boolean {
   try {
     notification?.cancel();
+    return true;
   } catch (error) {
     console.error("[Чистовик] Failed to cancel notification", error);
+    return false;
+  }
+}
+
+function presentRunOutcome(outcome: PluginRunOutcome, source: PluginRunSource, workingNotificationCancelled: boolean): void {
+  if (source === "settings") {
+    try {
+      figma.notify(outcome.message, {
+        error: outcome.error,
+        timeout: FINAL_NOTIFICATION_TIMEOUT_MS,
+      });
+    } catch (error) {
+      console.error("[Чистовик] Failed to show final settings notification", error);
+    }
+
+    return;
+  }
+
+  if (!workingNotificationCancelled) {
+    closePluginWithMessageSafely(outcome.message);
+    return;
+  }
+
+  let notificationFinished = false;
+  let closeFallback: ReturnType<typeof setTimeout> | null = null;
+
+  const finishQuickRun = (): void => {
+    if (notificationFinished) {
+      return;
+    }
+
+    notificationFinished = true;
+
+    if (closeFallback !== null) {
+      clearTimeout(closeFallback);
+    }
+
+    void closeQuickPluginAfterAnalyticsGrace();
+  };
+
+  try {
+    figma.notify(outcome.message, {
+      error: outcome.error,
+      onDequeue: finishQuickRun,
+      timeout: FINAL_NOTIFICATION_TIMEOUT_MS,
+    });
+
+    if (!notificationFinished) {
+      closeFallback = setTimeout(() => {
+        if (notificationFinished) {
+          return;
+        }
+
+        notificationFinished = true;
+        closePluginWithMessageSafely(outcome.message);
+      }, FINAL_NOTIFICATION_CLOSE_FALLBACK_MS);
+    }
+  } catch (error) {
+    console.error("[Чистовик] Failed to show final quick-run notification", error);
+    closePluginWithMessageSafely(outcome.message);
+  }
+}
+
+async function closeQuickPluginAfterAnalyticsGrace(): Promise<void> {
+  try {
+    await waitForPendingAnalyticsEvents(ANALYTICS_CLOSE_GRACE_PERIOD_MS);
+    figma.closePlugin();
+  } catch (error) {
+    console.error("[Чистовик] Failed to close quick-run plugin", error);
+  }
+}
+
+function closePluginWithMessageSafely(message: string): void {
+  try {
+    figma.closePlugin(message);
+  } catch (error) {
+    console.error("[Чистовик] Failed to close plugin with final message", error);
   }
 }
 
 function getFailureNotificationMessage(error: unknown): string {
   try {
     if (getErrorName(error) === "RollbackFailureError") {
-      return "Не удалось вернуть оформление. Проверьте текстовый слой 🛑";
+      return "Плагин случайно сломал какие-то стили — проверьте текстовые слои 🛑";
     }
   } catch {
     // Fall back to the regular error message.
@@ -1027,27 +1153,25 @@ function getRunOptionsFromMessage(message: PluginUIMessage): PluginRunOptions {
   }
 }
 
-function notifyCleanResult(result: TextProcessResult): void {
+function getCleanResultNotificationMessage(result: TextProcessResult): string {
   try {
     if (result.skippedLocked > 0 || result.skippedHidden > 0) {
       const skippedLabel = getSkippedLayerLabel(result);
 
       if (result.changed > 0) {
-        figma.notify(`${skippedLabel} не тронуты, в остальном — теперь всё чисто 🔥🔥🔥`, { timeout: 4000 });
-      } else {
-        figma.notify(`${skippedLabel} не тронуты, а остальное уже было чисто 👌`, { timeout: 4000 });
+        return `${skippedLabel} не тронуты, в остальном — теперь всё чисто 🔥🔥🔥`;
       }
 
-      return;
+      return `${skippedLabel} не тронуты, а остальное уже было чисто 👌`;
     }
 
     if (result.changed > 0) {
-      figma.notify("Теперь всё чисто 🔥🔥🔥", { timeout: 4000 });
-    } else {
-      figma.notify("Всё уже было чисто 👌", { timeout: 4000 });
+      return "Теперь всё чисто 🔥🔥🔥";
     }
+
+    return "Всё уже было чисто 👌";
   } catch (error) {
-    console.error("[Чистовик] Failed to notify result", error);
+    console.error("[Чистовик] Failed to prepare result notification", error);
     throw error;
   }
 }
@@ -1239,6 +1363,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
     let failed = 0;
     let failureDiagnostic: AnalyticsErrorDiagnostic | null = null;
     let failedStage: AnalyticsErrorStage | null = null;
+    let requiresStyleWarning = false;
     const timings = createEmptyTextProcessTimings();
     let charactersChangedTotal = 0;
     let charactersProcessedTotal = 0;
@@ -1331,22 +1456,26 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
             }
           );
           currentStage = "restore_styles";
-          const { styleMap, wholeTextStyle } = styleComparison;
+          const { styleMap, verifyUniformLinkedStyle, wholeTextStyle } = styleComparison;
           try {
             if (wholeTextStyle !== null) {
               await measureAsyncDuration(
                 (duration) => {
                   timings.restoreStyles += duration;
                 },
-                () => restoreWholeTextStyle(textNode, wholeTextStyle)
+                () => restoreWholeTextStyle(textNode, wholeTextStyle, verifyUniformLinkedStyle)
               );
             } else {
               await measureAsyncDuration(
                 (duration) => {
                   timings.restoreStyles += duration;
                 },
-                () => restoreTextStyles(textNode, styleMap, styles)
+                () => restoreTextStyles(textNode, styleMap, styles, verifyUniformLinkedStyle)
               );
+            }
+
+            if (verifyUniformLinkedStyle && !verifyUniformStylePreservation(textNode, styles[0])) {
+              throw new Error("Linked style verification failed");
             }
           } catch (error) {
             rollbackAttemptedLayersCount += 1;
@@ -1360,6 +1489,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
 
             if (!rollbackSucceeded) {
               rollbackFailedLayersCount += 1;
+              requiresStyleWarning = true;
               shouldStopProcessing = true;
               throw new Error("Failed to restore original text layer state");
             }
@@ -1428,6 +1558,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
       failed,
       failureDiagnostic,
       failedStage,
+      requiresStyleWarning,
       skippedHidden,
       skippedLocked,
       analytics: {
@@ -1455,13 +1586,40 @@ async function restoreOriginalTextAfterStyleFailure(textNode: TextNode, oldText:
 
     if (wholeTextStyle !== null) {
       await restoreWholeTextStyle(textNode, wholeTextStyle);
-      return true;
+    } else {
+      await restoreTextStyles(textNode, buildStyleMap(oldText, oldText, styles), styles);
     }
 
-    await restoreTextStyles(textNode, buildStyleMap(oldText, oldText, styles), styles);
-    return true;
+    return verifyRestoredOriginalTextState(textNode, oldText, styles);
   } catch (rollbackError) {
     console.error(`[Чистовик] Failed to restore original text after style restoration failure for text node ${textNode.id}`, rollbackError);
+    return false;
+  }
+}
+
+function verifyRestoredOriginalTextState(textNode: TextNode, oldText: string, originalStyles: StyleSegment[]): boolean {
+  try {
+    if (textNode.characters !== oldText) {
+      return false;
+    }
+
+    const restoredStyles = captureTextStyles(textNode);
+
+    if (restoredStyles.length !== originalStyles.length) {
+      return false;
+    }
+
+    return originalStyles.every((originalStyle, index) => {
+      const restoredStyle = restoredStyles[index];
+
+      if (restoredStyle.start !== originalStyle.start || restoredStyle.end !== originalStyle.end) {
+        return false;
+      }
+
+      return STYLE_FIELDS.every((field) => areStyleValuesEqual(restoredStyle[field], originalStyle[field]));
+    });
+  } catch (verificationError) {
+    console.error(`[Чистовик] Failed to verify original text layer state for text node ${textNode.id}`, verificationError);
     return false;
   }
 }
@@ -1747,11 +1905,18 @@ function hasBoundStyleVariables(style: StyleSegment): boolean {
   }
 }
 
-async function restoreWholeTextStyle(textNode: TextNode, style: StyleSegment): Promise<void> {
+async function restoreWholeTextStyle(textNode: TextNode, style: StyleSegment, skipUnchangedLinkedStyleIds: boolean = false): Promise<void> {
   try {
-    await textNode.setTextStyleIdAsync(style.textStyleId);
+    const rangeEnd = textNode.characters.length;
 
-    if (style.fillStyleId !== "") {
+    if (!skipUnchangedLinkedStyleIds || textNode.getRangeTextStyleId(0, rangeEnd) !== style.textStyleId) {
+      await textNode.setTextStyleIdAsync(style.textStyleId);
+    }
+
+    if (
+      style.fillStyleId !== "" &&
+      (!skipUnchangedLinkedStyleIds || textNode.getRangeFillStyleId(0, rangeEnd) !== style.fillStyleId)
+    ) {
       await textNode.setFillStyleIdAsync(style.fillStyleId);
     }
 
@@ -1771,11 +1936,13 @@ function hasTextDecoration(style: StyleSegment): boolean {
 function createStyleRestorationPlan(oldText: string, newText: string, styles: StyleSegment[]): StyleRestorationPlan {
   try {
     const wholeTextStyle = getWholeTextStyle(styles, oldText);
+    const verifyUniformLinkedStyle = canVerifyUniformLinkedStyle(oldText, styles);
 
     if (wholeTextStyle !== null) {
       return {
         styleMap: [],
         wholeTextStyle,
+        verifyUniformLinkedStyle,
       };
     }
 
@@ -1783,17 +1950,91 @@ function createStyleRestorationPlan(oldText: string, newText: string, styles: St
       return {
         styleMap: new Array<number>(newText.length).fill(0),
         wholeTextStyle: null,
+        verifyUniformLinkedStyle,
       };
     }
 
     return {
       styleMap: buildStyleMap(oldText, newText, styles),
       wholeTextStyle: null,
+      verifyUniformLinkedStyle: false,
     };
   } catch (error) {
     console.error("[Чистовик] Failed to create style restoration plan", error);
     throw error;
   }
+}
+
+function canVerifyUniformLinkedStyle(oldText: string, styles: StyleSegment[]): boolean {
+  try {
+    if (styles.length !== 1) {
+      return false;
+    }
+
+    const style = styles[0];
+    const coversWholeText = style.start === 0 && style.end === oldText.length;
+    const hasLibraryLink = style.textStyleId !== "" || style.fillStyleId !== "";
+    return coversWholeText && hasLibraryLink;
+  } catch {
+    return false;
+  }
+}
+
+function verifyUniformStylePreservation(textNode: TextNode, originalStyle: StyleSegment): boolean {
+  try {
+    const currentStyles = captureTextStyles(textNode);
+
+    if (currentStyles.length !== 1) {
+      return false;
+    }
+
+    const currentStyle = currentStyles[0];
+
+    if (currentStyle.start !== 0 || currentStyle.end !== textNode.characters.length) {
+      return false;
+    }
+
+    if (
+      (originalStyle.textStyleId !== "" && currentStyle.textStyleId !== originalStyle.textStyleId) ||
+      (originalStyle.fillStyleId !== "" && currentStyle.fillStyleId !== originalStyle.fillStyleId)
+    ) {
+      return false;
+    }
+
+    return STYLE_FIELDS.every((field) => areStyleValuesEqual(currentStyle[field], originalStyle[field]));
+  } catch (error) {
+    console.error(`[Чистовик] Failed to verify style preservation for text node ${textNode.id}`, error);
+    return false;
+  }
+}
+
+function areStyleValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => areStyleValuesEqual(value, right[index]))
+    );
+  }
+
+  if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) {
+    return false;
+  }
+
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).sort();
+  const rightKeys = Object.keys(rightRecord).sort();
+
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key, index) => key === rightKeys[index] && areStyleValuesEqual(leftRecord[key], rightRecord[key]))
+  );
 }
 
 function buildStyleMap(oldText: string, newText: string, styles: StyleSegment[]): number[] {
@@ -1905,7 +2146,12 @@ function buildGreedyOldIndexMap(oldText: string, newText: string): number[] {
   }
 }
 
-async function restoreTextStyles(textNode: TextNode, styleMap: number[], styles: StyleSegment[]): Promise<void> {
+async function restoreTextStyles(
+  textNode: TextNode,
+  styleMap: number[],
+  styles: StyleSegment[],
+  skipUnchangedLinkedStyleIds: boolean = false
+): Promise<void> {
   try {
     if (textNode.characters.length === 0 || styles.length === 0 || styleMap.length === 0) {
       return;
@@ -1922,7 +2168,7 @@ async function restoreTextStyles(textNode: TextNode, styleMap: number[], styles:
         continue;
       }
 
-      await applyStyleSegment(textNode, start, index, styles[currentStyleIndex], variableCache);
+      await applyStyleSegment(textNode, start, index, styles[currentStyleIndex], variableCache, skipUnchangedLinkedStyleIds);
       start = index;
       currentStyleIndex = nextStyleIndex;
     }
@@ -1937,7 +2183,8 @@ async function applyStyleSegment(
   start: number,
   end: number,
   style: StyleSegment,
-  variableCache: Map<string, Promise<Variable | null>>
+  variableCache: Map<string, Promise<Variable | null>>,
+  skipUnchangedLinkedStyleIds: boolean
 ): Promise<void> {
   try {
     if (start >= end) {
@@ -1953,7 +2200,7 @@ async function applyStyleSegment(
     textNode.setRangeIndentation(start, end, style.indentation);
     textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
     textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
-    await restoreStyleIds(textNode, start, end, style);
+    await restoreStyleIds(textNode, start, end, style, skipUnchangedLinkedStyleIds);
     await restoreBoundVariables(textNode, start, end, style, variableCache);
     restoreOverriddenStyleProperties(textNode, start, end, style);
   } catch (error) {
@@ -1993,13 +2240,25 @@ function restoreDetachedFillProperties(textNode: TextNode, start: number, end: n
   }
 }
 
-async function restoreStyleIds(textNode: TextNode, start: number, end: number, style: StyleSegment): Promise<void> {
+async function restoreStyleIds(
+  textNode: TextNode,
+  start: number,
+  end: number,
+  style: StyleSegment,
+  skipUnchangedLinkedStyleIds: boolean
+): Promise<void> {
   try {
-    if (style.textStyleId !== "") {
+    if (
+      style.textStyleId !== "" &&
+      (!skipUnchangedLinkedStyleIds || textNode.getRangeTextStyleId(start, end) !== style.textStyleId)
+    ) {
       await textNode.setRangeTextStyleIdAsync(start, end, style.textStyleId);
     }
 
-    if (style.fillStyleId !== "") {
+    if (
+      style.fillStyleId !== "" &&
+      (!skipUnchangedLinkedStyleIds || textNode.getRangeFillStyleId(start, end) !== style.fillStyleId)
+    ) {
       await textNode.setRangeFillStyleIdAsync(start, end, style.fillStyleId);
     }
   } catch (error) {
@@ -3183,7 +3442,8 @@ function formatPhoneNumbers(input: string): string {
 
 function formatNumbersAndMoney(input: string): string {
   try {
-    let text = normalizeWesternGroupedNumbers(input);
+    let text = normalizeDottedNumberingSeparators(input);
+    text = normalizeWesternGroupedNumbers(text);
 
     text = text.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart: string, decimalPart: string, offset: number, fullText: string) => {
       try {
@@ -3220,6 +3480,26 @@ function formatNumbersAndMoney(input: string): string {
     return text;
   } catch (error) {
     console.error("[Чистовик] Failed to format numbers and money", error);
+    throw error;
+  }
+}
+
+function normalizeDottedNumberingSeparators(input: string): string {
+  try {
+    return input.replace(/\b\d+(?:,\d+)+\b/g, (match: string, offset: number, fullText: string) => {
+      try {
+        if (!isDottedNumbering(fullText, offset, offset + match.length)) {
+          return match;
+        }
+
+        return match.replace(/,/g, ".");
+      } catch (error) {
+        console.error("[Чистовик] Failed to restore dotted numbering separator", error);
+        return match;
+      }
+    });
+  } catch (error) {
+    console.error("[Чистовик] Failed to restore dotted numbering separators", error);
     throw error;
   }
 }
@@ -3272,7 +3552,11 @@ function normalizeGroupedNumberSpaces(input: string): string {
 
 function isProtectedDottedNumber(fullText: string, start: number, end: number): boolean {
   try {
-    if (isNumberPartOfCodeToken(fullText, start, end) || isNumberPartOfDate(fullText, start, end)) {
+    if (
+      isNumberPartOfCodeToken(fullText, start, end) ||
+      isNumberPartOfDate(fullText, start, end) ||
+      isDottedNumbering(fullText, start, end)
+    ) {
       return true;
     }
 
@@ -3293,6 +3577,33 @@ function isProtectedDottedNumber(fullText: string, start: number, end: number): 
     return dotCount > 1 || /[A-Za-zА-Яа-яЁё]/.test(token);
   } catch (error) {
     console.error("[Чистовик] Failed to check dotted number exception", error);
+    throw error;
+  }
+}
+
+function isDottedNumbering(fullText: string, start: number, end: number): boolean {
+  try {
+    const textBeforeNumber = fullText.slice(0, start);
+    const documentNumberingContext =
+      /(?:^|[^A-Za-zА-Яа-яЁё])(?:раздел|подраздел|глава|пункт|подпункт|статья|часть|гл\.?|п\.?|ст\.?|ч\.?|§|№)[ \t\u00A0]*$/i;
+
+    if (documentNumberingContext.test(textBeforeNumber)) {
+      return !isFollowedByDecimalUnitOrCurrency(fullText, end);
+    }
+
+    const lineStart = Math.max(fullText.lastIndexOf("\n", start - 1), fullText.lastIndexOf("\r", start - 1)) + 1;
+    const textBeforeNumberOnLine = fullText.slice(lineStart, start);
+    const textAfterNumber = fullText.slice(end);
+    const startsLine = /^[ \t\u00A0]*$/.test(textBeforeNumberOnLine);
+    const followedByHeading = /^[ \t\u00A0]+[А-ЯЁA-Z]/.test(textAfterNumber);
+
+    if (!startsLine || !followedByHeading) {
+      return false;
+    }
+
+    return !isFollowedByDecimalUnitOrCurrency(fullText, end);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check dotted numbering", error);
     throw error;
   }
 }

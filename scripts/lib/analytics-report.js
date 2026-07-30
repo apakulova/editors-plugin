@@ -752,15 +752,12 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     }
   }
 
-  lines.push("", "Производительность:");
-
   const medianDuration = formatDuration(summary.medianDurationMs);
   const p90Duration = formatDuration(summary.p90DurationMs);
+  const performanceLines = [];
 
-  if (medianDuration === null || summary.performanceRuns === 0) {
-    lines.push("— обычное время обработки: пока недостаточно данных");
-  } else {
-    lines.push(
+  if (medianDuration !== null && summary.performanceRuns > 0) {
+    performanceLines.push(
       `— обычное время обработки: ${medianDuration} — ${formatPerformanceComparison(
         summary.medianDurationMs,
         summary.baseline?.medianDurationMs,
@@ -770,10 +767,8 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     );
   }
 
-  if (p90Duration === null || summary.performanceRuns < MIN_WEEKLY_PERFORMANCE_RUNS) {
-    lines.push("— 90% обработок укладываются: пока недостаточно данных");
-  } else {
-    lines.push(
+  if (p90Duration !== null && summary.performanceRuns >= MIN_WEEKLY_PERFORMANCE_RUNS) {
+    performanceLines.push(
       `— 90% обработок за ${p90Duration} — ${formatPerformanceComparison(
         summary.p90DurationMs,
         summary.baseline?.p90DurationMs,
@@ -783,13 +778,17 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     );
   }
 
-  const performanceInsight =
-    summary.performanceRuns > 0 && (summary.baseline?.performanceRuns || 0) > 0
-      ? formatPerformanceInsight(summary.medianDurationMs, summary.baseline?.medianDurationMs)
-      : null;
+  if (performanceLines.length > 0) {
+    lines.push("", "Производительность:", ...performanceLines);
 
-  if (performanceInsight) {
-    lines.push("", performanceInsight);
+    const performanceInsight =
+      summary.performanceRuns > 0 && (summary.baseline?.performanceRuns || 0) > 0
+        ? formatPerformanceInsight(summary.medianDurationMs, summary.baseline?.medianDurationMs)
+        : null;
+
+    if (performanceInsight) {
+      lines.push("", performanceInsight);
+    }
   }
 
   lines.push(
