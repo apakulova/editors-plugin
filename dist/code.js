@@ -2743,7 +2743,8 @@ function formatPhoneNumbers(input) {
 }
 function formatNumbersAndMoney(input) {
     try {
-        let text = normalizeDottedNumberingSeparators(input);
+        let text = normalizeCommaSeparatedDates(input);
+        text = normalizeDottedNumberingSeparators(text);
         text = normalizeWesternGroupedNumbers(text);
         text = text.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart, decimalPart, offset, fullText) => {
             try {
@@ -2772,11 +2773,85 @@ function formatNumbersAndMoney(input) {
         });
         text = normalizeGroupedNumberSpaces(text);
         text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]*(₽|\$|€|км|кг|м)(?=$|[^A-Za-zА-Яа-яЁё])/g, `$1${NBSP}$2`);
+        text = normalizeTechnicalMeasurementUnits(text);
         text = normalizeSpacedYears(text);
         return text;
     }
     catch (error) {
         console.error("[Чистовик] Failed to format numbers and money", error);
+        throw error;
+    }
+}
+function normalizeTechnicalMeasurementUnits(input) {
+    try {
+        return input.replace(/(^|[^A-Za-zА-Яа-яЁё\d.,])(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]*(квт|вт|в|dpi|lpi)(?=$|[^A-Za-zА-Яа-яЁё\d])/gi, (_match, prefix, number, unit) => {
+            try {
+                return `${prefix}${number}${NBSP}${getCanonicalTechnicalMeasurementUnit(unit)}`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize technical measurement unit candidate", error);
+                return _match;
+            }
+        });
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to normalize technical measurement units", error);
+        throw error;
+    }
+}
+function getCanonicalTechnicalMeasurementUnit(unit) {
+    try {
+        switch (unit.toLowerCase()) {
+            case "в":
+                return "В";
+            case "вт":
+                return "Вт";
+            case "квт":
+                return "кВт";
+            case "dpi":
+                return "dpi";
+            case "lpi":
+                return "lpi";
+            default:
+                return unit;
+        }
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to get canonical technical measurement unit", error);
+        throw error;
+    }
+}
+function normalizeCommaSeparatedDates(input) {
+    try {
+        return input.replace(/(^|[^A-Za-zА-Яа-яЁё\d.,])(\d{1,2}),(\d{2}),([12]\d{3})(?![\d,]|\.\d|[A-Za-zА-Яа-яЁё])/g, (match, prefix, day, month, year) => {
+            try {
+                if (!isValidCalendarDate(Number(day), Number(month), Number(year))) {
+                    return match;
+                }
+                return `${prefix}${day}.${month}.${year}`;
+            }
+            catch (error) {
+                console.error("[Чистовик] Failed to normalize comma-separated date candidate", error);
+                return match;
+            }
+        });
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to normalize comma-separated dates", error);
+        throw error;
+    }
+}
+function isValidCalendarDate(day, month, year) {
+    try {
+        if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year) || year < 1000 || year > 2999 || month < 1 || month > 12 || day < 1) {
+            return false;
+        }
+        const leapYear = year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
+        const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        return day <= daysInMonth[month - 1];
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to validate calendar date", error);
         throw error;
     }
 }
@@ -2847,6 +2922,7 @@ function normalizeGroupedNumberSpaces(input) {
 function isProtectedDottedNumber(fullText, start, end) {
     try {
         if (isNumberPartOfCodeToken(fullText, start, end) ||
+            isNumberInsideDateLikeToken(fullText, start, end) ||
             isNumberPartOfDate(fullText, start, end) ||
             isDottedNumbering(fullText, start, end)) {
             return true;
@@ -2865,6 +2941,24 @@ function isProtectedDottedNumber(fullText, start, end) {
     }
     catch (error) {
         console.error("[Чистовик] Failed to check dotted number exception", error);
+        throw error;
+    }
+}
+function isNumberInsideDateLikeToken(fullText, start, end) {
+    try {
+        let tokenStart = start;
+        let tokenEnd = end;
+        while (tokenStart > 0 && /[\d.,]/.test(fullText[tokenStart - 1])) {
+            tokenStart -= 1;
+        }
+        while (tokenEnd < fullText.length && /[\d.,]/.test(fullText[tokenEnd])) {
+            tokenEnd += 1;
+        }
+        const token = fullText.slice(tokenStart, tokenEnd);
+        return /^\d{1,2}[.,]\d{1,2}[.,][12]\d{3}(?:[.,]\d+)*$/.test(token);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to check date-like numeric token", error);
         throw error;
     }
 }
@@ -2958,7 +3052,7 @@ function isShortDateToken(token) {
 function isFollowedByDecimalUnitOrCurrency(fullText, index) {
     try {
         const after = fullText.slice(index);
-        const match = /^[ \t\u00A0]*(₽|\$|€|%|руб\.?|коп\.?|тыс\.?|млн|млрд|трлн|км|кг|мм|см|мл|м|г\.?|л|шт\.?|сек\.?|мин\.?|мес\.?|с|кв\.?|куб\.?)(?=$|[^A-Za-zА-Яа-яЁё])/i.exec(after);
+        const match = /^[ \t\u00A0]*(₽|\$|€|%|руб\.?|коп\.?|тыс\.?|млн|млрд|трлн|квт|вт|dpi|lpi|км|кг|мм|см|мл|м|г\.?|л|шт\.?|сек\.?|мин\.?|мес\.?|с|кв\.?|куб\.?)(?=$|[^A-Za-zА-Яа-яЁё])/i.exec(after);
         return match !== null;
     }
     catch (error) {
@@ -2981,7 +3075,7 @@ function normalizeSpacedYears(input) {
 }
 function shouldSkipNumberGrouping(fullText, start, end, integerPart) {
     try {
-        if (isNumberPartOfCodeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end) || isNumberPartOfMaskedSecret(fullText, start, integerPart) || isInsideProtectedNumericIdentifier(fullText, start, end) || isInsideRussianPhoneTail(fullText, start, end)) {
+        if (isNumberPartOfCodeToken(fullText, start, end) || isNumberInsideDateLikeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end) || isNumberPartOfMaskedSecret(fullText, start, integerPart) || isInsideProtectedNumericIdentifier(fullText, start, end) || isInsideRussianPhoneTail(fullText, start, end)) {
             return true;
         }
         const previous = previousNonSpaceSkippingDevelopmentMarker(fullText, start);
@@ -3272,13 +3366,14 @@ function normalizeAbbreviations(input) {
                 return match;
             }
         });
-        text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?[ \t\u00A0]+)(км|кг|м|с|мм|см|л|мл)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, numberWithSpace, unit, offset, fullText) => {
+        text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?[ \t\u00A0]+)(квт|вт|в|dpi|lpi|км|кг|м|с|мм|см|л|мл)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, numberWithSpace, unit, offset, fullText) => {
             try {
                 const periodIndex = offset + match.length - 1;
+                const normalizedUnit = getCanonicalTechnicalMeasurementUnit(unit);
                 if (isSameLineSentenceContinuation(fullText, periodIndex)) {
-                    return `${numberWithSpace}${unit}.`;
+                    return `${numberWithSpace}${normalizedUnit}.`;
                 }
-                return `${numberWithSpace}${unit}`;
+                return `${numberWithSpace}${normalizedUnit}`;
             }
             catch (error) {
                 console.error("[Чистовик] Failed to normalize unit period", error);
@@ -3536,7 +3631,7 @@ function applyShortWordNonBreakingSpaces(input) {
 }
 function restoreSpacesAfterMeasurementUnits(input) {
     try {
-        return input.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?\u00A0(?:г|кг|м|км|мм|см|л|мл|с))\u00A0(?=[A-Za-zА-Яа-яЁё])/gi, "$1 ");
+        return input.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?\u00A0(?:кВт|Вт|В|г|кг|м|км|мм|см|л|мл|с|dpi|lpi))\u00A0(?=[A-Za-zА-Яа-яЁё])/gi, "$1 ");
     }
     catch (error) {
         console.error("[Чистовик] Failed to restore spaces after measurement units", error);
@@ -3573,6 +3668,7 @@ function normalizeMathAndSymbols(input) {
         })
             .replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+−(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`)
             .replace(/(\d(?:[\d \u00A0]*\d)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])\b/g, (_match, number, unit) => `${number}${NBSP}°${unit === "F" ? "F" : "C"}`)
+            .replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]+°(?![CFС]\b)/g, "$1°")
             .replace(/\(c\)/gi, "©")
             .replace(/\(tm\)/gi, "™")
             .replace(/\(r\)/gi, "®")
