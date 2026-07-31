@@ -16,9 +16,10 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 4;
-const ANALYTICS_PLUGIN_RELEASE = "2026-07-29";
-const PERFORMANCE_MEASUREMENT_VERSION = 2;
+const ANALYTICS_SCHEMA_VERSION = 5;
+const ANALYTICS_PLUGIN_RELEASE = "2026-07-30";
+const PERFORMANCE_MEASUREMENT_VERSION = 3;
+const RULE_ANALYTICS_VERSION = 1;
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
@@ -51,6 +52,85 @@ const STYLE_FIELDS = [
     "paragraphSpacing",
     "textStyleId",
     "textStyleOverrides",
+];
+const TYPOGRAPHY_RULE_CODES = [
+    "quote_ru_levels",
+    "quote_latin_levels",
+    "quote_context_script",
+    "quote_punctuation_outside",
+    "quote_ellipsis_position",
+    "quote_question_exclamation",
+    "punctuation_ellipsis",
+    "punctuation_repeated_marks",
+    "punctuation_question_exclamation_order",
+    "dash_between_words",
+    "range_simple",
+    "range_simple_number",
+    "range_simple_word_date",
+    "range_simple_time",
+    "range_simple_short_date",
+    "range_simple_roman",
+    "range_compound",
+    "range_compound_grouped_number",
+    "range_compound_full_date",
+    "range_compound_word_date",
+    "range_compound_quarter",
+    "range_compound_open_year",
+    "hyphen_nonbreaking_words",
+    "dash_line_start",
+    "dash_nbsp_before",
+    "phone_ru_format",
+    "phone_ru_separators",
+    "phone_ru_prefix_seven",
+    "phone_ru_prefix_eight",
+    "phone_protected_contexts",
+    "number_group_digits",
+    "number_decimal_comma",
+    "number_document_outline",
+    "number_western_format",
+    "number_unit_currency_nbsp",
+    "year_context",
+    "number_protect_ip",
+    "number_protect_version",
+    "number_protect_date",
+    "number_protect_code",
+    "number_protect_sign",
+    "abbr_dotted",
+    "abbr_compound",
+    "abbr_undotted_large_number",
+    "abbr_undotted_hyphenated",
+    "abbr_undotted_units",
+    "abbr_area_volume",
+    "abbr_month",
+    "abbr_sentence_end",
+    "abbr_line_break",
+    "nbsp_before_dash",
+    "nbsp_after_number_sign",
+    "nbsp_copyright_year",
+    "nbsp_number_unit",
+    "nbsp_percent_metric",
+    "nbsp_calendar_date",
+    "nbsp_initials",
+    "nbsp_particles",
+    "nbsp_short_cyrillic_words",
+    "space_collapse",
+    "space_trim_lines",
+    "space_before_punctuation",
+    "space_after_opening_punctuation",
+    "space_percent",
+    "space_tilde",
+    "math_expression_spacing",
+    "math_multiplication",
+    "math_basic_operators",
+    "math_subtraction_context",
+    "math_negative_number",
+    "math_fractions",
+    "temperature_degree_only",
+    "temperature_scale",
+    "temperature_range",
+    "percent_range",
+    "symbol_legal_marks",
+    "symbol_arrow",
 ];
 const pendingAnalyticsEvents = [];
 let analyticsIdentityPromise = null;
@@ -167,12 +247,12 @@ async function executeTypographRun(options, source) {
             error: false,
             message: getCleanResultNotificationMessage(result),
         };
-        queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_layers_count: result.changed, characters_changed_total: result.analytics.charactersChangedTotal, characters_processed_total: result.analytics.charactersProcessedTotal, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_layers_count: result.failed, found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked, largest_text_layer_characters: result.analytics.largestTextLayerCharacters, processed_text_layers_count: result.processed, rollback_attempted_layers_count: result.analytics.rollbackAttemptedLayersCount, rollback_failed_layers_count: result.analytics.rollbackFailedLayersCount, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked, slowest_text_layer_ms: result.analytics.slowestTextLayerMs, changed_style_segments_count: result.analytics.styleSegmentsCount, timing_collect_text_ms: collectTextDuration }), getTextProcessTimingAnalyticsProperties(result.analytics.timings)), { timing_other_ms: getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: result.analytics.uniqueFontsCount }));
+        queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_layers_count: result.changed, characters_changed_total: result.analytics.charactersChangedTotal, characters_processed_total: result.analytics.charactersProcessedTotal, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_layers_count: result.failed, found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked, largest_text_layer_characters: result.analytics.largestTextLayerCharacters, processed_text_layers_count: result.processed, rollback_attempted_layers_count: result.analytics.rollbackAttemptedLayersCount, rollback_failed_layers_count: result.analytics.rollbackFailedLayersCount, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked, slowest_text_layer_ms: result.analytics.slowestTextLayerMs, changed_style_segments_count: result.analytics.styleSegmentsCount, timing_collect_text_ms: collectTextDuration }), getTextProcessTimingAnalyticsProperties(result.analytics.timings)), getTypographyRuleAnalyticsProperties(result.analytics.ruleAnalytics)), { timing_other_ms: getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: result.analytics.uniqueFontsCount }));
     }
     catch (error) {
         console.error("[Чистовик] Failed to run typograph", error);
         const errorDiagnostic = (_c = result === null || result === void 0 ? void 0 : result.failureDiagnostic) !== null && _c !== void 0 ? _c : createAnalyticsErrorDiagnostic(error, analyticsStage);
-        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_d = result === null || result === void 0 ? void 0 : result.failed) !== null && _d !== void 0 ? _d : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _e !== void 0 ? _e : null, characters_processed_total: (_f = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _f !== void 0 ? _f : null, largest_text_layer_characters: (_g = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _g !== void 0 ? _g : null, processed_text_layers_count: (_h = result === null || result === void 0 ? void 0 : result.processed) !== null && _h !== void 0 ? _h : null, rollback_attempted_layers_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.rollbackAttemptedLayersCount) !== null && _j !== void 0 ? _j : null, rollback_failed_layers_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.rollbackFailedLayersCount) !== null && _k !== void 0 ? _k : null, slowest_text_layer_ms: (_l = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _l !== void 0 ? _l : null, stage: analyticsStage, changed_style_segments_count: (_m = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _m !== void 0 ? _m : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_o = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _o !== void 0 ? _o : null }));
+        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_d = result === null || result === void 0 ? void 0 : result.failed) !== null && _d !== void 0 ? _d : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _e !== void 0 ? _e : null, characters_processed_total: (_f = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _f !== void 0 ? _f : null, largest_text_layer_characters: (_g = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _g !== void 0 ? _g : null, processed_text_layers_count: (_h = result === null || result === void 0 ? void 0 : result.processed) !== null && _h !== void 0 ? _h : null, rollback_attempted_layers_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.rollbackAttemptedLayersCount) !== null && _j !== void 0 ? _j : null, rollback_failed_layers_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.rollbackFailedLayersCount) !== null && _k !== void 0 ? _k : null, slowest_text_layer_ms: (_l = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _l !== void 0 ? _l : null, stage: analyticsStage, changed_style_segments_count: (_m = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _m !== void 0 ? _m : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), (result === null ? {} : getTypographyRuleAnalyticsProperties(result.analytics.ruleAnalytics))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_o = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _o !== void 0 ? _o : null }));
         outcome = {
             error: true,
             message: getFailureNotificationMessage(error),
@@ -385,6 +465,29 @@ function getTextProcessTimingAnalyticsProperties(timings) {
         timing_write_text_ms: timings.writeText,
     };
 }
+function getTypographyRuleAnalyticsProperties(summary) {
+    try {
+        return {
+            rule_analytics_version: RULE_ANALYTICS_VERSION,
+            rule_change_pairs_count: Object.keys(summary.changePairs).length,
+            rule_change_pairs_json: JSON.stringify(summary.changePairs),
+            rule_changed_codes: summary.changedCodes.join(","),
+            rule_changed_codes_count: summary.changedCodes.length,
+            rule_failed_code: summary.failedRuleCode,
+            rule_measured_codes_count: summary.measuredCodesCount,
+            rule_metrics_json: JSON.stringify(summary.metrics),
+            rule_most_active_code: summary.mostActiveRuleCode,
+            rule_most_active_changed_layers: summary.mostActiveRuleChangedLayers,
+            rule_slowest_code: summary.slowestRuleCode,
+            rule_slowest_duration_ms: summary.slowestRuleDurationMs,
+        };
+    }
+    catch (_a) {
+        return {
+            rule_analytics_version: RULE_ANALYTICS_VERSION,
+        };
+    }
+}
 function getOtherAnalyticsDuration(context, collectTextDuration, timings) {
     const measuredDuration = collectTextDuration +
         timings.typography +
@@ -426,6 +529,151 @@ function getMonotonicTimeMs() {
         // Date.now is a safe fallback in runtimes without the high-resolution timer.
     }
     return Date.now();
+}
+function createTypographyRuleAnalyticsCollector() {
+    const metrics = new Map();
+    for (const code of TYPOGRAPHY_RULE_CODES) {
+        metrics.set(code, {
+            calls: 0,
+            changedApplications: 0,
+            changedTextLayers: new Set(),
+            durationMs: 0,
+        });
+    }
+    return {
+        changePairs: new Map(),
+        currentTextLayerIndex: -1,
+        failedRuleCode: null,
+        lastChangedRuleCodeByTextLayer: new Map(),
+        metrics,
+    };
+}
+function beginTypographyRuleAnalyticsTextLayer(collector, textLayerIndex) {
+    try {
+        collector.currentTextLayerIndex = textLayerIndex;
+    }
+    catch (_a) {
+        // Rule analytics must never affect typography.
+    }
+}
+function applyTypographyRule(collector, code, input, operation) {
+    if (collector === null) {
+        return operation(input);
+    }
+    const startedAt = getMonotonicTimeMs();
+    try {
+        const result = operation(input);
+        recordTypographyRuleMetric(collector, code, Math.max(0, getMonotonicTimeMs() - startedAt), result !== input, true);
+        return result;
+    }
+    catch (error) {
+        collector.failedRuleCode = code;
+        recordTypographyRuleMetric(collector, code, Math.max(0, getMonotonicTimeMs() - startedAt), false, true);
+        throw error;
+    }
+}
+function recordTypographyRuleDerivedChange(collector, code) {
+    if (collector === null) {
+        return;
+    }
+    recordTypographyRuleMetric(collector, code, 0, true, false);
+}
+function recordTypographyRuleObservation(collector, code) {
+    if (collector === null) {
+        return;
+    }
+    recordTypographyRuleMetric(collector, code, 0, false, false);
+}
+function recordTypographyRuleMetric(collector, code, durationMs, changed, trackChangeSequence) {
+    var _a;
+    try {
+        const existing = collector.metrics.get(code);
+        const metric = existing !== null && existing !== void 0 ? existing : {
+            calls: 0,
+            changedApplications: 0,
+            changedTextLayers: new Set(),
+            durationMs: 0,
+        };
+        metric.calls += 1;
+        metric.durationMs += durationMs;
+        if (changed) {
+            metric.changedApplications += 1;
+            if (collector.currentTextLayerIndex >= 0) {
+                metric.changedTextLayers.add(collector.currentTextLayerIndex);
+                if (trackChangeSequence) {
+                    const previousCode = collector.lastChangedRuleCodeByTextLayer.get(collector.currentTextLayerIndex);
+                    if (previousCode !== undefined && previousCode !== code) {
+                        const pair = `${previousCode}>${code}`;
+                        collector.changePairs.set(pair, ((_a = collector.changePairs.get(pair)) !== null && _a !== void 0 ? _a : 0) + 1);
+                    }
+                    collector.lastChangedRuleCodeByTextLayer.set(collector.currentTextLayerIndex, code);
+                }
+            }
+        }
+        collector.metrics.set(code, metric);
+    }
+    catch (_b) {
+        // Rule analytics must never affect typography.
+    }
+}
+function createTypographyRuleAnalyticsSummary(collector) {
+    try {
+        const metrics = {};
+        const changedCodes = [];
+        let mostActiveRuleCode = null;
+        let mostActiveRuleChangedLayers = 0;
+        let slowestRuleCode = null;
+        let slowestRuleDurationMs = 0;
+        for (const [code, metric] of collector.metrics.entries()) {
+            const changedTextLayers = metric.changedTextLayers.size;
+            const durationMs = roundAnalyticsDuration(metric.durationMs);
+            metrics[code] = {
+                calls: metric.calls,
+                changedApplications: metric.changedApplications,
+                changedTextLayers,
+                durationMs,
+            };
+            if (metric.changedApplications > 0) {
+                changedCodes.push(code);
+            }
+            if (changedTextLayers > mostActiveRuleChangedLayers) {
+                mostActiveRuleCode = code;
+                mostActiveRuleChangedLayers = changedTextLayers;
+            }
+            if (durationMs > slowestRuleDurationMs) {
+                slowestRuleCode = code;
+                slowestRuleDurationMs = durationMs;
+            }
+        }
+        changedCodes.sort();
+        return {
+            changePairs: Object.fromEntries(collector.changePairs.entries()),
+            changedCodes,
+            failedRuleCode: collector.failedRuleCode,
+            measuredCodesCount: collector.metrics.size,
+            metrics,
+            mostActiveRuleCode,
+            mostActiveRuleChangedLayers,
+            slowestRuleCode,
+            slowestRuleDurationMs,
+        };
+    }
+    catch (_a) {
+        return {
+            changePairs: {},
+            changedCodes: [],
+            failedRuleCode: collector.failedRuleCode,
+            measuredCodesCount: 0,
+            metrics: {},
+            mostActiveRuleCode: null,
+            mostActiveRuleChangedLayers: 0,
+            slowestRuleCode: null,
+            slowestRuleDurationMs: 0,
+        };
+    }
+}
+function roundAnalyticsDuration(durationMs) {
+    return Math.round(Math.max(0, durationMs) * 1000) / 1000;
 }
 function queueAnalyticsEvent(event, properties = {}) {
     try {
@@ -984,6 +1232,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         let rollbackFailedLayersCount = 0;
         let slowestTextLayerMs = 0;
         let styleSegmentsCount = 0;
+        const ruleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
         const fontLoadCache = new Map();
         const loadedFontKeys = new Set();
         const standalonePhoneCountryPrefixIds = textNodes.length < 2
@@ -1003,6 +1252,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 }
                 processed += 1;
                 countedAsProcessed = true;
+                beginTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, processed - 1);
                 charactersProcessedTotal += oldText.length;
                 largestTextLayerCharacters = Math.max(largestTextLayerCharacters, oldText.length);
                 currentStage = "development_markers";
@@ -1014,7 +1264,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     timings.typography += duration;
                 }, () => {
                     const inputText = standalonePhoneCountryPrefixIds.has(textNode.id) ? normalizeStandaloneRussianPhoneCountryPrefix(oldText) : oldText;
-                    return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes);
+                    return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector);
                 });
                 const newText = cleanResult.text;
                 if (newText !== oldText) {
@@ -1132,6 +1382,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 styleSegmentsCount,
                 timings,
                 uniqueFontsCount: loadedFontKeys.size,
+                ruleAnalytics: createTypographyRuleAnalyticsSummary(ruleAnalyticsCollector),
             },
         };
     }
@@ -1915,14 +2166,14 @@ function cleanTypography(input, options = getDefaultRunOptions()) {
         throw error;
     }
 }
-function cleanTypographyWithMetadata(input, options = getDefaultRunOptions(), existingDevelopmentMarkerIndexes = []) {
+function cleanTypographyWithMetadata(input, options = getDefaultRunOptions(), existingDevelopmentMarkerIndexes = [], ruleAnalyticsCollector = null) {
     try {
         const normalizedInput = normalizeInputNonBreakingSpaces(input);
         const asteriskSpaceCandidateIndexes = getExistingAsteriskSpaceCandidateIndexesForRun(normalizedInput, options);
         const markerIndexes = getDevelopmentMarkerIndexesForRun(normalizedInput, options, existingDevelopmentMarkerIndexes, asteriskSpaceCandidateIndexes);
         const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, [...markerIndexes, ...asteriskSpaceCandidateIndexes]);
         const beautyInput = restoreStableDevelopmentPatternMarkers(inputWithKnownMarkers);
-        const beautyText = cleanTypographyForBeauty(beautyInput);
+        const beautyText = cleanTypographyForBeauty(beautyInput, ruleAnalyticsCollector);
         if (options.mode !== "development") {
             return {
                 text: beautyText,
@@ -2179,19 +2430,19 @@ function createDevelopmentTypographyResult(beautyText) {
         throw error;
     }
 }
-function cleanTypographyForBeauty(input) {
+function cleanTypographyForBeauty(input, ruleAnalyticsCollector = null) {
     try {
         let text = input;
-        text = cleanupSpaces(text);
-        text = cleanupQuotesAndPunctuation(text);
-        text = normalizeMathAndSymbols(text);
-        text = cleanupDashesAndHyphens(text);
-        text = formatPhoneNumbers(text);
-        text = formatNumbersAndMoney(text);
-        text = normalizeAbbreviations(text);
-        text = applyNonBreakingSpaces(text);
-        text = normalizeMathAndSymbols(text);
-        text = normalizeSpacedYears(text);
+        text = cleanupSpaces(text, ruleAnalyticsCollector);
+        text = cleanupQuotesAndPunctuation(text, ruleAnalyticsCollector);
+        text = normalizeMathAndSymbols(text, ruleAnalyticsCollector);
+        text = cleanupDashesAndHyphens(text, ruleAnalyticsCollector);
+        text = formatPhoneNumbers(text, ruleAnalyticsCollector);
+        text = formatNumbersAndMoney(text, ruleAnalyticsCollector);
+        text = normalizeAbbreviations(text, ruleAnalyticsCollector);
+        text = applyNonBreakingSpaces(text, ruleAnalyticsCollector);
+        text = normalizeMathAndSymbols(text, ruleAnalyticsCollector);
+        text = applyTypographyRule(ruleAnalyticsCollector, "year_context", text, normalizeSpacedYears);
         return text;
     }
     catch (error) {
@@ -2226,42 +2477,44 @@ function normalizeInputNonBreakingSpaces(input) {
         throw error;
     }
 }
-function cleanupSpaces(input) {
+function cleanupSpaces(input, ruleAnalyticsCollector = null) {
     try {
-        return input
+        let text = applyTypographyRule(ruleAnalyticsCollector, "space_trim_lines", input, (value) => value
             .split("\n")
             .map((line) => line.replace(/^[ \t\u00A0]+|[ \t\u00A0]+$/g, ""))
-            .join("\n")
-            .replace(/[ \t\u00A0]{2,}/g, " ")
-            .replace(/[ \t\u00A0]+([.…:;,?!»)\]])/g, "$1")
-            .replace(/([«(\[])[ \t\u00A0]+/g, "$1")
-            .replace(/(\d)[ \t\u00A0]+%/g, "$1%")
-            .replace(/~[ \t\u00A0]+(?=[A-Za-zА-Яа-яЁё\d])/g, "~");
+            .join("\n"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "space_collapse", text, (value) => value.replace(/[ \t\u00A0]{2,}/g, " "));
+        text = applyTypographyRule(ruleAnalyticsCollector, "space_before_punctuation", text, (value) => value.replace(/[ \t\u00A0]+([.…:;,?!»)\]])/g, "$1"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "space_after_opening_punctuation", text, (value) => value.replace(/([«(\[])[ \t\u00A0]+/g, "$1"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "space_percent", text, (value) => value.replace(/(\d)[ \t\u00A0]+%/g, "$1%"));
+        return applyTypographyRule(ruleAnalyticsCollector, "space_tilde", text, (value) => value.replace(/~[ \t\u00A0]+(?=[A-Za-zА-Яа-яЁё\d])/g, "~"));
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean spaces", error);
         throw error;
     }
 }
-function cleanupQuotesAndPunctuation(input) {
+function cleanupQuotesAndPunctuation(input, ruleAnalyticsCollector = null) {
     try {
-        const text = input
-            .replace(/\.{3}/g, "…")
-            .replace(/!{2,}/g, "!")
-            .replace(/\?{2,}/g, "?")
-            .replace(/!\?/g, "?!");
-        return formatQuotes(text)
+        let text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_ellipsis", input, (value) => value.replace(/\.{3}/g, "…"));
+        if (/(?:…["'»“”]|["'»“”]…)/.test(text)) {
+            recordTypographyRuleObservation(ruleAnalyticsCollector, "quote_ellipsis_position");
+        }
+        text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_repeated_marks", text, (value) => value.replace(/!{2,}/g, "!").replace(/\?{2,}/g, "?"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_question_exclamation_order", text, (value) => value.replace(/!\?/g, "?!"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "quote_context_script", text, (value) => formatQuotes(value, ruleAnalyticsCollector));
+        text = applyTypographyRule(ruleAnalyticsCollector, "quote_question_exclamation", text, (value) => value
             .replace(/([»“"'])([?!])/g, "$2$1")
-            .replace(/([.,;:])([»“"'])/g, "$2$1")
-            .replace(/([?!](?:[»“"']+))\./g, "$1")
-            .replace(/[ \t\u00A0]+([.,;:?!…])/g, "$1");
+            .replace(/([?!](?:[»“"']+))\./g, "$1"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "quote_punctuation_outside", text, (value) => value.replace(/([.,;:])([»“"'])/g, "$2$1"));
+        return applyTypographyRule(ruleAnalyticsCollector, "space_before_punctuation", text, (value) => value.replace(/[ \t\u00A0]+([.,;:?!…])/g, "$1"));
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean quotes and punctuation", error);
         throw error;
     }
 }
-function formatQuotes(input) {
+function formatQuotes(input, ruleAnalyticsCollector = null) {
     var _a;
     try {
         const stack = [];
@@ -2276,15 +2529,23 @@ function formatQuotes(input) {
             if (opening) {
                 const script = stack.length === 0 ? detectTopLevelQuoteScript(input, index) : stack[stack.length - 1].script;
                 const level = stack.length;
+                const quote = getOpeningQuote(script, level);
                 stack.push({ script, level });
-                result += getOpeningQuote(script, level);
+                result += quote;
+                if (quote !== char) {
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, script === "latin" ? "quote_latin_levels" : "quote_ru_levels");
+                }
             }
             else {
                 const state = (_a = stack.pop()) !== null && _a !== void 0 ? _a : {
                     script: detectTopLevelQuoteScript(input, index),
                     level: 0,
                 };
-                result += getClosingQuote(state.script, state.level);
+                const quote = getClosingQuote(state.script, state.level);
+                result += quote;
+                if (quote !== char) {
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, state.script === "latin" ? "quote_latin_levels" : "quote_ru_levels");
+                }
             }
         }
         return result;
@@ -2485,14 +2746,15 @@ function getClosingQuote(script, level) {
         throw error;
     }
 }
-function cleanupDashesAndHyphens(input) {
+function cleanupDashesAndHyphens(input, ruleAnalyticsCollector = null) {
     try {
-        let text = restoreSpacedHyphenatedWords(input);
-        return normalizeEditorialRanges(text)
-            .replace(/^([ \t\u00A0]*)([-–])(?=[ \t\u00A0])/gm, `$1${EM_DASH}`)
+        let text = applyTypographyRule(ruleAnalyticsCollector, "hyphen_nonbreaking_words", input, restoreSpacedHyphenatedWords);
+        text = normalizeEditorialRanges(text, ruleAnalyticsCollector);
+        text = applyTypographyRule(ruleAnalyticsCollector, "dash_line_start", text, (value) => value.replace(/^([ \t\u00A0]*)([-–])(?=[ \t\u00A0])/gm, `$1${EM_DASH}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "dash_between_words", text, (value) => value
             .replace(/([^ \t\u00A0\n\r\d])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
-            .replace(/([A-Za-zА-Яа-яЁё])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
-            .replace(/([A-Za-zА-Яа-яЁё])-([A-Za-zА-Яа-яЁё])/g, `$1${NB_HYPHEN}$2`);
+            .replace(/([A-Za-zА-Яа-яЁё])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`));
+        return applyTypographyRule(ruleAnalyticsCollector, "hyphen_nonbreaking_words", text, (value) => value.replace(/([A-Za-zА-Яа-яЁё])-([A-Za-zА-Яа-яЁё])/g, `$1${NB_HYPHEN}$2`));
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean dashes and hyphens", error);
@@ -2521,23 +2783,28 @@ function restoreSpacedHyphenatedWords(input) {
         throw error;
     }
 }
-function normalizeEditorialRanges(input) {
+function normalizeEditorialRanges(input, ruleAnalyticsCollector = null) {
     try {
         let text = input;
         const month = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
         const year = `[12][ \\t\\u00A0]?\\d{3}`;
         const wordDate = `\\d{1,2}[ \\t\\u00A0]+(?:${month})(?:[ \\t\\u00A0]+${year}(?:[ \\t\\u00A0]+(?:г\\.?|года|году))?)?`;
         const quarterDate = `[IVXLCDM]+[ \\t\\u00A0]+квартал[ \\t\\u00A0]+${year}`;
-        text = text.replace(/(^|[^\d])(\d{1,3}(?:[ \t\u00A0]\d{3})+)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,3}(?:[ \t\u00A0]\d{3})+)(?=$|[^\d])/g, "$1$2 — $3");
-        text = text.replace(/(^|[^\d.])(\d{1,2}\.\d{1,2}\.\d{2,4})[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}\.\d{1,2}\.\d{2,4})(?=$|[^\d])/g, "$1$2 — $3");
-        text = text.replace(new RegExp(`(^|[^${LETTERS}\\d])(${wordDate})[ \\t\\u00A0]*[-–—−][ \\t\\u00A0]*(${wordDate})(?=$|[^${LETTERS}\\d])`, "gi"), (_match, prefix, start, end) => `${prefix}${normalizeSpacedYearInRangeBoundary(start)} ${EM_DASH} ${normalizeSpacedYearInRangeBoundary(end)}`);
-        text = text.replace(new RegExp(`(^|[^${LETTERS}\\d])(${quarterDate})[ \\t\\u00A0]*[-–—−][ \\t\\u00A0]*(${quarterDate})(?=$|[^${LETTERS}\\d])`, "gi"), (_match, prefix, start, end) => `${prefix}${normalizeSpacedYearInRangeBoundary(start)} ${EM_DASH} ${normalizeSpacedYearInRangeBoundary(end)}`);
-        text = text.replace(/(^|[^\d])(\d{4})[ \t\u00A0]*[-–—−][ \t\u00A0]*(н\.[ \t\u00A0]*в\.|наст\.[ \t\u00A0]*вр\.)(?=$|[^A-Za-zА-Яа-яЁё\d])/gi, (_match, prefix, start, end) => `${prefix}${start} ${EM_DASH} ${end.replace(/[ \t\u00A0]+/g, " ")}`);
-        text = text.replace(/(^|[^\d,+−-])([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*(?:\.{3}|…|[-–—−])[ \t\u00A0]*([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])(?=$|[^A-Za-zА-Яа-яЁё])/g, (_match, prefix, start, end, unit) => `${prefix}${normalizeTemperatureSign(start)}…${normalizeTemperatureSign(end)}${NBSP}°${unit === "F" ? "F" : "C"}`);
-        text = text.replace(/(^|[^\d,])(\d+(?:,\d+)?)%[-–—−](\d+(?:,\d+)?)%(?=$|[^\d,])/g, "$1$2—$3%");
-        text = text.replace(/(^|[^\d:])(\d{1,2}:\d{2})[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}:\d{2})(?=$|[^\d:])/g, "$1$2—$3");
-        text = text.replace(/(^|[^\d.])(\d{1,2}\.\d{1,2})(?!\.\d)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}\.\d{1,2})(?!\.\d)(?=$|[^\d])/g, "$1$2—$3");
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])([IVXLCDM]+)[ \t\u00A0]*[-–—−][ \t\u00A0]*([IVXLCDM]+)(?=$|[^A-Za-zА-Яа-яЁё\d])/g, (match, prefix, startRoman, endRoman, offset, fullText) => {
+        const compoundRangeInput = text;
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_compound_grouped_number", text, (value) => value.replace(/(^|[^\d])(\d{1,3}(?:[ \t\u00A0]\d{3})+)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,3}(?:[ \t\u00A0]\d{3})+)(?=$|[^\d])/g, "$1$2 — $3"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_compound_full_date", text, (value) => value.replace(/(^|[^\d.])(\d{1,2}\.\d{1,2}\.\d{2,4})[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}\.\d{1,2}\.\d{2,4})(?=$|[^\d])/g, "$1$2 — $3"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_compound_word_date", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}\\d])(${wordDate})[ \\t\\u00A0]*[-–—−][ \\t\\u00A0]*(${wordDate})(?=$|[^${LETTERS}\\d])`, "gi"), (_match, prefix, start, end) => `${prefix}${normalizeSpacedYearInRangeBoundary(start)} ${EM_DASH} ${normalizeSpacedYearInRangeBoundary(end)}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_compound_quarter", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}\\d])(${quarterDate})[ \\t\\u00A0]*[-–—−][ \\t\\u00A0]*(${quarterDate})(?=$|[^${LETTERS}\\d])`, "gi"), (_match, prefix, start, end) => `${prefix}${normalizeSpacedYearInRangeBoundary(start)} ${EM_DASH} ${normalizeSpacedYearInRangeBoundary(end)}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_compound_open_year", text, (value) => value.replace(/(^|[^\d])(\d{4})[ \t\u00A0]*[-–—−][ \t\u00A0]*(н\.[ \t\u00A0]*в\.|наст\.[ \t\u00A0]*вр\.)(?=$|[^A-Za-zА-Яа-яЁё\d])/gi, (_match, prefix, start, end) => `${prefix}${start} ${EM_DASH} ${end.replace(/[ \t\u00A0]+/g, " ")}`));
+        if (text !== compoundRangeInput) {
+            recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "range_compound");
+        }
+        text = applyTypographyRule(ruleAnalyticsCollector, "temperature_range", text, (value) => value.replace(/(^|[^\d,+−-])([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*(?:\.{3}|…|[-–—−])[ \t\u00A0]*([+−-]\d+(?:[.,]\d+)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])(?=$|[^A-Za-zА-Яа-яЁё])/g, (_match, prefix, start, end, unit) => `${prefix}${normalizeTemperatureSign(start)}…${normalizeTemperatureSign(end)}${NBSP}°${unit === "F" ? "F" : "C"}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "percent_range", text, (value) => value.replace(/(^|[^\d,])(\d+(?:,\d+)?)%[-–—−](\d+(?:,\d+)?)%(?=$|[^\d,])/g, "$1$2—$3%"));
+        const simpleRangeInput = text;
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_simple_time", text, (value) => value.replace(/(^|[^\d:])(\d{1,2}:\d{2})[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}:\d{2})(?=$|[^\d:])/g, "$1$2—$3"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_simple_short_date", text, (value) => value.replace(/(^|[^\d.])(\d{1,2}\.\d{1,2})(?!\.\d)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d{1,2}\.\d{1,2})(?!\.\d)(?=$|[^\d])/g, "$1$2—$3"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_simple_roman", text, (value) => value.replace(/(^|[^A-Za-zА-Яа-яЁё])([IVXLCDM]+)[ \t\u00A0]*[-–—−][ \t\u00A0]*([IVXLCDM]+)(?=$|[^A-Za-zА-Яа-яЁё\d])/g, (match, prefix, startRoman, endRoman, offset, fullText) => {
             try {
                 const rangeStart = offset + prefix.length;
                 const rangeEnd = rangeStart + match.length - prefix.length;
@@ -2550,13 +2817,16 @@ function normalizeEditorialRanges(input) {
                 console.error("[Чистовик] Failed to normalize editorial roman range", error);
                 return match;
             }
-        });
-        text = text.replace(/(^|[^\d.,:])(\d+(?:[.,]\d+)?)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d+(?:[.,]\d+)?)(?=$|[^\d.,:])/g, (match, prefix, startNumber, endNumber, offset, fullText) => {
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "range_simple_number", text, (value) => value.replace(/(^|[^\d.,:])(\d+(?:[.,]\d+)?)[ \t\u00A0]*[-–—−][ \t\u00A0]*(\d+(?:[.,]\d+)?)(?=$|[^\d.,:])/g, (match, prefix, startNumber, endNumber, offset, fullText) => {
             try {
                 const rangeStart = offset + prefix.length;
                 const rangeEnd = rangeStart + match.length - prefix.length;
                 if (isProtectedNumericRange(fullText, rangeStart, rangeEnd) || isGroupedNumberFragment(fullText, rangeStart, rangeEnd)) {
                     return match;
+                }
+                if (/^[ \t\u00A0]+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?=$|[^A-Za-zА-Яа-яЁё])/i.test(fullText.slice(rangeEnd))) {
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "range_simple_word_date");
                 }
                 return `${prefix}${startNumber}${EM_DASH}${endNumber}`;
             }
@@ -2564,7 +2834,10 @@ function normalizeEditorialRanges(input) {
                 console.error("[Чистовик] Failed to normalize editorial numeric range", error);
                 return match;
             }
-        });
+        }));
+        if (text !== simpleRangeInput) {
+            recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "range_simple");
+        }
         return text;
     }
     catch (error) {
@@ -2703,19 +2976,27 @@ function hasProtectedRomanRangeTokenLetters(token) {
         throw error;
     }
 }
-function formatPhoneNumbers(input) {
+function formatPhoneNumbers(input, ruleAnalyticsCollector = null) {
     try {
-        let text = input.replace(/^([ \t\u00A0]*)(9\d{2})[ \t\u00A0.\-–—‑]*(\d{3})[ \t\u00A0.\-–—‑]*(\d{2})[ \t\u00A0.\-–—‑]*(\d{2})([ \t\u00A0]*)$/, (_match, prefix, operator, first, second, third, suffix) => `${prefix}${operator}${NBSP}${first}${NB_HYPHEN}${second}${NB_HYPHEN}${third}${suffix}`);
+        let text = applyTypographyRule(ruleAnalyticsCollector, "phone_ru_format", input, (value) => value.replace(/^([ \t\u00A0]*)(9\d{2})[ \t\u00A0.\-–—‑]*(\d{3})[ \t\u00A0.\-–—‑]*(\d{2})[ \t\u00A0.\-–—‑]*(\d{2})([ \t\u00A0]*)$/, (match, prefix, operator, first, second, third, suffix) => {
+            const replacement = `${prefix}${operator}${NBSP}${first}${NB_HYPHEN}${second}${NB_HYPHEN}${third}${suffix}`;
+            if (replacement !== match) {
+                recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "phone_ru_separators");
+            }
+            return replacement;
+        }));
         const phoneCandidate = /(^|[^\d])((?:\+[ \t\u00A0]*)?[78](?:[ \t\u00A0().\-–—‑]*\d){10})(?![ \t\u00A0().\-–—‑]*\d)(?![ \t\u00A0]*[₽$€])/g;
-        text = text.replace(phoneCandidate, (match, prefix, candidate, offset, fullText) => {
+        text = applyTypographyRule(ruleAnalyticsCollector, "phone_ru_format", text, (value) => value.replace(phoneCandidate, (match, prefix, candidate, offset, fullText) => {
             try {
                 const candidateStart = offset + prefix.length;
                 if (previousNonSpaceSkippingDevelopmentMarker(fullText, candidateStart) === "№" || isInsideProtectedNumericIdentifier(fullText, candidateStart, candidateStart + candidate.length)) {
+                    recordTypographyRuleObservation(ruleAnalyticsCollector, "phone_protected_contexts");
                     return match;
                 }
                 const candidateEnd = candidateStart + candidate.length;
                 const next = nextNonSpace(fullText, candidateEnd);
                 if (next === "₽" || next === "$" || next === "€") {
+                    recordTypographyRuleObservation(ruleAnalyticsCollector, "phone_protected_contexts");
                     return match;
                 }
                 const digits = candidate.replace(/\D/g, "");
@@ -2727,13 +3008,18 @@ function formatPhoneNumbers(input) {
                 const first = digits.slice(4, 7);
                 const second = digits.slice(7, 9);
                 const third = digits.slice(9, 11);
-                return `${prefix}${country}${NBSP}${operator}${NBSP}${first}${NB_HYPHEN}${second}${NB_HYPHEN}${third}`;
+                const replacement = `${prefix}${country}${NBSP}${operator}${NBSP}${first}${NB_HYPHEN}${second}${NB_HYPHEN}${third}`;
+                if (replacement !== match) {
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "phone_ru_separators");
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, digits[0] === "8" ? "phone_ru_prefix_eight" : "phone_ru_prefix_seven");
+                }
+                return replacement;
             }
             catch (error) {
                 console.error("[Чистовик] Failed to format phone candidate", error);
                 return match;
             }
-        });
+        }));
         return text;
     }
     catch (error) {
@@ -2741,14 +3027,15 @@ function formatPhoneNumbers(input) {
         throw error;
     }
 }
-function formatNumbersAndMoney(input) {
+function formatNumbersAndMoney(input, ruleAnalyticsCollector = null) {
     try {
-        let text = normalizeCommaSeparatedDates(input);
-        text = normalizeDottedNumberingSeparators(text);
-        text = normalizeWesternGroupedNumbers(text);
-        text = text.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart, decimalPart, offset, fullText) => {
+        let text = applyTypographyRule(ruleAnalyticsCollector, "number_protect_date", input, normalizeCommaSeparatedDates);
+        text = applyTypographyRule(ruleAnalyticsCollector, "number_document_outline", text, normalizeDottedNumberingSeparators);
+        text = applyTypographyRule(ruleAnalyticsCollector, "number_western_format", text, normalizeWesternGroupedNumbers);
+        text = applyTypographyRule(ruleAnalyticsCollector, "number_decimal_comma", text, (value) => value.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart, decimalPart, offset, fullText) => {
             try {
                 if (isProtectedDottedNumber(fullText, offset, offset + match.length)) {
+                    recordProtectedDottedNumberRuleObservations(ruleAnalyticsCollector, fullText, offset, offset + match.length);
                     return match;
                 }
                 return `${integerPart},${decimalPart}`;
@@ -2757,11 +3044,12 @@ function formatNumbersAndMoney(input) {
                 console.error("[Чистовик] Failed to format decimal number", error);
                 return match;
             }
-        });
-        text = text.replace(/\b\d{4,}(?:,\d+)?\b/g, (match, offset, fullText) => {
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, (value) => value.replace(/\b\d{4,}(?:,\d+)?\b/g, (match, offset, fullText) => {
             try {
                 const [integerPart, decimalPart] = match.split(",");
                 if (isNumberPartOfDate(fullText, offset, offset + integerPart.length) || shouldSkipNumberGrouping(fullText, offset, offset + integerPart.length, integerPart)) {
+                    recordProtectedGroupedNumberRuleObservations(ruleAnalyticsCollector, fullText, offset, offset + integerPart.length);
                     return match;
                 }
                 return `${groupLongNumber(integerPart)}${decimalPart === undefined ? "" : `,${decimalPart}`}`;
@@ -2770,12 +3058,11 @@ function formatNumbersAndMoney(input) {
                 console.error("[Чистовик] Failed to group number", error);
                 return match;
             }
-        });
-        text = normalizeGroupedNumberSpaces(text);
-        text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]*(₽|\$|€|км|кг|м)(?=$|[^A-Za-zА-Яа-яЁё])/g, `$1${NBSP}$2`);
-        text = normalizeTechnicalMeasurementUnits(text);
-        text = normalizeSpacedYears(text);
-        return text;
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, normalizeGroupedNumberSpaces);
+        text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, (value) => value.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]*(₽|\$|€|км|кг|м)(?=$|[^A-Za-zА-Яа-яЁё])/g, `$1${NBSP}$2`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, normalizeTechnicalMeasurementUnits);
+        return applyTypographyRule(ruleAnalyticsCollector, "year_context", text, normalizeSpacedYears);
     }
     catch (error) {
         console.error("[Чистовик] Failed to format numbers and money", error);
@@ -2942,6 +3229,47 @@ function isProtectedDottedNumber(fullText, start, end) {
     catch (error) {
         console.error("[Чистовик] Failed to check dotted number exception", error);
         throw error;
+    }
+}
+function recordProtectedDottedNumberRuleObservations(collector, fullText, start, end) {
+    try {
+        const bounds = getLooseTokenBounds(fullText, start, end);
+        const token = fullText.slice(bounds.start, bounds.end);
+        if (/[A-Za-zА-Яа-яЁё]/.test(token) && countMatches(token, /\./g) > 1) {
+            recordTypographyRuleObservation(collector, "number_protect_version");
+            return;
+        }
+        if (isNumberPartOfCodeToken(fullText, start, end)) {
+            recordTypographyRuleObservation(collector, "number_protect_code");
+            return;
+        }
+        if (isNumberInsideDateLikeToken(fullText, start, end) || isNumberPartOfDate(fullText, start, end)) {
+            recordTypographyRuleObservation(collector, "number_protect_date");
+            return;
+        }
+        if (countMatches(token, /\./g) > 1) {
+            recordTypographyRuleObservation(collector, "number_protect_ip");
+        }
+    }
+    catch (_a) {
+        // Rule analytics must never affect typography.
+    }
+}
+function recordProtectedGroupedNumberRuleObservations(collector, fullText, start, end) {
+    try {
+        if (isNumberPartOfCodeToken(fullText, start, end)) {
+            recordTypographyRuleObservation(collector, "number_protect_code");
+        }
+        if (isNumberInsideDateLikeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end) || isNumberPartOfDate(fullText, start, end)) {
+            recordTypographyRuleObservation(collector, "number_protect_date");
+        }
+        const previous = previousNonSpaceSkippingDevelopmentMarker(fullText, start);
+        if (previous === "№" || previous === "§" || isNumberAfterSignNumberPrefix(fullText, start)) {
+            recordTypographyRuleObservation(collector, "number_protect_sign");
+        }
+    }
+    catch (_a) {
+        // Rule analytics must never affect typography.
     }
 }
 function isNumberInsideDateLikeToken(fullText, start, end) {
@@ -3288,14 +3616,18 @@ function groupLongNumber(value) {
         throw error;
     }
 }
-function normalizeAbbreviations(input) {
+function normalizeAbbreviations(input, ruleAnalyticsCollector = null) {
     try {
         let text = input;
-        text = text.replace(/([₽$€])[ \t\u00A0]*\/[ \t\u00A0]*мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, currency, offset, fullText) => {
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_month", text, (value) => value.replace(/([₽$€])[ \t\u00A0]*\/[ \t\u00A0]*мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, currency, offset, fullText) => {
             try {
                 const periodIndex = match.lastIndexOf(".");
                 if (periodIndex !== -1 && isSameLineSentenceContinuation(fullText, offset + periodIndex)) {
+                    recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, offset + periodIndex, true);
                     return `${currency}/мес.`;
+                }
+                if (periodIndex !== -1) {
+                    recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, offset + periodIndex, false);
                 }
                 return `${currency}/мес`;
             }
@@ -3303,22 +3635,24 @@ function normalizeAbbreviations(input) {
                 console.error("[Чистовик] Failed to normalize currency per month", error);
                 return match;
             }
-        });
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(др)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}${NBSP}${second}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(в)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(ч)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(н)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(в)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(е)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(к)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}P.${NBSP}S.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}S.`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])кв\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1кв.${NBSP}м`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])куб\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1куб.${NBSP}м`);
-        text = normalizeSlashSeparatedAbbreviationDots(text);
-        text = text.replace(new RegExp(`(^|[^${LETTERS}])(${DOTTED_ABBREVIATIONS})\\.?(?=$|[^${LETTERS}\\-${NB_HYPHEN}])`, "gi"), (match, prefix, abbreviation, offset, fullText) => {
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_compound", text, (value) => value
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(др)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}${NBSP}${second}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(в)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(ч)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second, third) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(н)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(в)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(е)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(к)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match, prefix, first, second) => `${prefix}${first}.${NBSP}${second}.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}P.${NBSP}S.`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}S.`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_area_volume", text, (value) => value
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])кв\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1кв.${NBSP}м`)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])куб\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1куб.${NBSP}м`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, normalizeSlashSeparatedAbbreviationDots);
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}])(${DOTTED_ABBREVIATIONS})\\.?(?=$|[^${LETTERS}\\-${NB_HYPHEN}])`, "gi"), (match, prefix, abbreviation, offset, fullText) => {
             try {
                 const abbreviationStart = offset + prefix.length;
                 const abbreviationEnd = abbreviationStart + abbreviation.length;
@@ -3331,10 +3665,10 @@ function normalizeAbbreviations(input) {
                 console.error("[Чистовик] Failed to normalize dotted abbreviation candidate", error);
                 return match;
             }
-        });
-        text = text.replace(new RegExp(`(^|[^${LETTERS}])(под)(?=\\.|[ \\t\\u00A0]+\\d)(\\.?)`, "gi"), "$1$2.");
-        text = text.replace(new RegExp(`(^|[^${LETTERS}])(б[-${NB_HYPHEN}]р|пр[-${NB_HYPHEN}]т)\\.?(?=$|[^${LETTERS}])`, "gi"), "$1$2");
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, prefix, offset, fullText) => {
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}])(под)(?=\\.|[ \\t\\u00A0]+\\d)(\\.?)`, "gi"), "$1$2."));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_undotted_hyphenated", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}])(б[-${NB_HYPHEN}]р|пр[-${NB_HYPHEN}]т)\\.?(?=$|[^${LETTERS}])`, "gi"), "$1$2"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_month", text, (value) => value.replace(/(^|[^A-Za-zА-Яа-яЁё])мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, prefix, offset, fullText) => {
             try {
                 const start = offset + prefix.length;
                 const previous = previousNonSpace(fullText, start);
@@ -3342,7 +3676,11 @@ function normalizeAbbreviations(input) {
                 const periodIndex = match.lastIndexOf(".");
                 if (previous === "/" || previous === "₽" || previous === "$" || previous === "€" || next === "/") {
                     if (periodIndex !== -1 && isSameLineSentenceContinuation(fullText, offset + periodIndex)) {
+                        recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, offset + periodIndex, true);
                         return `${prefix}мес.`;
+                    }
+                    if (periodIndex !== -1) {
+                        recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, offset + periodIndex, false);
                     }
                     return `${prefix}мес`;
                 }
@@ -3352,39 +3690,57 @@ function normalizeAbbreviations(input) {
                 console.error("[Чистовик] Failed to normalize мес", error);
                 return match;
             }
-        });
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(млн|млрд|трлн)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, prefix, abbreviation, offset, fullText) => {
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_undotted_large_number", text, (value) => value.replace(/(^|[^A-Za-zА-Яа-яЁё])(млн|млрд|трлн)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, prefix, abbreviation, offset, fullText) => {
             try {
                 const periodIndex = offset + match.length - 1;
                 if (isSameLineSentenceContinuation(fullText, periodIndex)) {
+                    recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, true);
                     return `${prefix}${abbreviation}.`;
                 }
+                recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, false);
                 return `${prefix}${abbreviation}`;
             }
             catch (error) {
                 console.error("[Чистовик] Failed to normalize large number abbreviation period", error);
                 return match;
             }
-        });
-        text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?[ \t\u00A0]+)(квт|вт|в|dpi|lpi|км|кг|м|с|мм|см|л|мл)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, numberWithSpace, unit, offset, fullText) => {
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_undotted_units", text, (value) => value.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?[ \t\u00A0]+)(квт|вт|в|dpi|lpi|км|кг|м|с|мм|см|л|мл)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match, numberWithSpace, unit, offset, fullText) => {
             try {
                 const periodIndex = offset + match.length - 1;
                 const normalizedUnit = getCanonicalTechnicalMeasurementUnit(unit);
                 if (isSameLineSentenceContinuation(fullText, periodIndex)) {
+                    recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, true);
                     return `${numberWithSpace}${normalizedUnit}.`;
                 }
+                recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, false);
                 return `${numberWithSpace}${normalizedUnit}`;
             }
             catch (error) {
                 console.error("[Чистовик] Failed to normalize unit period", error);
                 return match;
             }
-        });
+        }));
         return text;
     }
     catch (error) {
         console.error("[Чистовик] Failed to normalize abbreviations", error);
         throw error;
+    }
+}
+function recordAbbreviationPeriodRuleObservation(collector, fullText, periodIndex, preservedAsSentenceEnd) {
+    try {
+        if (preservedAsSentenceEnd) {
+            recordTypographyRuleObservation(collector, "abbr_sentence_end");
+            return;
+        }
+        if (/^[ \t\u00A0]*[\r\n]/.test(fullText.slice(periodIndex + 1))) {
+            recordTypographyRuleDerivedChange(collector, "abbr_line_break");
+        }
+    }
+    catch (_a) {
+        // Rule analytics must never affect typography.
     }
 }
 function isSentenceEndingPeriod(fullText, periodIndex) {
@@ -3513,33 +3869,42 @@ function findNextHorizontalNonSpaceIndex(input, index) {
         throw error;
     }
 }
-function applyNonBreakingSpaces(input) {
+function applyNonBreakingSpaces(input, ruleAnalyticsCollector = null) {
     try {
         let text = input;
-        text = text.replace(/[ \t\u00A0]+—/g, `${NBSP}${EM_DASH}`);
-        text = applyParticleNonBreakingSpaces(text);
-        text = applyShortWordNonBreakingSpaces(text);
-        text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}$3.${NBSP}`);
-        text = text.replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`);
-        text = text.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`);
-        text = text.replace(/(©)[ \t\u00A0]*(?=[12]\d{3}\b)/g, `$1${NBSP}`);
-        text = text.replace(/(^|[^A-Za-zА-Яа-яЁё])(д|г|стр|кв)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`);
-        text = applyWhitelistedPercentNonBreakingSpaces(text);
-        text = text.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+([A-Za-zА-Яа-яЁё]+\.?)/g, (match, number, followingWord, offset, fullText) => {
+        const beforeDash = text;
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_before_dash", text, (value) => value.replace(/[ \t\u00A0]+—/g, `${NBSP}${EM_DASH}`));
+        if (text !== beforeDash) {
+            recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "dash_nbsp_before");
+        }
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_particles", text, applyParticleNonBreakingSpaces);
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_short_cyrillic_words", text, applyShortWordNonBreakingSpaces);
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_initials", text, (value) => value
+            .replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}$3.${NBSP}`)
+            .replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_after_number_sign", text, (value) => value.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_copyright_year", text, (value) => value.replace(/(©)[ \t\u00A0]*(?=[12]\d{3}\b)/g, `$1${NBSP}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_number_unit", text, (value) => value.replace(/(^|[^A-Za-zА-Яа-яЁё])(д|г|стр|кв)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_percent_metric", text, applyWhitelistedPercentNonBreakingSpaces);
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_number_unit", text, (value) => value.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t]+([A-Za-zА-Яа-яЁё]+\.?)/g, (match, number, followingWord, offset, fullText) => {
             try {
                 const numberStart = offset;
                 const numberEnd = numberStart + number.length;
                 if (!shouldKeepNumberWithNextWord(fullText, numberStart, numberEnd, number)) {
                     return match;
                 }
-                return `${number}${NBSP}${followingWord}`;
+                const replacement = `${number}${NBSP}${followingWord}`;
+                if (replacement !== match && /^(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$/i.test(followingWord.replace(/\.$/, ""))) {
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "nbsp_calendar_date");
+                }
+                return replacement;
             }
             catch (error) {
                 console.error("[Чистовик] Failed to apply number non-breaking space", error);
                 return match;
             }
-        });
-        text = restoreSpacesAfterMeasurementUnits(text);
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_number_unit", text, restoreSpacesAfterMeasurementUnits);
         return text;
     }
     catch (error) {
@@ -3638,15 +4003,15 @@ function restoreSpacesAfterMeasurementUnits(input) {
         throw error;
     }
 }
-function normalizeMathAndSymbols(input) {
+function normalizeMathAndSymbols(input, ruleAnalyticsCollector = null) {
     try {
-        const text = input
+        let text = applyTypographyRule(ruleAnalyticsCollector, "math_fractions", input, (value) => value
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d])1\/2($|[^A-Za-zА-Яа-яЁё\d])/g, "$1½$2")
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d])1\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¼$2")
-            .replace(/(^|[^A-Za-zА-Яа-яЁё\d])3\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¾$2")
-            .replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+[-–−][ \t\u00A0]+(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`);
-        return normalizeMathExpressions(text)
-            .replace(/(^|[^A-Za-zА-Яа-яЁё\d])([-–−])[ \t\u00A0]*(\d)/g, (match, prefix, _sign, digit, offset, fullText) => {
+            .replace(/(^|[^A-Za-zА-Яа-яЁё\d])3\/4($|[^A-Za-zА-Яа-яЁё\d])/g, "$1¾$2"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "math_subtraction_context", text, (value) => value.replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+[-–−][ \t\u00A0]+(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "math_expression_spacing", text, (value) => normalizeMathExpressions(value, ruleAnalyticsCollector));
+        text = applyTypographyRule(ruleAnalyticsCollector, "math_negative_number", text, (value) => value.replace(/(^|[^A-Za-zА-Яа-яЁё\d])([-–−])[ \t\u00A0]*(\d)/g, (match, prefix, _sign, digit, offset, fullText) => {
             try {
                 const signIndex = offset + prefix.length;
                 const previous = previousNonSpace(fullText, signIndex);
@@ -3665,14 +4030,12 @@ function normalizeMathAndSymbols(input) {
                 console.error("[Чистовик] Failed to normalize negative number", error);
                 return match;
             }
-        })
-            .replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+−(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`)
-            .replace(/(\d(?:[\d \u00A0]*\d)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])\b/g, (_match, number, unit) => `${number}${NBSP}°${unit === "F" ? "F" : "C"}`)
-            .replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]+°(?![CFС]\b)/g, "$1°")
-            .replace(/\(c\)/gi, "©")
-            .replace(/\(tm\)/gi, "™")
-            .replace(/\(r\)/gi, "®")
-            .replace(/(?:->|=>)/g, "→");
+        }));
+        text = applyTypographyRule(ruleAnalyticsCollector, "math_subtraction_context", text, (value) => value.replace(/(\d+(?:,\d+)?%)[ \t\u00A0]+−(\d+(?:,\d+)?%)/g, `$1${NBSP}${MINUS}${NBSP}$2`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "temperature_scale", text, (value) => value.replace(/(\d(?:[\d \u00A0]*\d)?)[ \t\u00A0]*°?[ \t\u00A0]*([CFС])\b/g, (_match, number, unit) => `${number}${NBSP}°${unit === "F" ? "F" : "C"}`));
+        text = applyTypographyRule(ruleAnalyticsCollector, "temperature_degree_only", text, (value) => value.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]+°(?![CFС]\b)/g, "$1°"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "symbol_legal_marks", text, (value) => value.replace(/\(c\)/gi, "©").replace(/\(tm\)/gi, "™").replace(/\(r\)/gi, "®"));
+        return applyTypographyRule(ruleAnalyticsCollector, "symbol_arrow", text, (value) => value.replace(/(?:->|=>)/g, "→"));
     }
     catch (error) {
         console.error("[Чистовик] Failed to normalize math and symbols", error);
@@ -3703,12 +4066,12 @@ function isMaskedSecretSign(fullText, signIndex) {
         throw error;
     }
 }
-function normalizeMathExpressions(input) {
+function normalizeMathExpressions(input, ruleAnalyticsCollector = null) {
     try {
         let result = "";
         let index = 0;
         while (index < input.length) {
-            const expression = parseMathExpression(input, index);
+            const expression = parseMathExpression(input, index, ruleAnalyticsCollector);
             if (expression === null) {
                 result += input[index];
                 index += 1;
@@ -3724,7 +4087,7 @@ function normalizeMathExpressions(input) {
         throw error;
     }
 }
-function parseMathExpression(input, start) {
+function parseMathExpression(input, start, ruleAnalyticsCollector = null) {
     try {
         const firstNumber = parseMathNumber(input, start, true);
         if (firstNumber === null || !hasMathNumberBoundaryBefore(input, start) || isInsideProtectedToken(input, start, firstNumber.end)) {
@@ -3752,9 +4115,23 @@ function parseMathExpression(input, start) {
         if (!hasMathExpressionContext(firstNumber, operators)) {
             return null;
         }
+        const normalizedText = parts.join("");
+        if (normalizedText !== input.slice(start, cursor)) {
+            for (const operator of operators) {
+                if (operator.text === "×") {
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "math_multiplication");
+                }
+                else if (operator.text === MINUS) {
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "math_subtraction_context");
+                }
+                else {
+                    recordTypographyRuleDerivedChange(ruleAnalyticsCollector, "math_basic_operators");
+                }
+            }
+        }
         return {
             end: cursor,
-            text: parts.join(""),
+            text: normalizedText,
         };
     }
     catch (error) {

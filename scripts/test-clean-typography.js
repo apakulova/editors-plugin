@@ -38,6 +38,11 @@ const source = compiledSource.replace(
     "globalThis.getCleanResultNotificationMessage = getCleanResultNotificationMessage;",
     "globalThis.getRunAnalyticsProperties = getRunAnalyticsProperties;",
     "globalThis.getTextProcessTimingAnalyticsProperties = getTextProcessTimingAnalyticsProperties;",
+    "globalThis.getTypographyRuleAnalyticsProperties = getTypographyRuleAnalyticsProperties;",
+    "globalThis.createTypographyRuleAnalyticsCollector = createTypographyRuleAnalyticsCollector;",
+    "globalThis.beginTypographyRuleAnalyticsTextLayer = beginTypographyRuleAnalyticsTextLayer;",
+    "globalThis.createTypographyRuleAnalyticsSummary = createTypographyRuleAnalyticsSummary;",
+    "globalThis.TYPOGRAPHY_RULE_CODES = TYPOGRAPHY_RULE_CODES;",
     "globalThis.presentRunOutcome = presentRunOutcome;",
     "globalThis.runTypograph = runTypograph;",
   ].join(" ")
@@ -86,6 +91,11 @@ const getFailureNotificationMessage = context.globalThis.getFailureNotificationM
 const getCleanResultNotificationMessage = context.globalThis.getCleanResultNotificationMessage;
 const getRunAnalyticsProperties = context.globalThis.getRunAnalyticsProperties;
 const getTextProcessTimingAnalyticsProperties = context.globalThis.getTextProcessTimingAnalyticsProperties;
+const getTypographyRuleAnalyticsProperties = context.globalThis.getTypographyRuleAnalyticsProperties;
+const createTypographyRuleAnalyticsCollector = context.globalThis.createTypographyRuleAnalyticsCollector;
+const beginTypographyRuleAnalyticsTextLayer = context.globalThis.beginTypographyRuleAnalyticsTextLayer;
+const createTypographyRuleAnalyticsSummary = context.globalThis.createTypographyRuleAnalyticsSummary;
+const typographyRuleCodes = context.globalThis.TYPOGRAPHY_RULE_CODES;
 const presentRunOutcome = context.globalThis.presentRunOutcome;
 const runTypograph = context.globalThis.runTypograph;
 const developmentOptions = {
@@ -126,9 +136,9 @@ assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload, "uuid"
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 4);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 5);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
-assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-29");
+assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-30");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
 
 assert.strictEqual(
@@ -144,7 +154,7 @@ assert.strictEqual(
     source: "quick_run",
     startedAt: 0,
   }).performance_measurement_version,
-  2
+  3
 );
 
 assert.deepStrictEqual(
@@ -160,6 +170,61 @@ assert.deepStrictEqual(
     operation: "load_text_layer_fonts",
   }
 );
+
+const ruleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
+beginTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, 0);
+const ruleAnalyticsResult = cleanTypographyWithMetadata("2*2 и 1000 руб", beautyOptions, [], ruleAnalyticsCollector);
+const ruleAnalyticsSummary = createTypographyRuleAnalyticsSummary(ruleAnalyticsCollector);
+const ruleAnalyticsProperties = getTypographyRuleAnalyticsProperties(ruleAnalyticsSummary);
+
+assert.strictEqual(ruleAnalyticsResult.text, `2${NBSP}${MULTIPLY}${NBSP}2${NBSP}и${NBSP}1${NBSP}000${NBSP}руб.`);
+assert(ruleAnalyticsSummary.changedCodes.includes("math_multiplication"));
+assert(ruleAnalyticsSummary.changedCodes.includes("number_group_digits"));
+assert(ruleAnalyticsSummary.changedCodes.includes("abbr_dotted"));
+assert(ruleAnalyticsSummary.changedCodes.includes("nbsp_short_cyrillic_words"));
+assert.strictEqual(ruleAnalyticsProperties.rule_analytics_version, 1);
+assert.strictEqual(ruleAnalyticsSummary.measuredCodesCount, 77);
+assert.strictEqual(Object.keys(ruleAnalyticsSummary.metrics).length, 77);
+assert.strictEqual(typeof ruleAnalyticsProperties.rule_metrics_json, "string");
+assert.strictEqual(typeof ruleAnalyticsProperties.rule_change_pairs_json, "string");
+assert.strictEqual(ruleAnalyticsProperties.rule_metrics_json.includes("2*2"), false);
+assert.strictEqual(ruleAnalyticsProperties.rule_metrics_json.includes("1000 руб"), false);
+assert.strictEqual(ruleAnalyticsProperties.rule_change_pairs_json.includes("2*2"), false);
+assert.strictEqual(ruleAnalyticsSummary.failedRuleCode, null);
+
+const documentedRuleCodes = Array.from(
+  fs.readFileSync("docs/typography-rules.md", "utf8").matchAll(/`([a-z][a-z0-9_]+)`/g),
+  (match) => match[1]
+).filter((code) => typographyRuleCodes.includes(code));
+assert.deepStrictEqual(
+  Array.from(new Set(documentedRuleCodes)).sort(),
+  JSON.parse(JSON.stringify(typographyRuleCodes)).sort(),
+  "Every analytics rule code must remain documented"
+);
+assert.strictEqual(new Set(typographyRuleCodes).size, typographyRuleCodes.length, "Rule analytics codes must be unique");
+
+const unchangedRuleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
+beginTypographyRuleAnalyticsTextLayer(unchangedRuleAnalyticsCollector, 0);
+cleanTypographyWithMetadata("Чистовик", beautyOptions, [], unchangedRuleAnalyticsCollector);
+const unchangedRuleAnalyticsSummary = createTypographyRuleAnalyticsSummary(unchangedRuleAnalyticsCollector);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(unchangedRuleAnalyticsSummary.changedCodes)), []);
+
+const protectedRuleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
+beginTypographyRuleAnalyticsTextLayer(protectedRuleAnalyticsCollector, 0);
+cleanTypographyWithMetadata("v2.0.1 192.168.0.1 SALE-2026 № 12345", beautyOptions, [], protectedRuleAnalyticsCollector);
+const protectedRuleAnalyticsSummary = createTypographyRuleAnalyticsSummary(protectedRuleAnalyticsCollector);
+assert(protectedRuleAnalyticsSummary.metrics.number_protect_version.calls > 0);
+assert(protectedRuleAnalyticsSummary.metrics.number_protect_ip.calls > 0);
+assert(protectedRuleAnalyticsSummary.metrics.number_protect_code.calls > 0);
+assert(protectedRuleAnalyticsSummary.metrics.number_protect_sign.calls > 0);
+assert.strictEqual(protectedRuleAnalyticsSummary.changedCodes.includes("number_protect_version"), false);
+assert.strictEqual(protectedRuleAnalyticsSummary.changedCodes.includes("number_protect_ip"), false);
+
+const abbreviationLineBreakCollector = createTypographyRuleAnalyticsCollector();
+beginTypographyRuleAnalyticsTextLayer(abbreviationLineBreakCollector, 0);
+cleanTypographyWithMetadata("5 кг.\nДоставка", beautyOptions, [], abbreviationLineBreakCollector);
+const abbreviationLineBreakSummary = createTypographyRuleAnalyticsSummary(abbreviationLineBreakCollector);
+assert(abbreviationLineBreakSummary.changedCodes.includes("abbr_line_break"));
 
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Node is read-only"), "write_text").category, "layer_not_editable");
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unexpected write failure"), "write_text").category, "write_text_failed");
@@ -1568,6 +1633,9 @@ async function runStandalonePhoneCountryPrefixContextTests() {
   assert.strictEqual(result.analytics.largestTextLayerCharacters, 13);
   assert.strictEqual(result.analytics.uniqueFontsCount, 1);
   assert.strictEqual(result.analytics.styleSegmentsCount, 2);
+  assert.strictEqual(result.analytics.ruleAnalytics.measuredCodesCount, 77);
+  assert(result.analytics.ruleAnalytics.changedCodes.includes("phone_ru_format"));
+  assert(result.analytics.ruleAnalytics.changedCodes.includes("phone_ru_separators"));
   assert.strictEqual(prefix.characters, "+7");
   assert.strictEqual(tail.characters, `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
 

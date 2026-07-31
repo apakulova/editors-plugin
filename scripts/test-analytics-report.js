@@ -418,6 +418,7 @@ async function run() {
       assert.strictEqual(summary.baseline.performanceRuns, 160);
       assert.strictEqual(summary.medianDurationMs, 420);
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
+      assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '3'")));
     }
   );
 
@@ -464,6 +465,7 @@ async function run() {
       assert.strictEqual(summary.fontsMs, 310);
       assert.strictEqual(summary.baseline.averageDurationMs, 338.71);
       assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
+      assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("= '3'")));
     }
   );
 

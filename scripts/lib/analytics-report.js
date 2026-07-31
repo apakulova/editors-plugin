@@ -6,7 +6,7 @@ const DEFAULT_POSTHOG_DASHBOARD_URL = "https://eu.posthog.com/project/184090/das
 const DEFAULT_POSTHOG_PERFORMANCE_DASHBOARD_URL = "https://eu.posthog.com/project/184090/dashboard/854930";
 const POSTHOG_UNEXPECTED_RESPONSE_REASON = "PostHog вернул неожиданный формат данных.";
 const MIN_WEEKLY_PERFORMANCE_RUNS = 10;
-const PERFORMANCE_MEASUREMENT_VERSION = 2;
+const PERFORMANCE_MEASUREMENT_VERSION = 3;
 const SUMMARY_COLUMNS = [
   "uniqueUsers",
   "typographRuns",
