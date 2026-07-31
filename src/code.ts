@@ -15,10 +15,10 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 5;
-const ANALYTICS_PLUGIN_RELEASE = "2026-07-30";
+const ANALYTICS_SCHEMA_VERSION = 6;
+const ANALYTICS_PLUGIN_RELEASE = "2026-07-31";
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
-const RULE_ANALYTICS_VERSION = 1;
+const RULE_ANALYTICS_VERSION = 2;
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
@@ -383,8 +383,9 @@ interface TypographyRuleAnalyticsCollector {
   changePairs: Map<string, number>;
   currentTextLayerIndex: number;
   failedRuleCode: TypographyRuleCode | null;
-  lastChangedRuleCodeByTextLayer: Map<number, TypographyRuleCode>;
   metrics: Map<TypographyRuleCode, TypographyRuleMetric>;
+  pendingChangedApplications: Map<TypographyRuleCode, number>;
+  pendingChangeSequence: TypographyRuleCode[];
 }
 
 interface TypographyRuleMetricSummary {
@@ -952,14 +953,51 @@ function createTypographyRuleAnalyticsCollector(): TypographyRuleAnalyticsCollec
     changePairs: new Map<string, number>(),
     currentTextLayerIndex: -1,
     failedRuleCode: null,
-    lastChangedRuleCodeByTextLayer: new Map<number, TypographyRuleCode>(),
     metrics,
+    pendingChangedApplications: new Map<TypographyRuleCode, number>(),
+    pendingChangeSequence: [],
   };
 }
 
 function beginTypographyRuleAnalyticsTextLayer(collector: TypographyRuleAnalyticsCollector, textLayerIndex: number): void {
   try {
     collector.currentTextLayerIndex = textLayerIndex;
+    collector.pendingChangedApplications.clear();
+    collector.pendingChangeSequence = [];
+  } catch {
+    // Rule analytics must never affect typography.
+  }
+}
+
+function finishTypographyRuleAnalyticsTextLayer(collector: TypographyRuleAnalyticsCollector, finalTextChanged: boolean): void {
+  try {
+    if (finalTextChanged && collector.currentTextLayerIndex >= 0) {
+      for (const [code, changedApplications] of collector.pendingChangedApplications.entries()) {
+        const metric = collector.metrics.get(code);
+
+        if (metric === undefined) {
+          continue;
+        }
+
+        metric.changedApplications += changedApplications;
+        metric.changedTextLayers.add(collector.currentTextLayerIndex);
+      }
+
+      let previousCode: TypographyRuleCode | null = null;
+
+      for (const code of collector.pendingChangeSequence) {
+        if (previousCode !== null && previousCode !== code) {
+          const pair = `${previousCode}>${code}`;
+          collector.changePairs.set(pair, (collector.changePairs.get(pair) ?? 0) + 1);
+        }
+
+        previousCode = code;
+      }
+    }
+
+    collector.currentTextLayerIndex = -1;
+    collector.pendingChangedApplications.clear();
+    collector.pendingChangeSequence = [];
   } catch {
     // Rule analytics must never affect typography.
   }
@@ -1024,22 +1062,11 @@ function recordTypographyRuleMetric(
     metric.calls += 1;
     metric.durationMs += durationMs;
 
-    if (changed) {
-      metric.changedApplications += 1;
+    if (changed && collector.currentTextLayerIndex >= 0) {
+      collector.pendingChangedApplications.set(code, (collector.pendingChangedApplications.get(code) ?? 0) + 1);
 
-      if (collector.currentTextLayerIndex >= 0) {
-        metric.changedTextLayers.add(collector.currentTextLayerIndex);
-
-        if (trackChangeSequence) {
-          const previousCode = collector.lastChangedRuleCodeByTextLayer.get(collector.currentTextLayerIndex);
-
-          if (previousCode !== undefined && previousCode !== code) {
-            const pair = `${previousCode}>${code}`;
-            collector.changePairs.set(pair, (collector.changePairs.get(pair) ?? 0) + 1);
-          }
-
-          collector.lastChangedRuleCodeByTextLayer.set(collector.currentTextLayerIndex, code);
-        }
+      if (trackChangeSequence) {
+        collector.pendingChangeSequence.push(code);
       }
     }
 
@@ -1786,6 +1813,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
       const textLayerStartedAt = getMonotonicTimeMs();
       let currentStage: AnalyticsErrorStage = "unknown";
       let countedAsProcessed = false;
+      let originalTextForRuleAnalytics: string | null = null;
       let shouldStopProcessing = false;
 
       try {
@@ -1797,6 +1825,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
 
         processed += 1;
         countedAsProcessed = true;
+        originalTextForRuleAnalytics = oldText;
         beginTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, processed - 1);
         charactersProcessedTotal += oldText.length;
         largestTextLayerCharacters = Math.max(largestTextLayerCharacters, oldText.length);
@@ -1942,6 +1971,15 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
         console.error(`[Чистовик] Failed to process text node ${textNode.id}`, error);
       } finally {
         if (countedAsProcessed) {
+          let finalTextChanged = false;
+
+          try {
+            finalTextChanged = originalTextForRuleAnalytics !== null && textNode.characters !== originalTextForRuleAnalytics;
+          } catch {
+            // If Figma no longer allows reading the layer, rule changes cannot be confirmed.
+          }
+
+          finishTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, finalTextChanged);
           slowestTextLayerMs = Math.max(slowestTextLayerMs, Math.max(0, getMonotonicTimeMs() - textLayerStartedAt));
         }
       }
