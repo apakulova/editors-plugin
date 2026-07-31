@@ -15,7 +15,7 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 6;
+const ANALYTICS_SCHEMA_VERSION = 7;
 const ANALYTICS_PLUGIN_RELEASE = "2026-07-31";
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
 const RULE_ANALYTICS_VERSION = 2;
@@ -310,6 +310,7 @@ interface AnalyticsPayload {
   event: AnalyticsEventName;
   properties: AnalyticsProperties;
   timestamp: string;
+  uuid: string;
 }
 
 interface QueuedAnalyticsEvent {
@@ -1185,7 +1186,7 @@ function delay(timeoutMs: number): Promise<void> {
 async function trackAnalyticsEvent(event: AnalyticsEventName, properties: AnalyticsProperties = {}, capturedAt: string = new Date().toISOString(), eventId: string = createAnalyticsEventId()): Promise<void> {
   try {
     const identity = await getAnalyticsIdentity();
-    const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt);
+    const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt, eventId);
 
     await enqueueAnalyticsEvent(payload, eventId);
     await flushQueuedAnalyticsEvents();
@@ -1194,7 +1195,7 @@ async function trackAnalyticsEvent(event: AnalyticsEventName, properties: Analyt
   }
 }
 
-function createAnalyticsEventPayload(event: AnalyticsEventName, properties: AnalyticsProperties, identity: AnalyticsIdentity, capturedAt: string): AnalyticsPayload {
+function createAnalyticsEventPayload(event: AnalyticsEventName, properties: AnalyticsProperties, identity: AnalyticsIdentity, capturedAt: string, eventUuid: string = createAnalyticsEventId()): AnalyticsPayload {
   return {
     api_key: ANALYTICS_PROJECT_TOKEN,
     distinct_id: identity.distinctId,
@@ -1208,6 +1209,7 @@ function createAnalyticsEventPayload(event: AnalyticsEventName, properties: Anal
       plugin_release: ANALYTICS_PLUGIN_RELEASE,
     },
     timestamp: capturedAt,
+    uuid: isValidAnalyticsUuid(eventUuid) ? eventUuid : createAnalyticsEventUuidFromSeed(eventUuid),
   };
 }
 
@@ -1305,9 +1307,14 @@ function toQueuedAnalyticsEvent(value: unknown): QueuedAnalyticsEvent | null {
   }
 
   const event = value as Partial<QueuedAnalyticsEvent>;
-  const payload = sanitizeAnalyticsPayload(event.payload);
 
-  if (typeof event.id !== "string" || payload === null) {
+  if (typeof event.id !== "string") {
+    return null;
+  }
+
+  const payload = sanitizeAnalyticsPayload(event.payload, event.id);
+
+  if (payload === null) {
     return null;
   }
 
@@ -1318,7 +1325,7 @@ function toQueuedAnalyticsEvent(value: unknown): QueuedAnalyticsEvent | null {
   };
 }
 
-function sanitizeAnalyticsPayload(value: unknown): AnalyticsPayload | null {
+function sanitizeAnalyticsPayload(value: unknown, eventId: string): AnalyticsPayload | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
@@ -1342,6 +1349,7 @@ function sanitizeAnalyticsPayload(value: unknown): AnalyticsPayload | null {
     event: payload.event as AnalyticsEventName,
     properties: payload.properties as AnalyticsProperties,
     timestamp: payload.timestamp,
+    uuid: typeof payload.uuid === "string" && isValidAnalyticsUuid(payload.uuid) ? payload.uuid : createAnalyticsEventUuidFromSeed(eventId),
   };
 }
 
@@ -1390,10 +1398,38 @@ function createAnalyticsAnonymousId(): string {
 
 function createAnalyticsEventId(): string {
   try {
-    return `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}_${Math.random().toString(36).slice(2, 12)}`;
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+      const randomValue = Math.floor(Math.random() * 16);
+      const value = character === "x" ? randomValue : (randomValue & 0x3) | 0x8;
+
+      return value.toString(16);
+    });
   } catch {
-    return `evt_fallback_${Date.now().toString(36)}`;
+    return createAnalyticsEventUuidFromSeed(`fallback_${Date.now()}`);
   }
+}
+
+function isValidAnalyticsUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function createAnalyticsEventUuidFromSeed(seed: string): string {
+  let hex = "";
+
+  for (let block = 0; block < 4; block += 1) {
+    let hash = 2166136261 ^ block;
+
+    for (let index = 0; index < seed.length; index += 1) {
+      hash ^= seed.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+
+    hex += (hash >>> 0).toString(16).padStart(8, "0");
+  }
+
+  const normalizedHex = `${hex.slice(0, 12)}4${hex.slice(13, 16)}a${hex.slice(17, 32)}`;
+
+  return `${normalizedHex.slice(0, 8)}-${normalizedHex.slice(8, 12)}-${normalizedHex.slice(12, 16)}-${normalizedHex.slice(16, 20)}-${normalizedHex.slice(20)}`;
 }
 
 function createAnalyticsRunId(): string {

@@ -7,6 +7,7 @@ const DEFAULT_POSTHOG_PERFORMANCE_DASHBOARD_URL = "https://eu.posthog.com/projec
 const POSTHOG_UNEXPECTED_RESPONSE_REASON = "PostHog вернул неожиданный формат данных.";
 const MIN_WEEKLY_PERFORMANCE_RUNS = 10;
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
+const RUN_DEDUPLICATION_EXPRESSION = "coalesce(nullIf(toString(properties.run_id), ''), toString(uuid))";
 const SUMMARY_COLUMNS = [
   "uniqueUsers",
   "typographRuns",
@@ -32,6 +33,11 @@ const SUMMARY_COLUMNS = [
 const BASELINE_COLUMNS = [
   "typographRuns",
   "failedRuns",
+  "performanceRuns",
+  "medianDurationMs",
+  "p90DurationMs",
+];
+const DEDUPLICATED_PERFORMANCE_COLUMNS = [
   "performanceRuns",
   "medianDurationMs",
   "p90DurationMs",
@@ -249,23 +255,23 @@ function getAnalyticsQuery(start, end) {
   return `
 SELECT
   uniqExactIf(distinct_id, event = 'plugin_run_started') AS unique_users,
-  countIf(event = 'plugin_run_started') AS typograph_runs,
-  countIf(event = 'plugin_run_completed') AS successful_runs,
-  countIf(event = 'plugin_run_completed' AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS performance_runs,
-  countIf(event = 'plugin_run_failed') AS failed_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started') AS typograph_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_completed') AS successful_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_completed' AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS performance_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_failed') AS failed_runs,
   uniqExactIf(distinct_id, event = 'plugin_run_failed') AS affected_users,
   quantileIf(0.5)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms) AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS median_duration_ms,
   quantileIf(0.9)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms) AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS p90_duration_ms,
-  countIf(event = 'plugin_run_started' AND properties.mode = 'default') AS mode_default,
-  countIf(event = 'plugin_run_started' AND properties.mode = 'beauty') AS mode_beauty,
-  countIf(event = 'plugin_run_started' AND properties.mode = 'development') AS mode_development,
-  countIf(event = 'plugin_run_started' AND properties.selection_scope = 'single_text') AS scope_single_text,
-  countIf(event = 'plugin_run_started' AND properties.selection_scope = 'container') AS scope_container,
-  countIf(event = 'plugin_run_started' AND properties.selection_scope = 'page') AS scope_page,
-  countIf(event = 'plugin_run_started' AND properties.selection_scope = 'multi_selection') AS scope_multi_selection,
-  countIf(event = 'plugin_run_started' AND properties.process_hidden_nodes = true) AS runs_with_hidden_nodes,
-  countIf(event = 'plugin_run_started' AND properties.process_locked_nodes = true) AS runs_with_locked_nodes,
-  countIf(event = 'plugin_run_started' AND properties.recolor_existing_asterisks = true) AS runs_with_recolored_asterisks,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.mode = 'default') AS mode_default,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.mode = 'beauty') AS mode_beauty,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.mode = 'development') AS mode_development,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.selection_scope = 'single_text') AS scope_single_text,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.selection_scope = 'container') AS scope_container,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.selection_scope = 'page') AS scope_page,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.selection_scope = 'multi_selection') AS scope_multi_selection,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.process_hidden_nodes = true) AS runs_with_hidden_nodes,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.process_locked_nodes = true) AS runs_with_locked_nodes,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.recolor_existing_asterisks = true) AS runs_with_recolored_asterisks,
   countIf(event = 'settings_opened') AS settings_opened,
   countIf(event = 'channel_link_clicked') AS channel_link_clicked
 FROM events
@@ -288,9 +294,9 @@ function getBaselineAnalyticsQuery(start, end) {
 
   return `
 SELECT
-  countIf(event = 'plugin_run_started') AS typograph_runs,
-  countIf(event = 'plugin_run_failed') AS failed_runs,
-  countIf(event = 'plugin_run_completed' AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS performance_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started') AS typograph_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_failed') AS failed_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_completed' AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS performance_runs,
   quantileIf(0.5)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms) AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS median_duration_ms,
   quantileIf(0.9)(toFloat(properties.duration_ms), event = 'plugin_run_completed' AND isNotNull(properties.duration_ms) AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}') AS p90_duration_ms
 FROM events
@@ -301,6 +307,31 @@ WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
 `;
 }
 
+function getDeduplicatedPerformanceQuery(start, end) {
+  const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
+  const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
+
+  return `
+SELECT
+  count() AS performance_runs,
+  quantile(0.5)(duration_ms) AS median_duration_ms,
+  quantile(0.9)(duration_ms) AS p90_duration_ms
+FROM (
+  SELECT
+    ${RUN_DEDUPLICATION_EXPRESSION} AS run_id,
+    any(toFloat(properties.duration_ms)) AS duration_ms
+  FROM events
+  WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
+    AND timestamp < toDateTime('${endDateTime}', 'UTC')
+    AND event = 'plugin_run_completed'
+    AND isNotNull(properties.duration_ms)
+    AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}'
+    AND ifNull(properties.is_test_event, false) != true
+  GROUP BY run_id
+)
+`;
+}
+
 function getErrorCategoriesQuery(start, end) {
   const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
   const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
@@ -308,7 +339,7 @@ function getErrorCategoriesQuery(start, end) {
   return `
 SELECT
   toString(properties.error_category) AS error_category,
-  count() AS total
+  uniqExact(${RUN_DEDUPLICATION_EXPRESSION}) AS total
 FROM events
 WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
   AND timestamp < toDateTime('${endDateTime}', 'UTC')
@@ -327,23 +358,37 @@ function getWeeklyPerformanceQuery(start, end) {
   const timingColumns = PERFORMANCE_TIMING_COLUMNS
     .map(
       (item) =>
-        `  avgIf(toFloat(properties.${item.property}), isNotNull(properties.${item.property})) AS ${item.property}`
+        `  avg(${item.property}) AS ${item.property}`
+    )
+    .join(",\n");
+  const timingRunColumns = PERFORMANCE_TIMING_COLUMNS
+    .map(
+      (item) =>
+        `    any(toFloat(properties.${item.property})) AS ${item.property}`
     )
     .join(",\n");
 
   return `
 SELECT
   count() AS successful_runs,
-  avgIf(toFloat(properties.duration_ms), isNotNull(properties.duration_ms)) AS average_duration_ms,
-  quantileIf(0.9)(toFloat(properties.duration_ms), isNotNull(properties.duration_ms)) AS p90_duration_ms,
-  maxIf(toFloat(properties.duration_ms), isNotNull(properties.duration_ms)) AS slowest_duration_ms,
+  avg(duration_ms) AS average_duration_ms,
+  quantile(0.9)(duration_ms) AS p90_duration_ms,
+  max(duration_ms) AS slowest_duration_ms,
 ${timingColumns}
-FROM events
-WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
-  AND timestamp < toDateTime('${endDateTime}', 'UTC')
-  AND event = 'plugin_run_completed'
-  AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}'
-  AND ifNull(properties.is_test_event, false) != true
+FROM (
+  SELECT
+    ${RUN_DEDUPLICATION_EXPRESSION} AS run_id,
+    any(toFloat(properties.duration_ms)) AS duration_ms,
+${timingRunColumns}
+  FROM events
+  WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
+    AND timestamp < toDateTime('${endDateTime}', 'UTC')
+    AND event = 'plugin_run_completed'
+    AND isNotNull(properties.duration_ms)
+    AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}'
+    AND ifNull(properties.is_test_event, false) != true
+  GROUP BY run_id
+)
 `;
 }
 
@@ -353,8 +398,8 @@ function getWeeklyErrorSummaryQuery(start, end) {
 
   return `
 SELECT
-  countIf(event = 'plugin_run_started') AS typograph_runs,
-  countIf(event = 'plugin_run_failed') AS failed_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started') AS typograph_runs,
+  uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_failed') AS failed_runs,
   uniqExactIf(distinct_id, event = 'plugin_run_failed') AS affected_users
 FROM events
 WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
@@ -371,7 +416,7 @@ function getErrorScopesQuery(start, end) {
   return `
 SELECT
   toString(properties.selection_scope) AS selection_scope,
-  count() AS total
+  uniqExact(${RUN_DEDUPLICATION_EXPRESSION}) AS total
 FROM events
 WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
   AND timestamp < toDateTime('${endDateTime}', 'UTC')
@@ -417,10 +462,12 @@ async function queryPostHog(query, name, env) {
 async function fetchPostHogSummary(dateRange, env = process.env) {
   assertRequiredEnv(env, ["POSTHOG_PERSONAL_API_KEY"]);
   const baselineStart = new Date(dateRange.start.getTime() - 7 * MS_IN_DAY);
-  const [summaryPayload, baselinePayload, categoriesPayload] = await Promise.all([
+  const [summaryPayload, baselinePayload, categoriesPayload, performancePayload, baselinePerformancePayload] = await Promise.all([
     queryPostHog(getAnalyticsQuery(dateRange.start, dateRange.end), "chistovik telegram daily summary", env),
     queryPostHog(getBaselineAnalyticsQuery(baselineStart, dateRange.start), "chistovik telegram seven day baseline", env),
     queryPostHog(getErrorCategoriesQuery(dateRange.start, dateRange.end), "chistovik telegram error categories", env),
+    queryPostHog(getDeduplicatedPerformanceQuery(dateRange.start, dateRange.end), "chistovik telegram daily performance without duplicates", env),
+    queryPostHog(getDeduplicatedPerformanceQuery(baselineStart, dateRange.start), "chistovik telegram baseline performance without duplicates", env),
   ]);
 
   const row = Array.isArray(summaryPayload.results) && Array.isArray(summaryPayload.results[0]) ? summaryPayload.results[0] : null;
@@ -436,6 +483,8 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
 
   const summary = Object.fromEntries(SUMMARY_COLUMNS.map((column, index) => [column, Number(row[index] || 0)]));
   const baseline = Object.fromEntries(BASELINE_COLUMNS.map((column, index) => [column, Number(baselineRow[index] || 0)]));
+  const performance = parseNumericResult(performancePayload, DEDUPLICATED_PERFORMANCE_COLUMNS);
+  const baselinePerformance = parseNumericResult(baselinePerformancePayload, DEDUPLICATED_PERFORMANCE_COLUMNS);
   const errorCategories = categoriesPayload.results
     .filter((categoryRow) => Array.isArray(categoryRow) && typeof categoryRow[0] === "string")
     .map((categoryRow) => ({
@@ -446,12 +495,15 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
 
   return {
     ...summary,
+    performanceRuns: performance.performanceRuns,
+    medianDurationMs: performance.medianDurationMs,
+    p90DurationMs: performance.p90DurationMs,
     baseline: {
       averageDailyRuns: baseline.typographRuns / 7,
       failedRate: baseline.typographRuns > 0 ? baseline.failedRuns / baseline.typographRuns : null,
-      performanceRuns: baseline.performanceRuns,
-      medianDurationMs: baseline.medianDurationMs,
-      p90DurationMs: baseline.p90DurationMs,
+      performanceRuns: baselinePerformance.performanceRuns,
+      medianDurationMs: baselinePerformance.medianDurationMs,
+      p90DurationMs: baselinePerformance.p90DurationMs,
     },
     errorCategories,
   };

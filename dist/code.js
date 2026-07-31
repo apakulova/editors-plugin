@@ -16,7 +16,7 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 6;
+const ANALYTICS_SCHEMA_VERSION = 7;
 const ANALYTICS_PLUGIN_RELEASE = "2026-07-31";
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
 const RULE_ANALYTICS_VERSION = 2;
@@ -738,7 +738,7 @@ function delay(timeoutMs) {
 async function trackAnalyticsEvent(event, properties = {}, capturedAt = new Date().toISOString(), eventId = createAnalyticsEventId()) {
     try {
         const identity = await getAnalyticsIdentity();
-        const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt);
+        const payload = createAnalyticsEventPayload(event, properties, identity, capturedAt, eventId);
         await enqueueAnalyticsEvent(payload, eventId);
         await flushQueuedAnalyticsEvents();
     }
@@ -746,13 +746,14 @@ async function trackAnalyticsEvent(event, properties = {}, capturedAt = new Date
         // Analytics must never affect plugin behavior.
     }
 }
-function createAnalyticsEventPayload(event, properties, identity, capturedAt) {
+function createAnalyticsEventPayload(event, properties, identity, capturedAt, eventUuid = createAnalyticsEventId()) {
     return {
         api_key: ANALYTICS_PROJECT_TOKEN,
         distinct_id: identity.distinctId,
         event,
         properties: Object.assign(Object.assign({}, properties), { $geoip_disable: true, $process_person_profile: false, analytics_schema_version: ANALYTICS_SCHEMA_VERSION, identity_type: identity.identityType, plugin_release: ANALYTICS_PLUGIN_RELEASE }),
         timestamp: capturedAt,
+        uuid: isValidAnalyticsUuid(eventUuid) ? eventUuid : createAnalyticsEventUuidFromSeed(eventUuid),
     };
 }
 function getAnalyticsCaptureEndpoint() {
@@ -826,8 +827,11 @@ function toQueuedAnalyticsEvent(value) {
         return null;
     }
     const event = value;
-    const payload = sanitizeAnalyticsPayload(event.payload);
-    if (typeof event.id !== "string" || payload === null) {
+    if (typeof event.id !== "string") {
+        return null;
+    }
+    const payload = sanitizeAnalyticsPayload(event.payload, event.id);
+    if (payload === null) {
         return null;
     }
     return {
@@ -836,7 +840,7 @@ function toQueuedAnalyticsEvent(value) {
         payload,
     };
 }
-function sanitizeAnalyticsPayload(value) {
+function sanitizeAnalyticsPayload(value, eventId) {
     if (typeof value !== "object" || value === null) {
         return null;
     }
@@ -855,6 +859,7 @@ function sanitizeAnalyticsPayload(value) {
         event: payload.event,
         properties: payload.properties,
         timestamp: payload.timestamp,
+        uuid: typeof payload.uuid === "string" && isValidAnalyticsUuid(payload.uuid) ? payload.uuid : createAnalyticsEventUuidFromSeed(eventId),
     };
 }
 async function getAnalyticsIdentity() {
@@ -897,11 +902,31 @@ function createAnalyticsAnonymousId() {
 }
 function createAnalyticsEventId() {
     try {
-        return `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}_${Math.random().toString(36).slice(2, 12)}`;
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+            const randomValue = Math.floor(Math.random() * 16);
+            const value = character === "x" ? randomValue : (randomValue & 0x3) | 0x8;
+            return value.toString(16);
+        });
     }
     catch (_a) {
-        return `evt_fallback_${Date.now().toString(36)}`;
+        return createAnalyticsEventUuidFromSeed(`fallback_${Date.now()}`);
     }
+}
+function isValidAnalyticsUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+function createAnalyticsEventUuidFromSeed(seed) {
+    let hex = "";
+    for (let block = 0; block < 4; block += 1) {
+        let hash = 2166136261 ^ block;
+        for (let index = 0; index < seed.length; index += 1) {
+            hash ^= seed.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+        }
+        hex += (hash >>> 0).toString(16).padStart(8, "0");
+    }
+    const normalizedHex = `${hex.slice(0, 12)}4${hex.slice(13, 16)}a${hex.slice(17, 32)}`;
+    return `${normalizedHex.slice(0, 8)}-${normalizedHex.slice(8, 12)}-${normalizedHex.slice(12, 16)}-${normalizedHex.slice(16, 20)}-${normalizedHex.slice(20)}`;
 }
 function createAnalyticsRunId() {
     try {

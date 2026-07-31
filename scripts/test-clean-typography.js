@@ -32,6 +32,8 @@ const source = compiledSource.replace(
     "globalThis.processTextNodes = processTextNodes;",
     "globalThis.syncDevelopmentMarkerPluginData = syncDevelopmentMarkerPluginData;",
     "globalThis.createAnalyticsEventPayload = createAnalyticsEventPayload;",
+    "globalThis.createAnalyticsEventId = createAnalyticsEventId;",
+    "globalThis.toQueuedAnalyticsEvent = toQueuedAnalyticsEvent;",
     "globalThis.createAnalyticsErrorDiagnostic = createAnalyticsErrorDiagnostic;",
     "globalThis.getAnalyticsCaptureEndpoint = getAnalyticsCaptureEndpoint;",
     "globalThis.getFailureNotificationMessage = getFailureNotificationMessage;",
@@ -86,6 +88,8 @@ const filterProcessableTextNodes = context.globalThis.filterProcessableTextNodes
 const processTextNodes = context.globalThis.processTextNodes;
 const syncDevelopmentMarkerPluginData = context.globalThis.syncDevelopmentMarkerPluginData;
 const createAnalyticsEventPayload = context.globalThis.createAnalyticsEventPayload;
+const createAnalyticsEventId = context.globalThis.createAnalyticsEventId;
+const toQueuedAnalyticsEvent = context.globalThis.toQueuedAnalyticsEvent;
 const createAnalyticsErrorDiagnostic = context.globalThis.createAnalyticsErrorDiagnostic;
 const getAnalyticsCaptureEndpoint = context.globalThis.getAnalyticsCaptureEndpoint;
 const getFailureNotificationMessage = context.globalThis.getFailureNotificationMessage;
@@ -121,6 +125,7 @@ const beautyOptions = {
 
 assert.strictEqual(getAnalyticsCaptureEndpoint(), "https://eu.i.posthog.com/i/v0/e/");
 
+const analyticsEventUuid = "123e4567-e89b-42d3-a456-426614174000";
 const analyticsPayload = createAnalyticsEventPayload(
   "plugin_run_started",
   { mode: "default", source: "quick_run" },
@@ -130,18 +135,36 @@ const analyticsPayload = createAnalyticsEventPayload(
     identityType: "anonymous",
     userId: null,
   },
-  "2026-06-08T10:15:00.000Z"
+  "2026-06-08T10:15:00.000Z",
+  analyticsEventUuid
 );
 
 assert.strictEqual(analyticsPayload.timestamp, "2026-06-08T10:15:00.000Z");
-assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload, "uuid"), false);
+assert.strictEqual(analyticsPayload.uuid, analyticsEventUuid);
+assert.match(createAnalyticsEventId(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 6);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 7);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
 assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-31");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
+
+const legacyQueuedEvent = {
+  attempts: 1,
+  id: "evt_legacy_retry",
+  payload: {
+    ...analyticsPayload,
+  },
+};
+delete legacyQueuedEvent.payload.uuid;
+const normalizedLegacyEventFirstRead = toQueuedAnalyticsEvent(legacyQueuedEvent);
+const normalizedLegacyEventSecondRead = toQueuedAnalyticsEvent(legacyQueuedEvent);
+
+assert(normalizedLegacyEventFirstRead);
+assert(normalizedLegacyEventSecondRead);
+assert.match(normalizedLegacyEventFirstRead.payload.uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+assert.strictEqual(normalizedLegacyEventFirstRead.payload.uuid, normalizedLegacyEventSecondRead.payload.uuid);
 
 assert.strictEqual(
   getRunAnalyticsProperties({

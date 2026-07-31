@@ -408,6 +408,8 @@ async function run() {
       { results: [[3, 28, 20, 18, 5, 1, 420, 1800, 28, 0, 0, 13, 14, 1, 0, 0, 0, 0, 0, 0]] },
       { results: [[175, 7, 160, 400, 1385]] },
       { results: [["font_unavailable", 5]] },
+      { results: [[18, 420, 1800]] },
+      { results: [[160, 400, 1385]] },
     ],
     async (calls) => {
       const summary = await fetchPostHogSummary(dateRange, env);
@@ -419,6 +421,8 @@ async function run() {
       assert.strictEqual(summary.medianDurationMs, 420);
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '3'")));
+      assert(calls[0] && JSON.parse(calls[0].options.body).query.query.includes("coalesce(nullIf(toString(properties.run_id), ''), toString(uuid))"));
+      assert(calls.slice(3).every((call) => JSON.parse(call.options.body).query.query.includes("GROUP BY run_id")));
     }
   );
 
@@ -427,6 +431,8 @@ async function run() {
       { results: [] },
       { results: [[0, 0, 0, 0, 0]] },
       { results: [] },
+      { results: [[0, 0, 0]] },
+      { results: [[0, 0, 0]] },
     ],
     async () => {
       const diagnostic = await createAnalyticsMessageOrDiagnostic("yesterday", env);
@@ -442,6 +448,8 @@ async function run() {
       { results: [Array(20).fill(0)] },
       { results: [[0, 0, 0, 0, 0]] },
       { results: [] },
+      { results: [[0, 0, 0]] },
+      { results: [[0, 0, 0]] },
     ],
     async () => {
       const emptyMessage = await createAnalyticsMessageOrDiagnostic("yesterday", env);
