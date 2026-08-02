@@ -432,11 +432,51 @@
       }
 
       .rules-panel {
+        height: calc(100vh - 50px);
+        min-height: 0;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .rules-scroll {
         align-content: start;
+        display: grid;
         gap: 12px;
-        max-height: calc(100vh - 50px);
+        height: 100%;
+        padding: 24px 16px 16px;
+      }
+
+      .persistent-scroll-viewport {
         overflow-y: auto;
-        padding-bottom: 16px;
+        overscroll-behavior: contain;
+        scrollbar-width: none;
+      }
+
+      .persistent-scroll-viewport::-webkit-scrollbar {
+        display: none;
+      }
+
+      .persistent-scroll-indicator {
+        bottom: 4px;
+        pointer-events: none;
+        position: absolute;
+        right: 3px;
+        top: 4px;
+        width: 4px;
+      }
+
+      .persistent-scroll-indicator[hidden] {
+        display: none;
+      }
+
+      .persistent-scroll-thumb {
+        background: #b8b8b8;
+        border-radius: 999px;
+        left: 0;
+        min-height: 24px;
+        position: absolute;
+        top: 0;
+        width: 4px;
       }
 
       .rules-list {
@@ -650,8 +690,9 @@
 
       </section>
 
-      <section class="content panel rules-panel" data-panel="rules">
-        <div class="rules-list">
+      <section class="panel rules-panel" data-panel="rules">
+        <div class="rules-scroll persistent-scroll-viewport" id="rulesScroll">
+          <div class="rules-list">
           <!-- chistovik-content:rules:start -->
             <details class="rule">
               <summary>Кавычки и&nbsp;пунктуация</summary>
@@ -763,6 +804,10 @@
               </div>
             </details>
           <!-- chistovik-content:rules:end -->
+          </div>
+        </div>
+        <div class="persistent-scroll-indicator" id="rulesScrollIndicator" hidden aria-hidden="true">
+          <span class="persistent-scroll-thumb" id="rulesScrollThumb"></span>
         </div>
       </section>
 
@@ -817,6 +862,9 @@
       const actions = document.querySelector(".actions");
       const channelLinks = Array.from(document.querySelectorAll("[data-channel-link]"));
       const websiteLinks = Array.from(document.querySelectorAll("[data-website-link]"));
+      const rulesScroll = document.getElementById("rulesScroll");
+      const rulesScrollIndicator = document.getElementById("rulesScrollIndicator");
+      const rulesScrollThumb = document.getElementById("rulesScrollThumb");
 
       function getSelectedModeValue() {
         const selectedMode = document.querySelector('input[name="typographMode"]:checked');
@@ -848,6 +896,33 @@
         });
       }
 
+      function updatePersistentScrollIndicator(viewport, indicator, thumb) {
+        const viewportHeight = viewport.clientHeight;
+        const contentHeight = viewport.scrollHeight;
+        const canScroll = contentHeight > viewportHeight + 1;
+
+        indicator.hidden = !canScroll;
+
+        if (!canScroll) {
+          return;
+        }
+
+        const trackHeight = indicator.clientHeight;
+        const thumbHeight = Math.max(24, trackHeight * (viewportHeight / contentHeight));
+        const maximumThumbOffset = trackHeight - thumbHeight;
+        const maximumScrollOffset = contentHeight - viewportHeight;
+        const thumbOffset = maximumScrollOffset > 0
+          ? maximumThumbOffset * (viewport.scrollTop / maximumScrollOffset)
+          : 0;
+
+        thumb.style.height = `${thumbHeight}px`;
+        thumb.style.transform = `translateY(${thumbOffset}px)`;
+      }
+
+      function updateRulesScrollIndicator() {
+        updatePersistentScrollIndicator(rulesScroll, rulesScrollIndicator, rulesScrollThumb);
+      }
+
       function selectTab(selectedTab) {
         tabs.forEach((item) => {
           const isActive = item.dataset.tab === selectedTab;
@@ -860,6 +935,10 @@
         });
 
         actions.classList.toggle("hidden", selectedTab !== "typograph");
+
+        if (selectedTab === "rules") {
+          window.requestAnimationFrame(updateRulesScrollIndicator);
+        }
       }
 
       tabs.forEach((tab) => {
@@ -871,6 +950,10 @@
       modeInputs.forEach((input) => {
         input.addEventListener("change", syncDevelopmentOnlyOptions);
       });
+
+      rulesScroll.addEventListener("scroll", updateRulesScrollIndicator);
+      rulesScroll.addEventListener("click", () => window.requestAnimationFrame(updateRulesScrollIndicator));
+      window.addEventListener("resize", updateRulesScrollIndicator);
 
       syncDevelopmentOnlyOptions();
 

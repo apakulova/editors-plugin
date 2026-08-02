@@ -20,6 +20,9 @@ assert.strictEqual(uiSource.includes('type: "channel-link-clicked"'), true, "The
 assert.strictEqual(uiSource.includes('type: "website-link-clicked"'), true, "The website link must notify the plugin code");
 assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("channel_link_clicked"'), true, "Telegram clicks must reach PostHog");
 assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("website_link_clicked"'), true, "Website clicks must reach PostHog");
+assert.strictEqual(uiSource.includes('id="rulesScrollIndicator"'), true, "Scrollable rules must have a persistent indicator");
+assert.strictEqual(uiSource.includes("updatePersistentScrollIndicator"), true, "Scrollable UI areas must share the persistent indicator logic");
+assert.strictEqual(uiSource.includes("persistent-scroll-thumb"), true, "The persistent scroll indicator must use the shared thumb style");
 
 const source = compiledSource.replace(
   "void run();",
