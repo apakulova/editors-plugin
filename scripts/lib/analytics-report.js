@@ -7,6 +7,14 @@ const DEFAULT_POSTHOG_PERFORMANCE_DASHBOARD_URL = "https://eu.posthog.com/projec
 const POSTHOG_UNEXPECTED_RESPONSE_REASON = "PostHog вернул неожиданный формат данных.";
 const MIN_WEEKLY_PERFORMANCE_RUNS = 10;
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
+const POINT_EDITING_PHASE = "baseline";
+const POINT_EDITING_RELEASE = "2026-07-31";
+const POINT_EDITING_RELEASE_DAY = { day: 31, month: 7, year: 2026 };
+const POINT_EDITING_FIRST_FULL_DAY = { day: 1, month: 8, year: 2026 };
+const POINT_EDITING_MIN_FULL_DAYS = 7;
+const POINT_EDITING_MIN_SUCCESSFUL_RUNS = 30;
+const POINT_EDITING_WAIT_MESSAGE = "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок";
+const POINT_EDITING_READY_MESSAGE = "✅ Можно приступать к переходу на точечную обработку текста";
 const RUN_DEDUPLICATION_EXPRESSION = "coalesce(nullIf(toString(properties.run_id), ''), toString(uuid))";
 const SUMMARY_COLUMNS = [
   "uniqueUsers",
@@ -194,6 +202,13 @@ function getMoscowCompletedWeekRange(referenceDate = new Date()) {
   };
 }
 
+function getPointEditingFullDays(referenceDate = new Date()) {
+  const currentDayStart = getMoscowDayStartUtc(getMoscowDateParts(referenceDate));
+  const firstFullDayStart = getMoscowDayStartUtc(POINT_EDITING_FIRST_FULL_DAY);
+
+  return Math.max(0, Math.floor((currentDayStart.getTime() - firstFullDayStart.getTime()) / MS_IN_DAY));
+}
+
 function formatRussianDate({ day, month }) {
   const monthNames = [
     "января",
@@ -332,6 +347,21 @@ FROM (
 `;
 }
 
+function getPointEditingReadinessQuery() {
+  const releaseStart = escapeHogqlString(formatHogqlDateTime(getMoscowDayStartUtc(POINT_EDITING_RELEASE_DAY)));
+
+  return `
+SELECT
+  uniqExact(${RUN_DEDUPLICATION_EXPRESSION}) AS successful_runs
+FROM events
+WHERE timestamp >= toDateTime('${releaseStart}', 'UTC')
+  AND event = 'plugin_run_completed'
+  AND toString(properties.performance_measurement_version) = '${PERFORMANCE_MEASUREMENT_VERSION}'
+  AND startsWith(toString(properties.plugin_release), '${POINT_EDITING_RELEASE}')
+  AND ifNull(properties.is_test_event, false) != true
+`;
+}
+
 function getErrorCategoriesQuery(start, end) {
   const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
   const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
@@ -462,12 +492,13 @@ async function queryPostHog(query, name, env) {
 async function fetchPostHogSummary(dateRange, env = process.env) {
   assertRequiredEnv(env, ["POSTHOG_PERSONAL_API_KEY"]);
   const baselineStart = new Date(dateRange.start.getTime() - 7 * MS_IN_DAY);
-  const [summaryPayload, baselinePayload, categoriesPayload, performancePayload, baselinePerformancePayload] = await Promise.all([
+  const [summaryPayload, baselinePayload, categoriesPayload, performancePayload, baselinePerformancePayload, pointEditingPayload] = await Promise.all([
     queryPostHog(getAnalyticsQuery(dateRange.start, dateRange.end), "chistovik telegram daily summary", env),
     queryPostHog(getBaselineAnalyticsQuery(baselineStart, dateRange.start), "chistovik telegram seven day baseline", env),
     queryPostHog(getErrorCategoriesQuery(dateRange.start, dateRange.end), "chistovik telegram error categories", env),
     queryPostHog(getDeduplicatedPerformanceQuery(dateRange.start, dateRange.end), "chistovik telegram daily performance without duplicates", env),
     queryPostHog(getDeduplicatedPerformanceQuery(baselineStart, dateRange.start), "chistovik telegram baseline performance without duplicates", env),
+    queryPostHog(getPointEditingReadinessQuery(), "chistovik point editing readiness", env),
   ]);
 
   const row = Array.isArray(summaryPayload.results) && Array.isArray(summaryPayload.results[0]) ? summaryPayload.results[0] : null;
@@ -485,6 +516,7 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
   const baseline = Object.fromEntries(BASELINE_COLUMNS.map((column, index) => [column, Number(baselineRow[index] || 0)]));
   const performance = parseNumericResult(performancePayload, DEDUPLICATED_PERFORMANCE_COLUMNS);
   const baselinePerformance = parseNumericResult(baselinePerformancePayload, DEDUPLICATED_PERFORMANCE_COLUMNS);
+  const pointEditing = parseNumericResult(pointEditingPayload, ["successfulRuns"]);
   const errorCategories = categoriesPayload.results
     .filter((categoryRow) => Array.isArray(categoryRow) && typeof categoryRow[0] === "string")
     .map((categoryRow) => ({
@@ -506,6 +538,10 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
       p90DurationMs: baselinePerformance.p90DurationMs,
     },
     errorCategories,
+    pointEditingReadiness: {
+      fullDays: getPointEditingFullDays(dateRange.end),
+      successfulRuns: pointEditing.successfulRuns,
+    },
   };
 }
 
@@ -746,12 +782,29 @@ function formatPerformanceInsight(currentValue, baselineValue) {
   return `📍 Скорость на ${formatSignedPercent(change)} быстрее средней за последние 7 дней`;
 }
 
+function formatPointEditingReadinessMessage(readiness, phase = POINT_EDITING_PHASE) {
+  if (phase !== "baseline") {
+    return null;
+  }
+
+  const fullDays = Number(readiness?.fullDays || 0);
+  const successfulRuns = Number(readiness?.successfulRuns || 0);
+
+  if (fullDays >= POINT_EDITING_MIN_FULL_DAYS && successfulRuns >= POINT_EDITING_MIN_SUCCESSFUL_RUNS) {
+    return POINT_EDITING_READY_MESSAGE;
+  }
+
+  return POINT_EDITING_WAIT_MESSAGE;
+}
+
 function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   const dashboardUrl = env.POSTHOG_DASHBOARD_URL || DEFAULT_POSTHOG_DASHBOARD_URL;
   const heading = `<b>✦ Чистовик ${escapeHtml(dateRange.label)} (${formatRussianWeekday(dateRange)})</b>`;
+  const readinessMessage = formatPointEditingReadinessMessage(summary.pointEditingReadiness);
+  const headingLines = readinessMessage ? [heading, "", readinessMessage] : [heading];
 
   if (summary.typographRuns === 0) {
-    const emptyLines = [heading, "", "Плагин никто не запускал"];
+    const emptyLines = [...headingLines, "", "Плагин никто не запускал"];
 
     if (dashboardUrl) {
       emptyLines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с vpn)`);
@@ -767,7 +820,7 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
   const baselineFailedRate = summary.baseline?.failedRate;
   const runsInsight = formatRunsInsight(summary.typographRuns, summary.baseline?.averageDailyRuns);
   const lines = [
-    heading,
+    ...headingLines,
     "",
     `Запуски типографа: ${summary.typographRuns}`,
     `Уникальные пользователи: ${summary.uniqueUsers}`,
@@ -1213,10 +1266,12 @@ module.exports = {
   fetchWeeklyPerformanceSummary,
   formatAnalyticsFailureMessage,
   formatAnalyticsMessage,
+  formatPointEditingReadinessMessage,
   formatRussianDate,
   formatWeeklyErrorsMessage,
   formatWeeklyPerformanceMessage,
   getMoscowCompletedWeekRange,
   getMoscowReportRange,
+  getPointEditingFullDays,
   sendTelegramMessage,
 };

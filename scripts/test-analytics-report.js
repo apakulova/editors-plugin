@@ -7,10 +7,12 @@ const {
   fetchWeeklyPerformanceSummary,
   formatAnalyticsFailureMessage,
   formatAnalyticsMessage,
+  formatPointEditingReadinessMessage,
   formatWeeklyErrorsMessage,
   formatWeeklyPerformanceMessage,
   getMoscowCompletedWeekRange,
   getMoscowReportRange,
+  getPointEditingFullDays,
 } = require("./lib/analytics-report");
 const telegramHandler = require("../api/telegram");
 const {
@@ -104,6 +106,10 @@ function createSummary(overrides = {}) {
     modeDefault: 28,
     modeDevelopment: 0,
     performanceRuns: 20,
+    pointEditingReadiness: {
+      fullDays: 1,
+      successfulRuns: 7,
+    },
     p90DurationMs: 1800,
     runsWithHiddenNodes: 0,
     runsWithLockedNodes: 0,
@@ -130,6 +136,13 @@ async function run() {
   const message = formatAnalyticsMessage(dateRange, createSummary(), env);
 
   assert(message.includes("<b>✦ Чистовик за 27 июля (пн)</b>"));
+  assert(message.startsWith([
+    "<b>✦ Чистовик за 27 июля (пн)</b>",
+    "",
+    "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок",
+    "",
+    "Запуски типографа: 28",
+  ].join("\n")));
   assert(message.includes("Запуски типографа: 28"));
   assert(message.includes("Успешные обработки: 20 — это 80%"));
   assert(message.includes("Без финального статуса: 3"));
@@ -142,11 +155,31 @@ async function run() {
   assert(message.includes("90% обработок за 1,8 секунды — заметно хуже, на 30%"));
   assert(message.includes("📍 Скорость примерно такая же, как в среднем за последние 7 дней"));
   assert(message.includes("открывается только с vpn"));
+  assert(!message.includes("1 из 7"));
+  assert(!message.includes("7 из 30"));
+
+  const readyMessage = formatAnalyticsMessage(
+    dateRange,
+    createSummary({
+      pointEditingReadiness: {
+        fullDays: 7,
+        successfulRuns: 30,
+      },
+    }),
+    env
+  );
+
+  assert(readyMessage.includes("✅ Можно приступать к переходу на точечную обработку текста"));
+  assert(!readyMessage.includes("🛑 Нельзя делать доработки"));
+
+  assert.strictEqual(getPointEditingFullDays(new Date("2026-08-02T06:00:00.000Z")), 1);
+  assert.strictEqual(getPointEditingFullDays(new Date("2026-08-08T06:00:00.000Z")), 7);
 
   const todayRange = getMoscowReportRange("today", new Date("2026-07-28T06:00:00.000Z"));
   const todayMessage = formatAnalyticsMessage(todayRange, createSummary(), env);
 
   assert(todayMessage.includes("<b>✦ Чистовик сегодня (вт)</b>"));
+  assert(todayMessage.includes("🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок"));
   assert(todayMessage.includes("Запуски типографа: 28"));
   assert(todayMessage.includes("📍 Плагин запускали на 12% больше среднего за последние 7 дней"));
   assert(todayMessage.includes("Ошибки:"));
@@ -208,10 +241,29 @@ async function run() {
     [
       "<b>✦ Чистовик за 27 июля (пн)</b>",
       "",
+      "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок",
+      "",
       "Плагин никто не запускал",
       "",
       '<a href="https://example.test/dashboard">Полный дашборд с графиками</a> (открывается только с vpn)',
     ].join("\n")
+  );
+
+  assert.strictEqual(
+    formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 30 }),
+    "✅ Можно приступать к переходу на точечную обработку текста"
+  );
+  assert.strictEqual(
+    formatPointEditingReadinessMessage({ fullDays: 6, successfulRuns: 30 }),
+    "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок"
+  );
+  assert.strictEqual(
+    formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 29 }),
+    "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок"
+  );
+  assert.strictEqual(
+    formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 30 }, "implementation"),
+    null
   );
 
   const tiedCausesMessage = formatAnalyticsMessage(
@@ -410,6 +462,7 @@ async function run() {
       { results: [["font_unavailable", 5]] },
       { results: [[18, 420, 1800]] },
       { results: [[160, 400, 1385]] },
+      { results: [[7]] },
     ],
     async (calls) => {
       const summary = await fetchPostHogSummary(dateRange, env);
@@ -419,10 +472,12 @@ async function run() {
       assert.strictEqual(summary.failedRuns, 5);
       assert.strictEqual(summary.baseline.performanceRuns, 160);
       assert.strictEqual(summary.medianDurationMs, 420);
+      assert.strictEqual(summary.pointEditingReadiness.successfulRuns, 7);
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '3'")));
       assert(calls[0] && JSON.parse(calls[0].options.body).query.query.includes("coalesce(nullIf(toString(properties.run_id), ''), toString(uuid))"));
-      assert(calls.slice(3).every((call) => JSON.parse(call.options.body).query.query.includes("GROUP BY run_id")));
+      assert(calls.slice(3, 5).every((call) => JSON.parse(call.options.body).query.query.includes("GROUP BY run_id")));
+      assert(JSON.parse(calls[5].options.body).query.query.includes("startsWith(toString(properties.plugin_release), '2026-07-31')"));
     }
   );
 
@@ -433,6 +488,7 @@ async function run() {
       { results: [] },
       { results: [[0, 0, 0]] },
       { results: [[0, 0, 0]] },
+      { results: [[7]] },
     ],
     async () => {
       const diagnostic = await createAnalyticsMessageOrDiagnostic("yesterday", env);
@@ -450,6 +506,7 @@ async function run() {
       { results: [] },
       { results: [[0, 0, 0]] },
       { results: [[0, 0, 0]] },
+      { results: [[7]] },
     ],
     async () => {
       const emptyMessage = await createAnalyticsMessageOrDiagnostic("yesterday", env);
