@@ -155,7 +155,7 @@ module.exports = {
       "Сохраняет цвета и&nbsp;стили внутри текста",
     ],
     noteTitle: "Сделано редактором для редакторов",
-    noteHtml: "Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;UX-редактор в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class=\"about-link\" href=\"https://t.me/akanna_notes\" target=\"_blank\" rel=\"noreferrer\">Заходите в&nbsp;гости&nbsp;→</a>",
+    noteHtml: "Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;UX-редактор в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». Буду рада знакомству 彡☆<br><br><a class=\"about-link\" data-website-link href=\"https://annaakulova.ru/\" target=\"_blank\" rel=\"noreferrer\">Сайт annaakulova.ru <strong>→</strong></a><br><a class=\"about-link\" data-channel-link href=\"https://t.me/akanna_notes\" target=\"_blank\" rel=\"noreferrer\">Телеграм-канал <strong>→</strong></a>",
   },
   actions: {
     runButton: "Запустить типограф",

@@ -9,10 +9,17 @@ const MINUS = "\u2212";
 const MULTIPLY = "\u00D7";
 
 const compiledSource = fs.readFileSync("dist/code.js", "utf8");
+const uiSource = fs.readFileSync("src/ui.html", "utf8");
 
 assert.strictEqual(compiledSource.includes(".detachInstance("), false, "The plugin must not detach library instances");
 assert.strictEqual(compiledSource.includes("figma.createText("), false, "The plugin must not replace text layers with new layers");
 assert.strictEqual(compiledSource.includes("typographRunInProgress"), false, "A repeated run must not end with a silent early return");
+assert.match(uiSource, /data-channel-link[^>]+href="https:\/\/t\.me\/akanna_notes"/, "The Telegram link must keep its analytics marker");
+assert.match(uiSource, /data-website-link[^>]+href="https:\/\/annaakulova\.ru\/"/, "The website link must have its own analytics marker");
+assert.strictEqual(uiSource.includes('type: "channel-link-clicked"'), true, "The Telegram link must notify the plugin code");
+assert.strictEqual(uiSource.includes('type: "website-link-clicked"'), true, "The website link must notify the plugin code");
+assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("channel_link_clicked"'), true, "Telegram clicks must reach PostHog");
+assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("website_link_clicked"'), true, "Website clicks must reach PostHog");
 
 const source = compiledSource.replace(
   "void run();",
@@ -145,7 +152,7 @@ assert.match(createAnalyticsEventId(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 7);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 8);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
 assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-31");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);

@@ -791,7 +791,7 @@
                 <span class="about-sparkle small">✦</span>
               </span>
               <span class="about-note-title">Сделано редактором для редакторов</span>
-              <p class="about-text">Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;UX-редактор в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». <a class="about-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Заходите в&nbsp;гости&nbsp;→</a></p>
+              <p class="about-text">Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;UX-редактор в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». Буду рада знакомству 彡☆<br><br><a class="about-link" data-website-link href="https://annaakulova.ru/" target="_blank" rel="noreferrer">Сайт annaakulova.ru <strong>→</strong></a><br><a class="about-link" data-channel-link href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Телеграм-канал <strong>→</strong></a></p>
             </div>
           </div>
         <!-- chistovik-content:about:end -->
@@ -815,7 +815,8 @@
       const tabs = Array.from(document.querySelectorAll("[data-tab]"));
       const panels = Array.from(document.querySelectorAll("[data-panel]"));
       const actions = document.querySelector(".actions");
-      const channelLinks = Array.from(document.querySelectorAll(".about-link"));
+      const channelLinks = Array.from(document.querySelectorAll("[data-channel-link]"));
+      const websiteLinks = Array.from(document.querySelectorAll("[data-website-link]"));
 
       function getSelectedModeValue() {
         const selectedMode = document.querySelector('input[name="typographMode"]:checked');
@@ -924,6 +925,19 @@
             {
               pluginMessage: {
                 type: "channel-link-clicked",
+              },
+            },
+            "*"
+          );
+        });
+      });
+
+      websiteLinks.forEach((link) => {
+        link.addEventListener("click", () => {
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: "website-link-clicked",
               },
             },
             "*"

@@ -16,7 +16,7 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 7;
+const ANALYTICS_SCHEMA_VERSION = 8;
 const ANALYTICS_PLUGIN_RELEASE = "2026-07-31";
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
 const RULE_ANALYTICS_VERSION = 2;
@@ -169,6 +169,13 @@ function openSettingsUI() {
                 if (message.type === "channel-link-clicked") {
                     queueAnalyticsEvent("channel_link_clicked", {
                         link: "channel",
+                        source: "about_tab",
+                    });
+                    return;
+                }
+                if (message.type === "website-link-clicked") {
+                    queueAnalyticsEvent("website_link_clicked", {
+                        link: "website",
                         source: "about_tab",
                     });
                     return;

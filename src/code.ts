@@ -15,7 +15,7 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
 const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
 const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 7;
+const ANALYTICS_SCHEMA_VERSION = 8;
 const ANALYTICS_PLUGIN_RELEASE = "2026-07-31";
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
 const RULE_ANALYTICS_VERSION = 2;
@@ -82,7 +82,13 @@ type QuoteScript = "cyrillic" | "latin";
 type PluginRunSource = "quick_run" | "settings";
 type AnalyticsRunMode = "default" | TypographMode;
 type SelectionScope = "single_text" | "container" | "page" | "multi_selection";
-type AnalyticsEventName = "settings_opened" | "plugin_run_started" | "plugin_run_completed" | "plugin_run_failed" | "channel_link_clicked";
+type AnalyticsEventName =
+  | "settings_opened"
+  | "plugin_run_started"
+  | "plugin_run_completed"
+  | "plugin_run_failed"
+  | "channel_link_clicked"
+  | "website_link_clicked";
 type AnalyticsErrorStage =
   | "collect_nodes"
   | "development_markers"
@@ -489,6 +495,14 @@ function openSettingsUI(): void {
         if (message.type === "channel-link-clicked") {
           queueAnalyticsEvent("channel_link_clicked", {
             link: "channel",
+            source: "about_tab",
+          });
+          return;
+        }
+
+        if (message.type === "website-link-clicked") {
+          queueAnalyticsEvent("website_link_clicked", {
+            link: "website",
             source: "about_tab",
           });
           return;
