@@ -3,17 +3,26 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Превью окна проверки слоёв — Чистовик</title>
+    <title>Превью окна проблемных слоёв — Чистовик</title>
     <style>
+      @font-face {
+        font-display: block;
+        font-family: "Cactus Classical Serif";
+        font-style: normal;
+        font-weight: 400;
+        src: url("../assets/fonts/cactus-classical-serif-t.woff2") format("woff2");
+      }
+
       :root {
         --accent: #065c5b;
-        --accent-dark: #054a49;
+        --accent-hover: #054a49;
         --canvas: #eef0f2;
         --surface: #ffffff;
         --surface-active: #f0f4f3;
-        --surface-hover: #f7f8f7;
+        --surface-hover: #f5f5f5;
         --border: #dbdbd9;
         --text: #141414;
+        --text-disabled: #b8b8b8;
         --text-secondary: #757575;
         --shadow: 0 22px 60px rgba(20, 20, 20, 0.16);
         color-scheme: light;
@@ -22,6 +31,10 @@
 
       * {
         box-sizing: border-box;
+      }
+
+      [hidden] {
+        display: none !important;
       }
 
       body {
@@ -47,6 +60,12 @@
       }
 
       .preview-controls {
+        display: grid;
+        gap: 10px;
+        justify-items: center;
+      }
+
+      .control-row {
         align-items: center;
         display: flex;
         flex-wrap: wrap;
@@ -62,7 +81,7 @@
         margin-right: 4px;
       }
 
-      .scenario-button {
+      .control-button {
         appearance: none;
         background: rgba(255, 255, 255, 0.72);
         border: 1px solid var(--border);
@@ -74,24 +93,24 @@
         padding: 7px 12px;
       }
 
-      .scenario-button:hover {
+      .control-button:hover {
         background: var(--surface);
         color: var(--text);
       }
 
-      .scenario-button.active {
+      .control-button.active {
         background: var(--accent);
         border-color: var(--accent);
         color: #ffffff;
       }
 
-      .window {
+      .window-frame {
         background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: 14px;
+        border-radius: 12px;
         box-shadow: var(--shadow);
         overflow: hidden;
-        width: 720px;
+        width: 360px;
       }
 
       .window-bar {
@@ -99,42 +118,97 @@
         border-bottom: 1px solid var(--border);
         display: grid;
         gap: 10px;
-        grid-template-columns: 24px 1fr 24px;
-        height: 52px;
-        padding: 0 14px;
+        grid-template-columns: 18px minmax(0, 1fr) 20px;
+        height: 40px;
+        padding: 0 16px;
       }
 
-      .window-icon {
+      .window-logo {
+        border-radius: 4px;
         display: block;
-        height: 24px;
-        width: 24px;
+        height: 18px;
+        width: 18px;
       }
 
-      .window-title {
-        font-size: 16px;
+      .window-name {
+        font-size: 12px;
         font-weight: 700;
-        line-height: 20px;
+        line-height: 16px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .window-close {
-        color: var(--text);
-        font-size: 28px;
-        font-weight: 300;
-        line-height: 24px;
-        text-align: center;
+        height: 20px;
+        position: relative;
+        width: 20px;
+      }
+
+      .window-close::before,
+      .window-close::after {
+        background: var(--text);
+        content: "";
+        height: 1.5px;
+        left: 2px;
+        position: absolute;
+        top: 9px;
+        width: 16px;
+      }
+
+      .window-close::before {
+        transform: rotate(45deg);
+      }
+
+      .window-close::after {
+        transform: rotate(-45deg);
+      }
+
+      .window {
+        background: var(--surface);
+        display: grid;
+        height: 372px;
+        overflow: hidden;
+        width: 100%;
       }
 
       .report {
         display: grid;
-        grid-template-rows: auto 1fr;
-        height: 500px;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .report.startup {
+        display: block;
       }
 
       .report-intro {
+        align-items: center;
         border-bottom: 1px solid var(--border);
         display: grid;
-        gap: 5px;
-        padding: 16px;
+        gap: 10px;
+        grid-template-columns: 46px minmax(0, 1fr);
+        padding: 16px 16px 12px;
+      }
+
+      .report-status-icon-frame {
+        align-items: center;
+        display: flex;
+        height: 38px;
+        justify-content: center;
+        width: 46px;
+      }
+
+      .report-status-icon {
+        display: block;
+        height: 38px;
+        width: auto;
+      }
+
+      .report-intro-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
       }
 
       .report-title {
@@ -151,47 +225,174 @@
         margin: 0;
       }
 
-      .report-layout {
+      .result-toolbar {
+        align-items: center;
         display: grid;
-        grid-template-columns: 268px minmax(0, 1fr);
-        min-height: 0;
+        grid-template-columns: minmax(0, 1fr) auto;
+        min-height: 36px;
+        padding: 6px 12px 6px 16px;
       }
 
-      .report-layout.general {
-        display: block;
+      .result-count {
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 16px;
+      }
+
+      .result-success-count {
+        color: var(--text-disabled);
+      }
+
+      .result-navigation {
+        align-items: center;
+        display: flex;
+        gap: 2px;
+      }
+
+      .navigation-button {
+        appearance: none;
+        background: transparent;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+        height: 24px;
+        padding: 0;
+        position: relative;
+        width: 24px;
+      }
+
+      .navigation-button:hover:not(:disabled) {
+        background: var(--surface-hover);
+      }
+
+      .navigation-button:disabled {
+        cursor: default;
+        opacity: 0.35;
+      }
+
+      .navigation-button::before {
+        border-left: 1.5px solid var(--text);
+        border-top: 1.5px solid var(--text);
+        content: "";
+        height: 7px;
+        left: 8px;
+        position: absolute;
+        top: 9px;
+        width: 7px;
+      }
+
+      .navigation-button.previous::before {
+        transform: rotate(45deg);
+      }
+
+      .navigation-button.next::before {
+        top: 6px;
+        transform: rotate(225deg);
+      }
+
+      .report-scroll-frame {
+        min-height: 0;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .report-scroll {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: none;
+      }
+
+      .report-scroll::-webkit-scrollbar {
+        display: none;
+      }
+
+      .scroll-indicator {
+        bottom: 4px;
+        pointer-events: none;
+        position: absolute;
+        right: 3px;
+        top: 4px;
+        width: 4px;
+      }
+
+      .scroll-indicator[hidden] {
+        display: none;
+      }
+
+      .scroll-thumb {
+        background: #b8b8b8;
+        border-radius: 999px;
+        left: 0;
+        min-height: 24px;
+        position: absolute;
+        top: 0;
+        width: 4px;
       }
 
       .result-list {
-        border-right: 1px solid var(--border);
-        min-height: 0;
-        overflow-y: auto;
+        flex: 0 0 auto;
+      }
+
+      .result-group:not(:first-child) {
+        margin-top: 6px;
+      }
+
+      .result-group-title {
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 16px;
+        padding: 8px 16px 4px;
       }
 
       .result-item {
+        align-content: start;
         appearance: none;
         background: transparent;
         border: 0;
         color: inherit;
         cursor: pointer;
         display: grid;
-        gap: 3px;
-        min-height: 64px;
-        padding: 8px 16px;
+        gap: 8px;
+        grid-template-columns: 12px minmax(0, 1fr);
+        min-height: 58px;
+        padding: 7px 16px;
         text-align: left;
         width: 100%;
       }
 
-      .result-item:hover {
-        background: var(--surface-hover);
+      .result-item:not(:last-child) {
+        margin-bottom: 1px;
       }
 
-      .result-item.active {
-        background: var(--surface-active);
-      }
-
+      .result-item.active,
       .result-item:focus-visible {
         background: var(--surface-active);
         outline: 0;
+      }
+
+      .text-layer-icon {
+        color: var(--text-disabled);
+        font-family: "Cactus Classical Serif", serif;
+        font-size: 16px;
+        font-weight: 400;
+        line-height: 16px;
+        padding-top: 1px;
+        text-align: center;
+      }
+
+      .result-item.active .text-layer-icon {
+        color: var(--text);
+      }
+
+      .result-item-content {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
       }
 
       .text-preview {
@@ -200,7 +401,10 @@
         display: -webkit-box;
         font-size: 12px;
         line-height: 16px;
+        max-height: 32px;
         overflow: hidden;
+        overflow-wrap: anywhere;
+        text-overflow: ellipsis;
       }
 
       .layer-name {
@@ -212,289 +416,503 @@
         white-space: nowrap;
       }
 
-      .detail {
+      .empty-state {
         align-content: start;
         display: grid;
-        gap: 14px;
-        min-width: 0;
-        padding: 18px 20px;
+        flex: 1 0 auto;
+        min-height: 0;
+        padding: 0 16px;
       }
 
-      .detail.general {
-        max-width: 500px;
-        padding: 28px 24px;
+      .report-footer {
+        background: var(--surface);
+        flex: 0 0 auto;
+        margin-top: auto;
+        padding: 12px 16px 16px;
       }
 
-      .detail-heading {
-        display: grid;
-        gap: 6px;
+      .startup-state {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 20px 16px 16px;
       }
 
-      .detail-title {
+      .startup-state[hidden] {
+        display: none;
+      }
+
+      .startup-content {
+        align-items: center;
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        justify-content: center;
+        min-height: 0;
+        text-align: center;
+      }
+
+      .startup-illustration {
+        display: block;
+        height: auto;
+        margin-bottom: 14px;
+        width: 216px;
+      }
+
+      .startup-title {
         font-size: 16px;
         font-weight: 700;
         line-height: 20px;
-        margin: 0;
+        margin: 0 0 6px;
       }
 
-      .detail-text {
-        color: var(--text-secondary);
-        font-size: 12px;
-        line-height: 17px;
-        margin: 0;
-      }
-
-      .check-section {
-        display: grid;
-        gap: 7px;
-      }
-
-      .check-title {
-        font-size: 12px;
-        font-weight: 700;
-        line-height: 16px;
-      }
-
-      .check-list {
-        display: grid;
-        gap: 7px;
-        margin: 0;
-        padding: 0;
-      }
-
-      .check-list li {
+      .startup-summary {
         color: var(--text-secondary);
         font-size: 12px;
         line-height: 16px;
-        list-style: none;
-        padding-left: 17px;
-        position: relative;
+        margin: 0;
+        max-width: 300px;
       }
 
-      .check-list li::before {
-        color: var(--accent);
-        content: "✦";
-        font-size: 10px;
-        left: 0;
-        line-height: 16px;
-        position: absolute;
-        top: 0;
+      .startup-footer {
+        flex: 0 0 auto;
+        margin-top: 18px;
       }
 
-      @media (max-width: 760px) {
+      .primary {
+        appearance: none;
+        background: var(--accent);
+        border: 0;
+        border-radius: 8px;
+        color: #ffffff;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        height: 40px;
+        line-height: 18px;
+        padding: 0 14px;
+        width: 100%;
+      }
+
+      .primary:hover {
+        background: var(--accent-hover);
+      }
+
+      @media (max-width: 420px) {
         body {
           padding: 20px 12px 36px;
         }
 
-        .window {
-          width: min(100%, 720px);
-        }
-
-        .report {
-          height: auto;
-          min-height: 560px;
-        }
-
-        .report-layout {
-          grid-template-columns: 220px minmax(0, 1fr);
-        }
-      }
-
-      @media (max-width: 560px) {
-        .report-layout {
-          grid-template-columns: 1fr;
-        }
-
-        .result-list {
-          border-bottom: 1px solid var(--border);
-          border-right: 0;
-          max-height: 210px;
+        .window-frame {
+          width: min(100%, 360px);
         }
       }
     </style>
   </head>
   <body>
     <main class="preview">
-      <nav class="preview-controls" aria-label="Сценарии предпросмотра">
-        <span class="preview-label">Сценарий:</span>
-        <button class="scenario-button active" data-scenario="ordinary" type="button">Три проблемных слоя</button>
-        <button class="scenario-button" data-scenario="critical" type="button">Критическая остановка</button>
-        <button class="scenario-button" data-scenario="general" type="button">Общая ошибка</button>
+      <nav class="preview-controls" aria-label="Настройки предпросмотра">
+        <div class="control-row">
+          <span class="preview-label">Сценарий:</span>
+          <button class="control-button active" data-scenario="ordinary" type="button">Проблемные слои</button>
+          <button class="control-button" data-scenario="critical" type="button">Критическая остановка</button>
+          <button class="control-button" data-scenario="startup" type="button">Не запустился</button>
+        </div>
+        <div class="control-row">
+          <span class="preview-label">Запуск:</span>
+          <button class="control-button active" data-source="settings" type="button">Из настроек</button>
+          <button class="control-button" data-source="quick" type="button">Быстрый</button>
+        </div>
       </nav>
 
-      <section class="window" aria-label="Окно плагина Чистовик">
-        <header class="window-bar">
-          <img class="window-icon" src="../assets/plugin-icon.svg" alt="" />
-          <div class="window-title">Чистовик</div>
-          <div class="window-close" aria-hidden="true">×</div>
+      <div class="window-frame">
+        <header class="window-bar" aria-label="Шапка окна Figma">
+          <img class="window-logo" src="../assets/plugin-icon.svg" alt="" />
+          <div class="window-name">Чистовик</div>
+          <div class="window-close" aria-hidden="true"></div>
         </header>
 
-        <div class="report">
-          <header class="report-intro">
-            <h1 class="report-title" id="reportTitle"></h1>
-            <p class="report-summary" id="reportSummary"></p>
-          </header>
+        <section class="window" aria-label="Окно плагина Чистовик">
+          <div class="report with-footer" id="report">
+            <header class="report-intro" id="reportIntro">
+              <span class="report-status-icon-frame" aria-hidden="true">
+                <img class="report-status-icon" id="reportStatusIcon" alt="" />
+              </span>
+              <span class="report-intro-copy">
+                <h1 class="report-title" id="reportTitle"></h1>
+                <p class="report-summary" id="reportSummary"></p>
+              </span>
+            </header>
 
-          <div class="report-layout" id="reportLayout">
-            <aside class="result-list" id="resultList" aria-label="Проблемные текстовые слои"></aside>
-            <section class="detail" id="detail" aria-live="polite"></section>
+            <div class="result-toolbar" id="resultToolbar">
+              <span class="result-count" id="resultCount"></span>
+              <div class="result-navigation">
+                <button class="navigation-button previous" id="previousIssue" type="button" aria-label="Предыдущий слой"></button>
+                <button class="navigation-button next" id="nextIssue" type="button" aria-label="Следующий слой"></button>
+              </div>
+            </div>
+
+            <div class="report-scroll-frame" id="reportScrollFrame">
+              <div class="report-scroll" id="reportScroll">
+                <div class="result-list" id="resultList" aria-label="Слои, требующие внимания"></div>
+
+                <footer class="report-footer" id="reportFooter">
+                  <button class="primary" id="backButton" type="button">Вернуться к типографу</button>
+                </footer>
+              </div>
+              <div class="scroll-indicator" id="scrollIndicator" hidden aria-hidden="true">
+                <span class="scroll-thumb" id="scrollThumb"></span>
+              </div>
+            </div>
+
+            <section class="startup-state" id="startupState" hidden>
+              <div class="startup-content">
+                <img class="startup-illustration" src="../assets/startup-error.png" alt="" />
+                <h1 class="startup-title" id="startupTitle"></h1>
+                <p class="startup-summary" id="startupSummary"></p>
+              </div>
+              <footer class="startup-footer" id="startupFooter">
+                <button class="primary" type="button">Вернуться к типографу</button>
+              </footer>
+            </section>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
+
     </main>
 
     <script>
       const scenarios = {
         ordinary: {
-          title: "Нужно проверить 3 слоя",
-          summary: "Без ошибок обработано 10 слоёв. В трёх слоях нужна ручная проверка.",
+          title: "Не всё удалось обработать",
+          summary: "Проверьте и исправьте эти слои вручную",
+          icon: "../assets/report-warning.png",
+          successfulCount: 10,
           issues: [
             {
-              preview: "Стоимость 1000 руб. в месяц, первые 30 дней бесплатно",
+              preview: "Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически по условиям выбранного тарифа",
               layer: "pricing / card / caption",
-              title: "Не удалось обработать слой",
-              text: "Плагин не изменил этот слой. Исправьте текст вручную.",
-              checks: [],
             },
             {
               preview: "Первый пункт списка, второй пункт и важное примечание",
               layer: "checklist / item",
-              title: "Проверьте оформление",
-              text: "Плагин не смог подтвердить, что оформление сохранилось полностью.",
-              checks: ["Шрифт, жирность, цвет и подчёркивания", "Списки, ссылки, интервалы и отступы"],
             },
             {
               preview: "Заголовок карточки с подключённым библиотечным стилем",
               layer: "library card / title",
-              title: "Проверьте связь с библиотекой",
-              text: "Плагин не смог подтвердить, что подключённые стили сохранили связь с библиотекой.",
-              checks: ["У текста по-прежнему указан нужный библиотечный стиль", "Внешний вид совпадает с исходным компонентом"],
+            },
+            {
+              preview: "Скидка действует до 15 мая, затем цена изменится",
+              layer: "promo / legal note",
             },
           ],
         },
         critical: {
-          title: "Обработка остановлена",
-          summary: "Без ошибок обработано 10 слоёв. Один слой нужно проверить. Два слоя не обработаны.",
-          issues: [
+          title: "Типограф остановил работу",
+          summary: "Потому что ошибка могла сломать стили",
+          icon: "../assets/report-critical.png",
+          resultCountType: "attention",
+          successfulCount: 10,
+          issueGroups: [
             {
-              preview: "Скидка 20% действует только до 15 мая — потом цена изменится",
-              layer: "promo / legal note",
-              title: "Проверьте текст и оформление",
-              text: "Плагин не смог подтвердить, что вернул исходное состояние этого слоя.",
-              checks: ["Текст не пропал и не изменился неожиданным образом", "Оформление и связь с библиотекой сохранились"],
+              title: "Проверьте стили и связь с компонентами",
+              issues: [
+                {
+                  preview: "Скидка 20% действует только до 15 мая — потом цена изменится",
+                  layer: "promo / legal note",
+                },
+              ],
+            },
+            {
+              title: "Не удалось обработать",
+              issues: [
+                {
+                  preview: "Первый пункт списка, второй пункт и важное примечание",
+                  layer: "checklist / item",
+                },
+                {
+                  preview: "Заголовок карточки с подключённым библиотечным стилем",
+                  layer: "library card / title",
+                },
+                {
+                  preview: "Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически",
+                  layer: "pricing / card / caption",
+                },
+                {
+                  preview: "Условия программы лояльности для новых клиентов",
+                  layer: "loyalty / description",
+                },
+                {
+                  preview: "Получайте уведомления о важных операциях",
+                  layer: "notifications / subtitle",
+                },
+                {
+                  preview: "Скидка действует до 15 мая, затем цена изменится",
+                  layer: "promo / description",
+                },
+              ],
             },
           ],
         },
-        general: {
+        startup: {
           title: "Не удалось запустить типограф",
-          summary: "Обработка не началась. Текстовые слои не изменены.",
-          generalTitle: "Попробуйте запустить ещё раз",
-          generalText: "Плагин не смог начать обработку выбранной области.",
-          generalChecks: ["Выделите один текстовый слой и повторите запуск", "Если ошибка повторяется, перезапустите Figma"],
+          summary: "В макетах ничего не поменялось. Попробуйте ещё раз, если не поможет — перезапустите фигму.",
+          successfulCount: 0,
+          issues: [],
         },
       };
 
+      const report = document.getElementById("report");
+      const reportIntro = document.getElementById("reportIntro");
+      const reportStatusIcon = document.getElementById("reportStatusIcon");
       const reportTitle = document.getElementById("reportTitle");
       const reportSummary = document.getElementById("reportSummary");
-      const reportLayout = document.getElementById("reportLayout");
+      const resultToolbar = document.getElementById("resultToolbar");
+      const resultCount = document.getElementById("resultCount");
       const resultList = document.getElementById("resultList");
-      const detail = document.getElementById("detail");
-      let currentScenario = "ordinary";
+      const reportFooter = document.getElementById("reportFooter");
+      const reportScrollFrame = document.getElementById("reportScrollFrame");
+      const reportScroll = document.getElementById("reportScroll");
+      const scrollIndicator = document.getElementById("scrollIndicator");
+      const scrollThumb = document.getElementById("scrollThumb");
+      const startupState = document.getElementById("startupState");
+      const startupTitle = document.getElementById("startupTitle");
+      const startupSummary = document.getElementById("startupSummary");
+      const startupFooter = document.getElementById("startupFooter");
+      const previousIssue = document.getElementById("previousIssue");
+      const nextIssue = document.getElementById("nextIssue");
+      const previewParams = new URLSearchParams(window.location.search);
+      const requestedScenario = previewParams.get("scenario");
+      const requestedSource = previewParams.get("source");
+      let currentScenario = Object.prototype.hasOwnProperty.call(scenarios, requestedScenario)
+        ? requestedScenario
+        : "ordinary";
+      let currentSource = requestedSource === "quick" ? "quick" : "settings";
       let selectedIssueIndex = 0;
 
-      function renderChecks(items) {
-        if (!items || items.length === 0) {
-          return "";
+      function formatLayerCount(count) {
+        const lastTwoDigits = count % 100;
+        const lastDigit = count % 10;
+
+        if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+          return `${count} слоёв`;
         }
 
-        return `
-          <div class="check-section">
-            <div class="check-title">Что проверить</div>
-            <ul class="check-list">${items.map((item) => `<li>${item}</li>`).join("")}</ul>
-          </div>
-        `;
+        if (lastDigit === 1) {
+          return `${count} слой`;
+        }
+
+        if (lastDigit >= 2 && lastDigit <= 4) {
+          return `${count} слоя`;
+        }
+
+        return `${count} слоёв`;
       }
 
-      function renderDetail(issue) {
-        detail.className = "detail";
-        detail.innerHTML = `
-          <div class="detail-heading">
-            <h2 class="detail-title">${issue.title}</h2>
-            <p class="detail-text">${issue.text}</p>
-          </div>
-          ${renderChecks(issue.checks)}
-        `;
+      function formatIssueCount(count) {
+        const layerCount = formatLayerCount(count);
+        return count % 10 === 1 && count % 100 !== 11
+          ? `${layerCount} с ошибкой`
+          : `${layerCount} с ошибками`;
       }
 
-      function selectIssue(index) {
-        const scenario = scenarios[currentScenario];
+      function formatResultCount(scenario, count) {
+        return scenario.resultCountType === "attention"
+          ? `${formatLayerCount(count)} нужно проверить`
+          : formatIssueCount(count);
+      }
+
+      function getIssueGroups(scenario) {
+        if (scenario.issueGroups) {
+          return scenario.issueGroups;
+        }
+
+        return [
+          {
+            title: "",
+            issues: scenario.issues,
+          },
+        ];
+      }
+
+      function getScenarioIssues(scenario) {
+        return getIssueGroups(scenario).flatMap((group) => group.issues);
+      }
+
+      function updateNavigation() {
+        const issues = getScenarioIssues(scenarios[currentScenario]);
+        previousIssue.disabled = selectedIssueIndex <= 0;
+        nextIssue.disabled = selectedIssueIndex >= issues.length - 1;
+      }
+
+      function updateScrollIndicator() {
+        const viewportHeight = reportScroll.clientHeight;
+        const contentHeight = reportScroll.scrollHeight;
+        const canScroll = contentHeight > viewportHeight + 1;
+
+        scrollIndicator.hidden = !canScroll;
+
+        if (!canScroll) {
+          return;
+        }
+
+        const trackHeight = scrollIndicator.clientHeight;
+        const thumbHeight = Math.max(24, trackHeight * (viewportHeight / contentHeight));
+        const maximumThumbOffset = trackHeight - thumbHeight;
+        const maximumScrollOffset = contentHeight - viewportHeight;
+        const thumbOffset = maximumScrollOffset > 0
+          ? maximumThumbOffset * (reportScroll.scrollTop / maximumScrollOffset)
+          : 0;
+
+        scrollThumb.style.height = `${thumbHeight}px`;
+        scrollThumb.style.transform = `translateY(${thumbOffset}px)`;
+      }
+
+      function selectIssue(index, shouldScroll = false) {
         selectedIssueIndex = index;
 
         Array.from(resultList.querySelectorAll(".result-item")).forEach((item, itemIndex) => {
           item.classList.toggle("active", itemIndex === index);
         });
 
-        renderDetail(scenario.issues[index]);
+        updateNavigation();
+
+        if (shouldScroll) {
+          const selectedItem = resultList.querySelector(`[data-index="${index}"]`);
+          selectedItem?.scrollIntoView({ block: "nearest" });
+        }
       }
 
       function renderIssueList(scenario) {
-        resultList.hidden = false;
-        resultList.innerHTML = scenario.issues
-          .map(
-            (issue, index) => `
-              <button class="result-item${index === selectedIssueIndex ? " active" : ""}" data-index="${index}" type="button">
-                <span class="text-preview">${issue.preview}</span>
-                <span class="layer-name">${issue.layer}</span>
-              </button>
-            `
-          )
+        const groups = getIssueGroups(scenario);
+        const issues = getScenarioIssues(scenario);
+
+        if (issues.length === 0) {
+          resultToolbar.hidden = true;
+          resultList.className = "empty-state";
+          resultList.innerHTML = "";
+          return;
+        }
+
+        resultToolbar.hidden = false;
+        resultCount.textContent = `${formatResultCount(scenario, issues.length)} `;
+
+        const successfulCountText = document.createElement("span");
+        successfulCountText.className = "result-success-count";
+        successfulCountText.textContent = `· ${scenario.successfulCount} успешно`;
+        resultCount.append(successfulCountText);
+
+        let issueIndex = 0;
+        resultList.className = "result-list";
+        resultList.innerHTML = groups
+          .map((group) => {
+            const items = group.issues
+              .map((issue) => {
+                const index = issueIndex;
+                issueIndex += 1;
+
+                return `
+                  <button class="result-item${index === selectedIssueIndex ? " active" : ""}" data-index="${index}" type="button">
+                    <span class="text-layer-icon" aria-hidden="true">Т</span>
+                    <span class="result-item-content">
+                      <span class="text-preview">${issue.preview}</span>
+                      <span class="layer-name">${issue.layer}</span>
+                    </span>
+                  </button>
+                `;
+              })
+              .join("");
+
+            return `
+              <section class="result-group">
+                ${group.title ? `<div class="result-group-title">${group.title} · ${formatLayerCount(group.issues.length)}</div>` : ""}
+                ${items}
+              </section>
+            `;
+          })
           .join("");
 
         resultList.querySelectorAll(".result-item").forEach((item) => {
           item.addEventListener("click", () => selectIssue(Number(item.dataset.index)));
         });
 
-        renderDetail(scenario.issues[selectedIssueIndex]);
+        selectIssue(Math.min(selectedIssueIndex, issues.length - 1), true);
+
       }
 
-      function renderGeneral(scenario) {
-        reportLayout.className = "report-layout general";
-        resultList.hidden = true;
-        detail.className = "detail general";
-        detail.innerHTML = `
-          <div class="detail-heading">
-            <h2 class="detail-title">${scenario.generalTitle}</h2>
-            <p class="detail-text">${scenario.generalText}</p>
-          </div>
-          ${renderChecks(scenario.generalChecks)}
-        `;
-      }
+      function render() {
+        const scenario = scenarios[currentScenario];
+        const showFooter = currentSource === "settings";
+        const isStartup = currentScenario === "startup";
 
-      function renderScenario(name) {
-        currentScenario = name;
-        selectedIssueIndex = 0;
-        const scenario = scenarios[name];
-
-        document.querySelectorAll(".scenario-button").forEach((button) => {
-          button.classList.toggle("active", button.dataset.scenario === name);
+        document.querySelectorAll("[data-scenario]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.scenario === currentScenario);
         });
 
-        reportTitle.textContent = scenario.title;
-        reportSummary.textContent = scenario.summary;
+        document.querySelectorAll("[data-source]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.source === currentSource);
+        });
 
-        if (scenario.issues) {
-          reportLayout.className = "report-layout";
-          renderIssueList(scenario);
+        report.classList.toggle("startup", isStartup);
+        report.classList.toggle("with-footer", showFooter);
+
+        reportIntro.hidden = isStartup;
+        reportScrollFrame.hidden = isStartup;
+        startupState.hidden = !isStartup;
+
+        if (isStartup) {
+          resultToolbar.hidden = true;
+          reportFooter.hidden = true;
+          startupTitle.textContent = scenario.title;
+          startupSummary.textContent = scenario.summary;
+          startupFooter.hidden = !showFooter;
+          scrollIndicator.hidden = true;
         } else {
-          renderGeneral(scenario);
+          reportStatusIcon.src = scenario.icon;
+          reportTitle.textContent = scenario.title;
+          reportSummary.textContent = scenario.summary;
+          reportFooter.hidden = !showFooter;
+          renderIssueList(scenario);
+        }
+
+        if (!isStartup) {
+          window.requestAnimationFrame(updateScrollIndicator);
         }
       }
 
-      document.querySelectorAll(".scenario-button").forEach((button) => {
-        button.addEventListener("click", () => renderScenario(button.dataset.scenario));
+      document.querySelectorAll("[data-scenario]").forEach((button) => {
+        button.addEventListener("click", () => {
+          currentScenario = button.dataset.scenario;
+          selectedIssueIndex = 0;
+          render();
+        });
       });
 
-      renderScenario(currentScenario);
+      document.querySelectorAll("[data-source]").forEach((button) => {
+        button.addEventListener("click", () => {
+          currentSource = button.dataset.source;
+          render();
+        });
+      });
+
+      previousIssue.addEventListener("click", () => {
+        if (selectedIssueIndex > 0) {
+          selectIssue(selectedIssueIndex - 1, true);
+        }
+      });
+
+      nextIssue.addEventListener("click", () => {
+        const issues = getScenarioIssues(scenarios[currentScenario]);
+
+        if (selectedIssueIndex < issues.length - 1) {
+          selectIssue(selectedIssueIndex + 1, true);
+        }
+      });
+
+      reportScroll.addEventListener("scroll", updateScrollIndicator);
+      window.addEventListener("resize", updateScrollIndicator);
+
+      render();
     </script>
   </body>
 </html>
