@@ -360,7 +360,9 @@
         gap: 8px;
         grid-template-columns: 12px minmax(0, 1fr);
         min-height: 58px;
+        overflow: hidden;
         padding: 7px 16px;
+        position: relative;
         text-align: left;
         width: 100%;
       }
@@ -369,10 +371,27 @@
         margin-bottom: 1px;
       }
 
-      .result-item.active,
       .result-item:focus-visible {
         background: var(--surface-active);
         outline: 0;
+      }
+
+      .result-item.active {
+        background: linear-gradient(to right, transparent 0 6px, var(--surface-active) 6px);
+      }
+
+      .result-item.active::before {
+        background: var(--accent);
+        border-radius: 999px 68% 999px 72%;
+        box-shadow: 0 1px 0 rgba(47, 127, 122, 0.16);
+        content: "";
+        height: 5px;
+        left: 5px;
+        position: absolute;
+        top: 0;
+        transform: rotate(89.1deg);
+        transform-origin: left top;
+        width: var(--active-line-length, 63px);
       }
 
       .text-layer-icon {
@@ -585,9 +604,10 @@
       const scenarios = {
         ordinary: {
           title: "Не всё удалось обработать",
-          summary: "Проверьте и исправьте эти слои вручную",
+          summary: "Эти слои нужно исправить вручную",
           icon: "../assets/report-warning.png",
           successfulCount: 10,
+          resultCountType: "skipped",
           issues: [
             {
               preview: "Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически по условиям выбранного тарифа",
@@ -609,7 +629,7 @@
         },
         critical: {
           title: "Типограф остановил работу",
-          summary: "Потому что ошибка могла сломать стили",
+          summary: "У одного слоя могли сломаться стили",
           icon: "../assets/report-critical.png",
           resultCountType: "attention",
           successfulCount: 10,
@@ -716,10 +736,28 @@
           : `${layerCount} с ошибками`;
       }
 
+      function formatSkippedCount(count) {
+        const layerCount = formatLayerCount(count);
+        const lastTwoDigits = count % 100;
+        const lastDigit = count % 10;
+
+        if (lastDigit === 1 && !(lastTwoDigits >= 11 && lastTwoDigits <= 14)) {
+          return `${layerCount} пропущен`;
+        }
+
+        return `${layerCount} пропущены`;
+      }
+
       function formatResultCount(scenario, count) {
-        return scenario.resultCountType === "attention"
-          ? `${formatLayerCount(count)} нужно проверить`
-          : formatIssueCount(count);
+        if (scenario.resultCountType === "attention") {
+          return `${formatLayerCount(count)} нужно проверить`;
+        }
+
+        if (scenario.resultCountType === "skipped") {
+          return formatSkippedCount(count);
+        }
+
+        return formatIssueCount(count);
       }
 
       function getIssueGroups(scenario) {
@@ -772,6 +810,7 @@
         selectedIssueIndex = index;
 
         Array.from(resultList.querySelectorAll(".result-item")).forEach((item, itemIndex) => {
+          item.style.setProperty("--active-line-length", `${item.offsetHeight}px`);
           item.classList.toggle("active", itemIndex === index);
         });
 
@@ -797,10 +836,12 @@
         resultToolbar.hidden = false;
         resultCount.textContent = `${formatResultCount(scenario, issues.length)} `;
 
-        const successfulCountText = document.createElement("span");
-        successfulCountText.className = "result-success-count";
-        successfulCountText.textContent = `· ${scenario.successfulCount} успешно`;
-        resultCount.append(successfulCountText);
+        if (scenario.showSuccessfulCount !== false) {
+          const successfulCountText = document.createElement("span");
+          successfulCountText.className = "result-success-count";
+          successfulCountText.textContent = `· ${scenario.successfulCount} успешно`;
+          resultCount.append(successfulCountText);
+        }
 
         let issueIndex = 0;
         resultList.className = "result-list";
@@ -825,7 +866,7 @@
 
             return `
               <section class="result-group">
-                ${group.title ? `<div class="result-group-title">${group.title} · ${formatLayerCount(group.issues.length)}</div>` : ""}
+                ${group.title ? `<div class="result-group-title">${group.title} · ${group.issues.length}</div>` : ""}
                 ${items}
               </section>
             `;
