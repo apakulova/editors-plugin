@@ -10,6 +10,7 @@ const MULTIPLY = "\u00D7";
 
 const compiledSource = fs.readFileSync("dist/code.js", "utf8");
 const uiSource = fs.readFileSync("src/ui.html", "utf8");
+const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
 
 assert.strictEqual(compiledSource.includes(".detachInstance("), false, "The plugin must not detach library instances");
 assert.strictEqual(compiledSource.includes("figma.createText("), false, "The plugin must not replace text layers with new layers");
@@ -20,6 +21,12 @@ assert.strictEqual(uiSource.includes('type: "channel-link-clicked"'), true, "The
 assert.strictEqual(uiSource.includes('type: "website-link-clicked"'), true, "The website link must notify the plugin code");
 assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("channel_link_clicked"'), true, "Telegram clicks must reach PostHog");
 assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("website_link_clicked"'), true, "Website clicks must reach PostHog");
+assert.strictEqual(compiledSource.includes("phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp"), false, "The PostHog project token must stay on the relay");
+assert.deepStrictEqual(
+  manifest.networkAccess.allowedDomains,
+  ["https://chistovik-plugin.vercel.app"],
+  "The plugin must send analytics only through the Vercel relay"
+);
 assert.strictEqual(uiSource.includes('id="rulesScrollIndicator"'), true, "Scrollable rules must have a persistent indicator");
 assert.strictEqual(uiSource.includes("updatePersistentScrollIndicator"), true, "Scrollable UI areas must share the persistent indicator logic");
 assert.strictEqual(uiSource.includes("persistent-scroll-thumb"), true, "The persistent scroll indicator must use the shared thumb style");
@@ -133,7 +140,7 @@ const beautyOptions = {
   recolorExistingAsterisks: false,
 };
 
-assert.strictEqual(getAnalyticsCaptureEndpoint(), "https://eu.i.posthog.com/i/v0/e/");
+assert.strictEqual(getAnalyticsCaptureEndpoint(), "https://chistovik-plugin.vercel.app/api/capture");
 
 const analyticsEventUuid = "123e4567-e89b-42d3-a456-426614174000";
 const analyticsPayload = createAnalyticsEventPayload(
@@ -151,13 +158,14 @@ const analyticsPayload = createAnalyticsEventPayload(
 
 assert.strictEqual(analyticsPayload.timestamp, "2026-06-08T10:15:00.000Z");
 assert.strictEqual(analyticsPayload.uuid, analyticsEventUuid);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload, "api_key"), false);
 assert.match(createAnalyticsEventId(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 8);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 9);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
-assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-07-31");
+assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-05");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
 
 const legacyQueuedEvent = {

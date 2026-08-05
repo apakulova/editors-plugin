@@ -12,11 +12,10 @@ const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
 const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
-const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
-const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
-const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 8;
-const ANALYTICS_PLUGIN_RELEASE = "2026-07-31";
+const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
+const ANALYTICS_CAPTURE_PATH = "/api/capture";
+const ANALYTICS_SCHEMA_VERSION = 9;
+const ANALYTICS_PLUGIN_RELEASE = "2026-08-05";
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
 const RULE_ANALYTICS_VERSION = 2;
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
@@ -311,7 +310,6 @@ interface AnalyticsRunContext {
 }
 
 interface AnalyticsPayload {
-  api_key: string;
   distinct_id: string;
   event: AnalyticsEventName;
   properties: AnalyticsProperties;
@@ -1211,7 +1209,6 @@ async function trackAnalyticsEvent(event: AnalyticsEventName, properties: Analyt
 
 function createAnalyticsEventPayload(event: AnalyticsEventName, properties: AnalyticsProperties, identity: AnalyticsIdentity, capturedAt: string, eventUuid: string = createAnalyticsEventId()): AnalyticsPayload {
   return {
-    api_key: ANALYTICS_PROJECT_TOKEN,
     distinct_id: identity.distinctId,
     event,
     properties: {
@@ -1283,7 +1280,7 @@ async function sendAnalyticsPayload(payload: AnalyticsPayload): Promise<void> {
   });
 
   if (!response.ok) {
-    throw new Error(`PostHog capture failed: ${response.status}`);
+    throw new Error(`Analytics capture failed: ${response.status}`);
   }
 }
 
@@ -1347,7 +1344,6 @@ function sanitizeAnalyticsPayload(value: unknown, eventId: string): AnalyticsPay
   const payload = value as Partial<AnalyticsPayload>;
 
   if (
-    typeof payload.api_key !== "string" ||
     typeof payload.distinct_id !== "string" ||
     typeof payload.event !== "string" ||
     typeof payload.properties !== "object" ||
@@ -1358,7 +1354,6 @@ function sanitizeAnalyticsPayload(value: unknown, eventId: string): AnalyticsPay
   }
 
   return {
-    api_key: payload.api_key,
     distinct_id: payload.distinct_id,
     event: payload.event as AnalyticsEventName,
     properties: payload.properties as AnalyticsProperties,

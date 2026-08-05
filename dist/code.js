@@ -13,11 +13,10 @@ const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
 const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
-const ANALYTICS_API_HOST = "https://eu.i.posthog.com";
-const ANALYTICS_CAPTURE_PATH = "/i/v0/e/";
-const ANALYTICS_PROJECT_TOKEN = "phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp";
-const ANALYTICS_SCHEMA_VERSION = 8;
-const ANALYTICS_PLUGIN_RELEASE = "2026-07-31";
+const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
+const ANALYTICS_CAPTURE_PATH = "/api/capture";
+const ANALYTICS_SCHEMA_VERSION = 9;
+const ANALYTICS_PLUGIN_RELEASE = "2026-08-05";
 const PERFORMANCE_MEASUREMENT_VERSION = 3;
 const RULE_ANALYTICS_VERSION = 2;
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
@@ -755,7 +754,6 @@ async function trackAnalyticsEvent(event, properties = {}, capturedAt = new Date
 }
 function createAnalyticsEventPayload(event, properties, identity, capturedAt, eventUuid = createAnalyticsEventId()) {
     return {
-        api_key: ANALYTICS_PROJECT_TOKEN,
         distinct_id: identity.distinctId,
         event,
         properties: Object.assign(Object.assign({}, properties), { $geoip_disable: true, $process_person_profile: false, analytics_schema_version: ANALYTICS_SCHEMA_VERSION, identity_type: identity.identityType, plugin_release: ANALYTICS_PLUGIN_RELEASE }),
@@ -808,7 +806,7 @@ async function sendAnalyticsPayload(payload) {
         method: "POST",
     });
     if (!response.ok) {
-        throw new Error(`PostHog capture failed: ${response.status}`);
+        throw new Error(`Analytics capture failed: ${response.status}`);
     }
 }
 function runAnalyticsQueueOperation(operation) {
@@ -852,8 +850,7 @@ function sanitizeAnalyticsPayload(value, eventId) {
         return null;
     }
     const payload = value;
-    if (typeof payload.api_key !== "string" ||
-        typeof payload.distinct_id !== "string" ||
+    if (typeof payload.distinct_id !== "string" ||
         typeof payload.event !== "string" ||
         typeof payload.properties !== "object" ||
         payload.properties === null ||
@@ -861,7 +858,6 @@ function sanitizeAnalyticsPayload(value, eventId) {
         return null;
     }
     return {
-        api_key: payload.api_key,
         distinct_id: payload.distinct_id,
         event: payload.event,
         properties: payload.properties,

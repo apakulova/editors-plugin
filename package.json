@@ -9,10 +9,13 @@
     "build": "npm run sync-ui && tsc -p tsconfig.json",
     "configure-telegram-menu": "node scripts/configure-telegram-menu.js",
     "send-daily-analytics": "node scripts/send-daily-analytics.js",
-    "test": "npm run build && node scripts/test-clean-typography.js && node scripts/test-analytics-report.js"
+    "test": "npm run build && node scripts/test-clean-typography.js && node scripts/test-analytics-capture.js && node scripts/test-analytics-report.js"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.106.0",
     "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@vercel/queue": "^0.4.0"
   }
 }

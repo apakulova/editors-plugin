@@ -4,7 +4,7 @@
   "api": "1.0.0",
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["https://eu.i.posthog.com"],
+    "allowedDomains": ["https://chistovik-plugin.vercel.app"],
     "reasoning": "Плагин отправляет анонимные технические события использования и ошибки для улучшения продукта."
   },
   "main": "dist/code.js",

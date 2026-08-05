@@ -172,8 +172,8 @@ async function run() {
   assert(readyMessage.includes("✅ Можно приступать к переходу на точечную обработку текста"));
   assert(!readyMessage.includes("🛑 Нельзя делать доработки"));
 
-  assert.strictEqual(getPointEditingFullDays(new Date("2026-08-02T06:00:00.000Z")), 1);
-  assert.strictEqual(getPointEditingFullDays(new Date("2026-08-08T06:00:00.000Z")), 7);
+  assert.strictEqual(getPointEditingFullDays(new Date("2026-08-07T06:00:00.000Z")), 1);
+  assert.strictEqual(getPointEditingFullDays(new Date("2026-08-13T06:00:00.000Z")), 7);
 
   const todayRange = getMoscowReportRange("today", new Date("2026-07-28T06:00:00.000Z"));
   const todayMessage = formatAnalyticsMessage(todayRange, createSummary(), env);
@@ -477,7 +477,7 @@ async function run() {
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '3'")));
       assert(calls[0] && JSON.parse(calls[0].options.body).query.query.includes("coalesce(nullIf(toString(properties.run_id), ''), toString(uuid))"));
       assert(calls.slice(3, 5).every((call) => JSON.parse(call.options.body).query.query.includes("GROUP BY run_id")));
-      assert(JSON.parse(calls[5].options.body).query.query.includes("startsWith(toString(properties.plugin_release), '2026-07-31')"));
+      assert(JSON.parse(calls[5].options.body).query.query.includes("startsWith(toString(properties.plugin_release), '2026-08-05')"));
     }
   );
 
