@@ -75,7 +75,10 @@ const context = {
   clearTimeout,
   console,
   figma: {
+    commitUndo: () => {},
+    getStyleByIdAsync: async (id) => ({ id, type: id.includes("fill") ? "PAINT" : "TEXT" }),
     mixed: Symbol("mixed"),
+    triggerUndo: () => {},
     variables: {
       getVariableByIdAsync: async (id) => ({ id }),
     },
@@ -1499,6 +1502,36 @@ function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId
   return node;
 }
 
+function configureFigmaUndoForNodes(nodes, restoreOnUndo = true) {
+  let commitCalls = 0;
+  let snapshots = [];
+  let triggerCalls = 0;
+
+  context.figma.commitUndo = () => {
+    commitCalls += 1;
+    snapshots = nodes.map((node) => ({
+      characters: node.characters,
+      node,
+    }));
+  };
+  context.figma.triggerUndo = () => {
+    triggerCalls += 1;
+
+    if (!restoreOnUndo) {
+      return;
+    }
+
+    for (const snapshot of snapshots) {
+      snapshot.node.characters = snapshot.characters;
+    }
+  };
+
+  return {
+    getCommitCalls: () => commitCalls,
+    getTriggerCalls: () => triggerCalls,
+  };
+}
+
 async function runPreservedLibraryStyleOptimizationTests() {
   const node = createProcessTextNodeMock("preserved-library-style-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
   const originalTextStyle = node.getStyledTextSegments()[0];
@@ -1601,6 +1634,7 @@ async function runLibraryStyleVerificationRollbackTests() {
   node.setTextStyleIdAsync = async () => {
     rollbackStyleRestorations += 1;
   };
+  const undo = configureFigmaUndoForNodes([node]);
   context.console = {
     ...console,
     error: () => {},
@@ -1622,7 +1656,8 @@ async function runLibraryStyleVerificationRollbackTests() {
     skippedLocked: 0,
   });
   assert.strictEqual(node.characters, originalText);
-  assert.strictEqual(rollbackStyleRestorations, 1);
+  assert.strictEqual(rollbackStyleRestorations, 0);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
   assert.strictEqual(result.failedStage, "restore_styles");
   assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
   assert.strictEqual(result.requiresStyleWarning, false);
@@ -1651,6 +1686,7 @@ async function runDetectedRollbackDamageTests() {
       },
     ];
   };
+  const undo = configureFigmaUndoForNodes([node]);
   context.console = {
     ...console,
     error: () => {},
@@ -1676,6 +1712,52 @@ async function runDetectedRollbackDamageTests() {
   assert.strictEqual(result.requiresStyleWarning, true);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
+}
+
+async function runUnavailableLinkedStylePreflightTests() {
+  const node = createProcessTextNodeMock("unavailable-linked-style-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalText = node.characters;
+  const originalGetStyleByIdAsync = context.figma.getStyleByIdAsync;
+  const originalConsole = context.console;
+  let styleRestorationAttempts = 0;
+
+  context.figma.loadFontAsync = async () => {};
+  context.figma.getStyleByIdAsync = async () => null;
+  node.setTextStyleIdAsync = async () => {
+    styleRestorationAttempts += 1;
+  };
+  const undo = configureFigmaUndoForNodes([node]);
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+    context.figma.getStyleByIdAsync = originalGetStyleByIdAsync;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, originalText);
+  assert.strictEqual(styleRestorationAttempts, 0);
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(result.requiresStyleWarning, false);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 0);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert.strictEqual(undo.getCommitCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
 }
 
 async function runStandalonePhoneCountryPrefixContextTests() {
@@ -1820,6 +1902,7 @@ async function runStyleRestorationRollbackTests() {
       throw new Error("Style restoration failed");
     }
   };
+  const undo = configureFigmaUndoForNodes([node]);
   context.console = {
     ...console,
     error: () => {},
@@ -1841,13 +1924,60 @@ async function runStyleRestorationRollbackTests() {
     skippedLocked: 0,
   });
   assert.strictEqual(node.characters, originalText);
-  assert.strictEqual(styleRestorationAttempts, 2);
+  assert.strictEqual(styleRestorationAttempts, 1);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
   assert.strictEqual(result.failedStage, "restore_styles");
   assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
   assert.strictEqual(result.analytics.charactersChangedTotal, 0);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
   assert.strictEqual(result.analytics.styleSegmentsCount, 0);
+}
+
+async function runWholeRunNativeUndoTests() {
+  const firstNode = createProcessTextNodeMock("successful-before-undo-node", "Первый...", { height: 20, width: 80, x: 0, y: 0 });
+  const failingNode = createProcessTextNodeMock("failure-triggering-undo-node", "Второй...", { height: 20, width: 80, x: 0, y: 30 });
+  const originalFirstText = firstNode.characters;
+  const originalFailingText = failingNode.characters;
+  const originalConsole = context.console;
+
+  context.figma.loadFontAsync = async () => {};
+  failingNode.setTextStyleIdAsync = async () => {
+    throw new Error("Style restoration failed");
+  };
+  const undo = configureFigmaUndoForNodes([firstNode, failingNode]);
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([firstNode, failingNode], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 2,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(firstNode.characters, originalFirstText);
+  assert.strictEqual(failingNode.characters, originalFailingText);
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.requiresStyleWarning, false);
+  assert.strictEqual(result.analytics.charactersChangedTotal, 0);
+  assert.strictEqual(result.analytics.styleSegmentsCount, 0);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(result.analytics.ruleAnalytics.changedCodes)), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(result.analytics.ruleAnalytics.changePairs)), {});
+  assert.strictEqual(undo.getCommitCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
 }
 
 async function runFailedStyleRollbackTests() {
@@ -1860,6 +1990,7 @@ async function runFailedStyleRollbackTests() {
   failingNode.setTextStyleIdAsync = async () => {
     throw new Error("Persistent style restoration failure");
   };
+  const undo = configureFigmaUndoForNodes([failingNode, untouchedNode], false);
   context.console = {
     ...console,
     error: () => {},
@@ -1880,7 +2011,7 @@ async function runFailedStyleRollbackTests() {
     skippedHidden: 0,
     skippedLocked: 0,
   });
-  assert.strictEqual(failingNode.characters, originalText);
+  assert.notStrictEqual(failingNode.characters, originalText);
   assert.strictEqual(untouchedNode.characters, "Второй...");
   assert.strictEqual(result.failedStage, "rollback_styles");
   assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
@@ -1888,6 +2019,7 @@ async function runFailedStyleRollbackTests() {
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
   assert.strictEqual(result.analytics.styleSegmentsCount, 0);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
 }
 
 async function runPrioritizedRollbackFailureTests() {
@@ -1899,6 +2031,7 @@ async function runPrioritizedRollbackFailureTests() {
   rollbackFailureNode.setTextStyleIdAsync = async () => {
     throw new Error("Persistent style restoration failure");
   };
+  const undo = configureFigmaUndoForNodes([fontFailureNode, rollbackFailureNode], false);
   context.figma.loadFontAsync = async (font) => {
     if (font.family === "Missing Font") {
       throw new Error("Font is unavailable");
@@ -1927,6 +2060,7 @@ async function runPrioritizedRollbackFailureTests() {
   assert.strictEqual(result.failedStage, "rollback_styles");
   assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
 }
 
 async function runLibraryInstanceSafetyContractTests() {
@@ -2180,10 +2314,12 @@ runStyleRestorationTests()
   .then(runPreservedLibraryStyleOptimizationTests)
   .then(runLibraryStyleVerificationRollbackTests)
   .then(runDetectedRollbackDamageTests)
+  .then(runUnavailableLinkedStylePreflightTests)
   .then(runStandalonePhoneCountryPrefixContextTests)
   .then(runRuleAnalyticsFinalTextTests)
   .then(runProcessingFailureAnalyticsTests)
   .then(runStyleRestorationRollbackTests)
+  .then(runWholeRunNativeUndoTests)
   .then(runFailedStyleRollbackTests)
   .then(runPrioritizedRollbackFailureTests)
   .then(runLibraryInstanceSafetyContractTests)

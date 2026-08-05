@@ -418,6 +418,12 @@ interface StyleRestorationPlan {
   verifyUniformLinkedStyle: boolean;
 }
 
+interface TextLayerStateSnapshot {
+  styles: StyleSegment[];
+  text: string;
+  textNode: TextNode;
+}
+
 interface TypographyCleanResult {
   text: string;
   developmentMarkerIndexes: number[];
@@ -1016,6 +1022,22 @@ function finishTypographyRuleAnalyticsTextLayer(collector: TypographyRuleAnalyti
   }
 }
 
+function discardConfirmedTypographyRuleChanges(collector: TypographyRuleAnalyticsCollector): void {
+  try {
+    collector.changePairs.clear();
+    collector.currentTextLayerIndex = -1;
+    collector.pendingChangedApplications.clear();
+    collector.pendingChangeSequence = [];
+
+    for (const metric of collector.metrics.values()) {
+      metric.changedApplications = 0;
+      metric.changedTextLayers.clear();
+    }
+  } catch {
+    // Rule analytics must never affect typography.
+  }
+}
+
 function applyTypographyRule(
   collector: TypographyRuleAnalyticsCollector | null,
   code: TypographyRuleCode,
@@ -1569,7 +1591,7 @@ function getAnalyticsErrorLocation(stage: AnalyticsErrorStage): string {
     load_fonts: "src/code.ts:loadFontsForTextNode",
     read_styles: "src/code.ts:captureTextStyles",
     restore_styles: "src/code.ts:restoreTextStyles",
-    rollback_styles: "src/code.ts:restoreOriginalTextAfterStyleFailure",
+    rollback_styles: "src/code.ts:restoreRunWithFigmaUndo",
     unknown: "src/code.ts:runTypograph",
     write_text: "src/code.ts:processTextNodes/write_clean_text",
   };
@@ -1827,6 +1849,8 @@ function hasLockedProperty(node: BaseNode): node is BaseNode & { locked: boolean
 
 async function processTextNodes(textNodes: TextNode[], skippedLocked: number, skippedHidden: number, options: PluginRunOptions): Promise<TextProcessResult> {
   try {
+    figma.commitUndo();
+
     let processed = 0;
     let changed = 0;
     let failed = 0;
@@ -1841,6 +1865,8 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
     let rollbackFailedLayersCount = 0;
     let slowestTextLayerMs = 0;
     let styleSegmentsCount = 0;
+    const modifiedLayerSnapshots: TextLayerStateSnapshot[] = [];
+    const linkedStyleAvailabilityCache = new Map<string, Promise<void>>();
     const ruleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
     const fontLoadCache = new Map<string, Promise<void>>();
     const loadedFontKeys = new Set<string>();
@@ -1860,6 +1886,7 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
       let countedAsProcessed = false;
       let originalTextForRuleAnalytics: string | null = null;
       let shouldStopProcessing = false;
+      let currentLayerWasWritten = false;
 
       try {
         const oldText = textNode.characters;
@@ -1911,6 +1938,13 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
             },
             () => captureTextStyles(textNode)
           );
+          currentStage = "restore_styles";
+          await measureAsyncDuration(
+            (duration) => {
+              timings.readStyles += duration;
+            },
+            () => assertLinkedStylesAvailable(styles, linkedStyleAvailabilityCache)
+          );
           currentStage = "compare_text";
           const styleComparison = measureDuration(
             (duration) => {
@@ -1920,6 +1954,11 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
           );
 
           currentStage = "write_text";
+          modifiedLayerSnapshots.push({
+            styles,
+            text: oldText,
+            textNode,
+          });
           measureDuration(
             (duration) => {
               timings.writeText += duration;
@@ -1928,47 +1967,27 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
               textNode.characters = newText;
             }
           );
+          currentLayerWasWritten = true;
           currentStage = "restore_styles";
           const { styleMap, verifyUniformLinkedStyle, wholeTextStyle } = styleComparison;
-          try {
-            if (wholeTextStyle !== null) {
-              await measureAsyncDuration(
-                (duration) => {
-                  timings.restoreStyles += duration;
-                },
-                () => restoreWholeTextStyle(textNode, wholeTextStyle, verifyUniformLinkedStyle)
-              );
-            } else {
-              await measureAsyncDuration(
-                (duration) => {
-                  timings.restoreStyles += duration;
-                },
-                () => restoreTextStyles(textNode, styleMap, styles, verifyUniformLinkedStyle)
-              );
-            }
-
-            if (verifyUniformLinkedStyle && !verifyUniformStylePreservation(textNode, styles[0])) {
-              throw new Error("Linked style verification failed");
-            }
-          } catch (error) {
-            rollbackAttemptedLayersCount += 1;
-            currentStage = "rollback_styles";
-            const rollbackSucceeded = await measureAsyncDuration(
+          if (wholeTextStyle !== null) {
+            await measureAsyncDuration(
               (duration) => {
                 timings.restoreStyles += duration;
               },
-              () => restoreOriginalTextAfterStyleFailure(textNode, oldText, styles)
+              () => restoreWholeTextStyle(textNode, wholeTextStyle, verifyUniformLinkedStyle)
             );
+          } else {
+            await measureAsyncDuration(
+              (duration) => {
+                timings.restoreStyles += duration;
+              },
+              () => restoreTextStyles(textNode, styleMap, styles, verifyUniformLinkedStyle)
+            );
+          }
 
-            if (!rollbackSucceeded) {
-              rollbackFailedLayersCount += 1;
-              requiresStyleWarning = true;
-              shouldStopProcessing = true;
-              throw new Error("Failed to restore original text layer state");
-            }
-
-            currentStage = "restore_styles";
-            throw error;
+          if (verifyUniformLinkedStyle && !verifyUniformStylePreservation(textNode, styles[0])) {
+            throw new Error("Linked style verification failed");
           }
 
           charactersChangedTotal += oldText.length;
@@ -2003,17 +2022,47 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
           () => syncDevelopmentMarkerPluginData(textNode, options, cleanResult.developmentMarkerIndexes)
         );
       } catch (error) {
+        let caughtError = error;
+        let rollbackFailed = false;
+
+        if (currentLayerWasWritten) {
+          const failureStageBeforeRollback = currentStage;
+          rollbackAttemptedLayersCount += 1;
+          const rollbackSucceeded = measureDuration(
+            (duration) => {
+              timings.restoreStyles += duration;
+            },
+            () => restoreRunWithFigmaUndo(modifiedLayerSnapshots)
+          );
+
+          changed = 0;
+          charactersChangedTotal = 0;
+          styleSegmentsCount = 0;
+          discardConfirmedTypographyRuleChanges(ruleAnalyticsCollector);
+          shouldStopProcessing = true;
+
+          if (!rollbackSucceeded) {
+            rollbackFailedLayersCount += 1;
+            requiresStyleWarning = true;
+            rollbackFailed = true;
+            currentStage = "rollback_styles";
+            caughtError = new Error("Failed to restore original text layer state");
+          } else {
+            currentStage = failureStageBeforeRollback;
+          }
+        }
+
         failed += 1;
-        if (shouldStopProcessing) {
+        if (rollbackFailed) {
           failedStage = "rollback_styles";
-          failureDiagnostic = createAnalyticsErrorDiagnostic(error, "rollback_styles");
+          failureDiagnostic = createAnalyticsErrorDiagnostic(caughtError, "rollback_styles");
         } else {
-          const diagnostic = createAnalyticsErrorDiagnostic(error, currentStage);
+          const diagnostic = createAnalyticsErrorDiagnostic(caughtError, currentStage);
           failedStage ??= currentStage;
           failureDiagnostic ??= diagnostic;
         }
 
-        console.error(`[Чистовик] Failed to process text node ${textNode.id}`, error);
+        console.error(`[Чистовик] Failed to process text node ${textNode.id}`, caughtError);
       } finally {
         if (countedAsProcessed) {
           let finalTextChanged = false;
@@ -2062,20 +2111,12 @@ async function processTextNodes(textNodes: TextNode[], skippedLocked: number, sk
   }
 }
 
-async function restoreOriginalTextAfterStyleFailure(textNode: TextNode, oldText: string, styles: StyleSegment[]): Promise<boolean> {
+function restoreRunWithFigmaUndo(snapshots: TextLayerStateSnapshot[]): boolean {
   try {
-    textNode.characters = oldText;
-    const wholeTextStyle = getWholeTextStyle(styles, oldText);
-
-    if (wholeTextStyle !== null) {
-      await restoreWholeTextStyle(textNode, wholeTextStyle);
-    } else {
-      await restoreTextStyles(textNode, buildStyleMap(oldText, oldText, styles), styles);
-    }
-
-    return verifyRestoredOriginalTextState(textNode, oldText, styles);
+    figma.triggerUndo();
+    return snapshots.every((snapshot) => verifyRestoredOriginalTextState(snapshot.textNode, snapshot.text, snapshot.styles));
   } catch (rollbackError) {
-    console.error(`[Чистовик] Failed to restore original text after style restoration failure for text node ${textNode.id}`, rollbackError);
+    console.error("[Чистовик] Failed to restore typograph run with Figma undo", rollbackError);
     return false;
   }
 }
@@ -2269,6 +2310,41 @@ function captureTextStyles(textNode: TextNode): StyleSegment[] {
     }));
   } catch (error) {
     console.error(`[Чистовик] Failed to capture text styles for text node ${textNode.id}`, error);
+    throw error;
+  }
+}
+
+async function assertLinkedStylesAvailable(styles: StyleSegment[], cache: Map<string, Promise<void>>): Promise<void> {
+  try {
+    const linkedStyles = new Map<string, StyleType>();
+
+    for (const style of styles) {
+      if (style.textStyleId !== "") {
+        linkedStyles.set(style.textStyleId, "TEXT");
+      }
+
+      if (style.fillStyleId !== "") {
+        linkedStyles.set(style.fillStyleId, "PAINT");
+      }
+    }
+
+    for (const [styleId, expectedType] of linkedStyles) {
+      const cacheKey = `${expectedType}:${styleId}`;
+      let availabilityPromise = cache.get(cacheKey);
+
+      if (availabilityPromise === undefined) {
+        availabilityPromise = figma.getStyleByIdAsync(styleId).then((style) => {
+          if (style === null || style.type !== expectedType) {
+            throw new Error("Linked style is unavailable");
+          }
+        });
+        cache.set(cacheKey, availabilityPromise);
+      }
+
+      await availabilityPromise;
+    }
+  } catch (error) {
+    console.error("[Чистовик] Linked style is unavailable before text replacement", error);
     throw error;
   }
 }
