@@ -139,10 +139,10 @@ async function run() {
   assert(message.startsWith([
     "<b>✦ Чистовик за 27 июля (пн)</b>",
     "",
-    "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок",
-    "",
     "Запуски типографа: 28",
   ].join("\n")));
+  assert(!message.includes("Нельзя делать доработки"));
+  assert(!message.includes("Можно приступать к переходу"));
   assert(message.includes("Запуски типографа: 28"));
   assert(message.includes("Успешные обработки: 20 — это 80%"));
   assert(message.includes("Без финального статуса: 3"));
@@ -169,7 +169,7 @@ async function run() {
     env
   );
 
-  assert(readyMessage.includes("✅ Можно приступать к переходу на точечную обработку текста"));
+  assert(!readyMessage.includes("✅ Можно приступать к переходу на точечную обработку текста"));
   assert(!readyMessage.includes("🛑 Нельзя делать доработки"));
 
   assert.strictEqual(getPointEditingFullDays(new Date("2026-08-07T06:00:00.000Z")), 1);
@@ -179,7 +179,8 @@ async function run() {
   const todayMessage = formatAnalyticsMessage(todayRange, createSummary(), env);
 
   assert(todayMessage.includes("<b>✦ Чистовик сегодня (вт)</b>"));
-  assert(todayMessage.includes("🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок"));
+  assert(!todayMessage.includes("Нельзя делать доработки"));
+  assert(!todayMessage.includes("Можно приступать к переходу"));
   assert(todayMessage.includes("Запуски типографа: 28"));
   assert(todayMessage.includes("📍 Плагин запускали на 12% больше среднего за последние 7 дней"));
   assert(todayMessage.includes("Ошибки:"));
@@ -241,8 +242,6 @@ async function run() {
     [
       "<b>✦ Чистовик за 27 июля (пн)</b>",
       "",
-      "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок",
-      "",
       "Плагин никто не запускал",
       "",
       '<a href="https://example.test/dashboard">Полный дашборд с графиками</a> (открывается только с vpn)',
@@ -250,17 +249,18 @@ async function run() {
   );
 
   assert.strictEqual(
-    formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 30 }),
+    formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 30 }, "baseline"),
     "✅ Можно приступать к переходу на точечную обработку текста"
   );
   assert.strictEqual(
-    formatPointEditingReadinessMessage({ fullDays: 6, successfulRuns: 30 }),
+    formatPointEditingReadinessMessage({ fullDays: 6, successfulRuns: 30 }, "baseline"),
     "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок"
   );
   assert.strictEqual(
-    formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 29 }),
+    formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 29 }, "baseline"),
     "🛑 Нельзя делать доработки — ещё не накопились 7 полных дней или 30 успешных обработок"
   );
+  assert.strictEqual(formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 30 }), null);
   assert.strictEqual(
     formatPointEditingReadinessMessage({ fullDays: 7, successfulRuns: 30 }, "implementation"),
     null

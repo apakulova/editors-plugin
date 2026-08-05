@@ -36,6 +36,11 @@ const source = compiledSource.replace(
   [
     "globalThis.cleanTypography = cleanTypography;",
     "globalThis.cleanTypographyWithMetadata = cleanTypographyWithMetadata;",
+    "globalThis.calculatePointTextEdits = calculatePointTextEdits;",
+    "globalThis.applyPointTextEditsToString = applyPointTextEditsToString;",
+    "globalThis.applyPointTextEditsToTextNode = applyPointTextEditsToTextNode;",
+    "globalThis.buildPointTextEditStyleMap = buildPointTextEditStyleMap;",
+    "globalThis.getPointTextEditStyleSourcePosition = getPointTextEditStyleSourcePosition;",
     "globalThis.captureTextStyles = captureTextStyles;",
     "globalThis.getWholeTextStyle = getWholeTextStyle;",
     "globalThis.restoreWholeTextStyle = restoreWholeTextStyle;",
@@ -95,6 +100,11 @@ vm.runInContext(source, context);
 
 const cleanTypography = context.globalThis.cleanTypography;
 const cleanTypographyWithMetadata = context.globalThis.cleanTypographyWithMetadata;
+const calculatePointTextEdits = context.globalThis.calculatePointTextEdits;
+const applyPointTextEditsToString = context.globalThis.applyPointTextEditsToString;
+const applyPointTextEditsToTextNode = context.globalThis.applyPointTextEditsToTextNode;
+const buildPointTextEditStyleMap = context.globalThis.buildPointTextEditStyleMap;
+const getPointTextEditStyleSourcePosition = context.globalThis.getPointTextEditStyleSourcePosition;
 const captureTextStyles = context.globalThis.captureTextStyles;
 const getWholeTextStyle = context.globalThis.getWholeTextStyle;
 const restoreWholeTextStyle = context.globalThis.restoreWholeTextStyle;
@@ -166,7 +176,7 @@ assert.match(createAnalyticsEventId(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 9);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 11);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
 assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-05");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
@@ -187,8 +197,7 @@ assert(normalizedLegacyEventSecondRead);
 assert.match(normalizedLegacyEventFirstRead.payload.uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 assert.strictEqual(normalizedLegacyEventFirstRead.payload.uuid, normalizedLegacyEventSecondRead.payload.uuid);
 
-assert.strictEqual(
-  getRunAnalyticsProperties({
+const shadowRunAnalyticsProperties = getRunAnalyticsProperties({
     mode: "default",
     options: beautyOptions,
     runId: "run_test",
@@ -199,9 +208,9 @@ assert.strictEqual(
     },
     source: "quick_run",
     startedAt: 0,
-  }).performance_measurement_version,
-  3
-);
+  });
+assert.strictEqual(shadowRunAnalyticsProperties.performance_measurement_version, 5);
+assert.strictEqual(shadowRunAnalyticsProperties.point_editing_phase, "point_safe");
 
 assert.deepStrictEqual(
   {
@@ -329,6 +338,7 @@ assert.deepStrictEqual(
         compareText: 5,
         developmentMarkers: 6,
         fonts: 2,
+        pointEditPlanning: 8,
         readStyles: 3,
         restoreStyles: 7,
         typography: 1,
@@ -340,6 +350,7 @@ assert.deepStrictEqual(
     timing_compare_text_ms: 5,
     timing_development_markers_ms: 6,
     timing_fonts_ms: 2,
+    timing_point_edit_planning_ms: 8,
     timing_read_styles_ms: 3,
     timing_restore_styles_ms: 7,
     timing_typography_ms: 1,
@@ -401,18 +412,27 @@ function runStyleCaptureTests() {
   assert.strictEqual(rangeCapturedStyles[0].textStyleId, "range-text-style-id");
 }
 
+const pointWriterTypographyExamples = [];
+
 function expectClean(input, expected) {
   const actual = cleanTypography(input);
+  const pointEdits = calculatePointTextEdits(input, actual);
+
+  pointWriterTypographyExamples.push({ input, expected });
 
   assert.strictEqual(actual, expected, input);
+  assert.strictEqual(applyPointTextEditsToString(input, pointEdits), actual, `${input} point edits`);
   assert.strictEqual(cleanTypography(actual), expected, `${input} should be idempotent`);
+  assert.strictEqual(calculatePointTextEdits(actual, expected).length, 0, `${input} clean text should not have point edits`);
 }
 
 function expectDevelopmentIdempotent(input, expected) {
   const first = cleanTypographyWithMetadata(input, developmentOptions);
   const secondWithMarkers = cleanTypographyWithMetadata(first.text, developmentOptions, first.developmentMarkerIndexes);
+  const pointEdits = calculatePointTextEdits(input, first.text);
 
   assert.strictEqual(first.text, expected, `${input} first development run`);
+  assert.strictEqual(applyPointTextEditsToString(input, pointEdits), first.text, `${input} development point edits`);
   assert.strictEqual(secondWithMarkers.text, expected, `${input} second development run with marker indexes`);
 }
 
@@ -420,7 +440,124 @@ function expectDevelopmentStableWithoutMarkers(input, expected = input) {
   const actual = cleanTypographyWithMetadata(input, developmentOptions);
 
   assert.strictEqual(actual.text, expected, `${input} development run without marker indexes`);
+  assert.strictEqual(applyPointTextEditsToString(input, calculatePointTextEdits(input, actual.text)), actual.text);
 }
+
+function runPointTextEditCalculationTests() {
+  assert.strictEqual(calculatePointTextEdits("Без изменений", "Без изменений").length, 0);
+  assert.strictEqual(applyPointTextEditsToString("", calculatePointTextEdits("", "Новый текст")), "Новый текст");
+  assert.strictEqual(applyPointTextEditsToString("Старый текст", calculatePointTextEdits("Старый текст", "")), "");
+  assert.strictEqual(
+    getPointTextEditStyleSourcePosition(" - ", { start: 0, end: 3, insertText: " — " }),
+    1,
+    "A replacement containing spaces must inherit the style of the meaningful original sign"
+  );
+  assert.strictEqual(
+    getPointTextEditStyleSourcePosition("Текст", { start: 5, end: 5, insertText: "!" }),
+    4,
+    "An insertion at the end must inherit the preceding character style"
+  );
+  const boundaryReplacementNode = createProcessTextNodeMock("boundary-replacement-operation", " - ", null);
+  const boundaryReplacementCalls = [];
+  boundaryReplacementNode.insertCharacters = (start, value, useStyle) => {
+    boundaryReplacementCalls.push(["insert", start, value, useStyle]);
+    boundaryReplacementNode.characters = `${boundaryReplacementNode.characters.slice(0, start)}${value}${boundaryReplacementNode.characters.slice(start)}`;
+  };
+  boundaryReplacementNode.deleteCharacters = (start, end) => {
+    boundaryReplacementCalls.push(["delete", start, end]);
+    boundaryReplacementNode.characters = `${boundaryReplacementNode.characters.slice(0, start)}${boundaryReplacementNode.characters.slice(end)}`;
+  };
+  const boundaryReplacementEdit = { start: 0, end: 3, insertText: " — " };
+  applyPointTextEditsToTextNode(boundaryReplacementNode, [boundaryReplacementEdit]);
+  assert.strictEqual(boundaryReplacementNode.characters, " — ");
+  assert.deepStrictEqual(boundaryReplacementCalls, [
+    ["insert", 1, " — ", "AFTER"],
+    ["delete", 4, 6],
+    ["delete", 0, 1],
+  ]);
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(buildPointTextEditStyleMap(" - ", [
+      { start: 0, end: 1 },
+      { start: 1, end: 2 },
+      { start: 2, end: 3 },
+    ], [boundaryReplacementEdit]))),
+    [1, 1, 1]
+  );
+
+  const insertionSource = "Первый второй";
+  const insertionTarget = `Первый${NBSP}и второй`;
+  const insertionEdits = calculatePointTextEdits(insertionSource, insertionTarget);
+  assert.strictEqual(applyPointTextEditsToString(insertionSource, insertionEdits), insertionTarget);
+
+  const repeatedSource = "слово слово слово";
+  const repeatedTarget = `слово${NBSP}слово слово`;
+  assert.strictEqual(
+    applyPointTextEditsToString(repeatedSource, calculatePointTextEdits(repeatedSource, repeatedTarget)),
+    repeatedTarget
+  );
+
+  const multilineSource = "Первая строка...\nВторая  строка";
+  const multilineTarget = `Первая строка…\nВторая${NBSP}строка`;
+  assert.strictEqual(
+    applyPointTextEditsToString(multilineSource, calculatePointTextEdits(multilineSource, multilineTarget)),
+    multilineTarget
+  );
+
+  const emojiSource = "👩‍💻 и 👍🏽";
+  const emojiTarget = "👨‍💻 и 👍🏽!";
+  const emojiEdits = calculatePointTextEdits(emojiSource, emojiTarget);
+  assert.strictEqual(applyPointTextEditsToString(emojiSource, emojiEdits), emojiTarget);
+  assert.strictEqual(emojiEdits[0].start, 0);
+  assert.strictEqual(emojiEdits[0].end, "👩‍💻".length);
+
+  const combiningSource = "йод";
+  const combiningTarget = "йод";
+  const combiningEdits = calculatePointTextEdits(combiningSource, combiningTarget);
+  assert.strictEqual(applyPointTextEditsToString(combiningSource, combiningEdits), combiningTarget);
+  assert.strictEqual(combiningEdits[0].end, "й".length);
+
+  const sandboxIntl = vm.runInContext("Intl", context);
+
+  try {
+    vm.runInContext("globalThis.Intl = undefined", context);
+    assert.strictEqual(
+      applyPointTextEditsToString(emojiSource, calculatePointTextEdits(emojiSource, emojiTarget)),
+      emojiTarget,
+      "Point edits must work in the Figma sandbox without Intl"
+    );
+  } finally {
+    context.Intl = sandboxIntl;
+  }
+
+  const longSource = `${"а".repeat(5000)}x${"б".repeat(5000)}y`;
+  const longTarget = `${"а".repeat(5000)}X${"б".repeat(5000)}Y`;
+  const longEdits = calculatePointTextEdits(longSource, longTarget);
+  assert.strictEqual(applyPointTextEditsToString(longSource, longEdits), longTarget);
+  assert.strictEqual(longEdits.length, 2);
+
+  const exhaustiveAlphabet = ["а", " ", "…", "👩‍💻"];
+  const exhaustiveSamples = [""];
+
+  for (const first of exhaustiveAlphabet) {
+    exhaustiveSamples.push(first);
+
+    for (const second of exhaustiveAlphabet) {
+      exhaustiveSamples.push(`${first}${second}`);
+    }
+  }
+
+  for (const source of exhaustiveSamples) {
+    for (const target of exhaustiveSamples) {
+      assert.strictEqual(
+        applyPointTextEditsToString(source, calculatePointTextEdits(source, target)),
+        target,
+        `Point edit exhaustive pair ${JSON.stringify(source)} -> ${JSON.stringify(target)}`
+      );
+    }
+  }
+}
+
+runPointTextEditCalculationTests();
 
 expectClean(
   "Она спросила \"как дела?\". Я подумала \"ну всё... приехали!\". \"Она сказала: \"Я приду завтра!\"\".",
@@ -1462,6 +1599,7 @@ function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId
     getPluginData: () => "",
     getRangeAllFontNames: () => [font],
     getRangeFillStyleId: () => "",
+    getRangeFills: () => [],
     getRangeTextStyleId: () => "",
     getStyledTextSegments: () => [
       {
@@ -1493,7 +1631,13 @@ function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId
       },
     ],
     id,
+    insertCharacters: (start, value) => {
+      node.characters = `${node.characters.slice(0, start)}${value}${node.characters.slice(start)}`;
+    },
     parent: parentId === null ? null : { id: parentId },
+    deleteCharacters: (start, end) => {
+      node.characters = `${node.characters.slice(0, start)}${node.characters.slice(end)}`;
+    },
     setPluginData: () => {},
     setTextStyleIdAsync: async () => {},
     textStyleId: "",
@@ -1643,7 +1787,7 @@ async function runLibraryStyleVerificationRollbackTests() {
   let result;
 
   try {
-    result = await processTextNodes([node], 0, 0, beautyOptions);
+    result = await processTextNodes([node], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
   }
@@ -1695,7 +1839,7 @@ async function runDetectedRollbackDamageTests() {
   let result;
 
   try {
-    result = await processTextNodes([node], 0, 0, beautyOptions);
+    result = await processTextNodes([node], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
   }
@@ -1736,7 +1880,7 @@ async function runUnavailableLinkedStylePreflightTests() {
   let result;
 
   try {
-    result = await processTextNodes([node], 0, 0, beautyOptions);
+    result = await processTextNodes([node], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
     context.figma.getStyleByIdAsync = originalGetStyleByIdAsync;
@@ -1779,6 +1923,10 @@ async function runStandalonePhoneCountryPrefixContextTests() {
   assert.strictEqual(result.analytics.largestTextLayerCharacters, 13);
   assert.strictEqual(result.analytics.uniqueFontsCount, 1);
   assert.strictEqual(result.analytics.styleSegmentsCount, 2);
+  assert.strictEqual(result.analytics.pointEditPlannedLayersCount, 2);
+  assert.strictEqual(result.analytics.pointEditMismatchLayersCount, 0);
+  assert(result.analytics.pointEditOperationsCount >= 2);
+  assert(result.analytics.pointEditMaxOperationsCount >= 1);
   assert.strictEqual(result.analytics.ruleAnalytics.measuredCodesCount, 77);
   assert(result.analytics.ruleAnalytics.changedCodes.includes("phone_ru_format"));
   assert(result.analytics.ruleAnalytics.changedCodes.includes("phone_ru_separators"));
@@ -1799,6 +1947,9 @@ async function runStandalonePhoneCountryPrefixContextTests() {
   assert.strictEqual(mathResult.analytics.charactersProcessedTotal, 6);
   assert.strictEqual(mathResult.analytics.charactersChangedTotal, 0);
   assert.strictEqual(mathResult.analytics.largestTextLayerCharacters, 3);
+  assert.strictEqual(mathResult.analytics.pointEditPlannedLayersCount, 0);
+  assert.strictEqual(mathResult.analytics.pointEditOperationsCount, 0);
+  assert.strictEqual(mathResult.analytics.pointEditMismatchLayersCount, 0);
   assert.strictEqual(mathPrefix.characters, "+ 7");
 
   const unrelatedPrefix = createProcessTextNodeMock("unrelated-prefix", "+ 7", { height: 20, width: 20, x: 0, y: 0 }, "header");
@@ -1911,7 +2062,7 @@ async function runStyleRestorationRollbackTests() {
   let result;
 
   try {
-    result = await processTextNodes([node], 0, 0, beautyOptions);
+    result = await processTextNodes([node], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
   }
@@ -1954,7 +2105,7 @@ async function runWholeRunNativeUndoTests() {
   let result;
 
   try {
-    result = await processTextNodes([firstNode, failingNode], 0, 0, beautyOptions);
+    result = await processTextNodes([firstNode, failingNode], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
   }
@@ -1999,7 +2150,7 @@ async function runFailedStyleRollbackTests() {
   let result;
 
   try {
-    result = await processTextNodes([failingNode, untouchedNode], 0, 0, beautyOptions);
+    result = await processTextNodes([failingNode, untouchedNode], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
   }
@@ -2045,7 +2196,7 @@ async function runPrioritizedRollbackFailureTests() {
   let result;
 
   try {
-    result = await processTextNodes([fontFailureNode, rollbackFailureNode], 0, 0, beautyOptions);
+    result = await processTextNodes([fontFailureNode, rollbackFailureNode], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
   }
@@ -2097,9 +2248,8 @@ async function runIntegratedMixedStyleProcessingTests() {
   const node = createProcessTextNodeMock("integrated-mixed-style-node", "Один... Два", { height: 20, width: 120, x: 0, y: 0 });
   const calls = [];
   const baseStyle = node.getStyledTextSegments()[0];
-
-  node.getRangeTextStyleId = () => "body-style-id";
-  node.getStyledTextSegments = () => [
+  const originalText = node.characters;
+  const originalSegments = [
     {
       ...baseStyle,
       boundVariables: {
@@ -2115,10 +2265,44 @@ async function runIntegratedMixedStyleProcessingTests() {
       end: 11,
       fontName: { family: "Inter", style: "Bold" },
       start: 7,
-      textStyleId: "body-style-id",
-      textStyleOverrides: [{ type: "SEMANTIC_WEIGHT" }],
+      textDecoration: "UNDERLINE",
+      textStyleId: "accent-style-id",
+      textStyleOverrides: [{ type: "SEMANTIC_WEIGHT" }, { type: "TEXT_DECORATION" }],
     },
   ];
+
+  node.getRangeTextStyleId = (start) => {
+    const boundary = node.characters === originalText ? 7 : 5;
+    return start < boundary ? "body-style-id" : "accent-style-id";
+  };
+  node.getStyledTextSegments = () => {
+    if (node.characters === originalText) {
+      return originalSegments;
+    }
+
+    return [
+      {
+        ...originalSegments[0],
+        characters: node.characters.slice(0, 5),
+        start: 0,
+        end: 5,
+      },
+      {
+        ...originalSegments[1],
+        characters: node.characters.slice(5),
+        start: 5,
+        end: node.characters.length,
+      },
+    ];
+  };
+  node.insertCharacters = (start, value, useStyle) => {
+    calls.push(["insertCharacters", start, value, useStyle]);
+    node.characters = `${node.characters.slice(0, start)}${value}${node.characters.slice(start)}`;
+  };
+  node.deleteCharacters = (start, end) => {
+    calls.push(["deleteCharacters", start, end]);
+    node.characters = `${node.characters.slice(0, start)}${node.characters.slice(end)}`;
+  };
   node.setRangeFills = (start, end, value) => calls.push(["fills", start, end, value]);
   node.setRangeBoundVariable = (start, end, field, value) => calls.push(["boundVariable", start, end, field, value]);
   node.setRangeFontName = (start, end, value) => calls.push(["fontName", start, end, value]);
@@ -2143,12 +2327,432 @@ async function runIntegratedMixedStyleProcessingTests() {
     skippedLocked: 0,
   });
   assert.strictEqual(node.characters, "Один… Два");
-  assert.strictEqual(textStyleCalls.length, 2);
-  assert.strictEqual(textStyleCalls[0][1], 0);
-  assert.strictEqual(textStyleCalls[1][2], node.characters.length);
-  assert.deepStrictEqual(boldCall.slice(1), [textStyleCalls[1][1], node.characters.length, { family: "Inter", style: "Bold" }]);
-  assert.deepStrictEqual(boundVariableCall.slice(3), ["fontSize", { id: "integrated-font-size-variable" }]);
-  assert(calls.indexOf(boundVariableCall) > calls.indexOf(textStyleCalls[0]));
+  assert.strictEqual(result.analytics.pointEditPlannedLayersCount, 1);
+  assert.strictEqual(result.analytics.pointEditMismatchLayersCount, 0);
+  assert.strictEqual(result.analytics.pointEditOperationsCount, 1);
+  assert.strictEqual(textStyleCalls.length, 0);
+  assert.strictEqual(boldCall, undefined);
+  assert.strictEqual(boundVariableCall, undefined);
+  assert.deepStrictEqual(calls, [
+    ["insertCharacters", 4, "…", "AFTER"],
+    ["deleteCharacters", 5, 8],
+  ]);
+}
+
+async function runPointStyleBoundaryProcessingTests() {
+  const node = createProcessTextNodeMock("point-style-boundary-node", "Один... Два", { height: 20, width: 120, x: 0, y: 0 });
+  const calls = [];
+  const baseStyle = node.getStyledTextSegments()[0];
+  const originalText = node.characters;
+  const originalSegments = [
+    {
+      ...baseStyle,
+      characters: "Один.",
+      end: 5,
+      textStyleId: "body-style-id",
+    },
+    {
+      ...baseStyle,
+      characters: ".. Два",
+      end: 11,
+      fontName: { family: "Inter", style: "Bold" },
+      start: 5,
+      textDecoration: "UNDERLINE",
+      textStyleId: "accent-style-id",
+      textStyleOverrides: [{ type: "SEMANTIC_WEIGHT" }, { type: "TEXT_DECORATION" }],
+    },
+  ];
+
+  node.getRangeTextStyleId = (start) => start < 5 ? "body-style-id" : "accent-style-id";
+  node.getStyledTextSegments = () => {
+    if (node.characters === originalText) {
+      return originalSegments;
+    }
+
+    return [
+      {
+        ...originalSegments[0],
+        characters: node.characters.slice(0, 5),
+        start: 0,
+        end: 5,
+      },
+      {
+        ...originalSegments[1],
+        characters: node.characters.slice(5),
+        start: 5,
+        end: node.characters.length,
+      },
+    ];
+  };
+  node.insertCharacters = (start, value, useStyle) => {
+    calls.push(["insertCharacters", start, value, useStyle]);
+    node.characters = `${node.characters.slice(0, start)}${value}${node.characters.slice(start)}`;
+  };
+  node.deleteCharacters = (start, end) => {
+    calls.push(["deleteCharacters", start, end]);
+    node.characters = `${node.characters.slice(0, start)}${node.characters.slice(end)}`;
+  };
+  context.figma.loadFontAsync = async () => {};
+
+  const result = await processTextNodes([node], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(result, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, "Один… Два");
+  assert.strictEqual(result.analytics.pointEditMismatchLayersCount, 0);
+  assert.deepStrictEqual(calls, [
+    ["insertCharacters", 4, "…", "AFTER"],
+    ["deleteCharacters", 5, 8],
+  ]);
+}
+
+async function runAllTypographyExamplesThroughPointWriterTests() {
+  context.figma.loadFontAsync = async () => {};
+
+  for (let index = 0; index < pointWriterTypographyExamples.length; index += 1) {
+    const { input, expected } = pointWriterTypographyExamples[index];
+
+    if (input === expected || isWhitespaceOnlyForTest(input)) {
+      continue;
+    }
+
+    const node = createProcessTextNodeMock(`point-writer-rule-example-${index}`, input, { height: 20, width: 320, x: 0, y: 0 });
+    const result = await processTextNodes([node], 0, 0, beautyOptions);
+
+    assertTextProcessCounts(result, {
+      changed: 1,
+      failed: 0,
+      processed: 1,
+      skippedHidden: 0,
+      skippedLocked: 0,
+    });
+    assert.strictEqual(node.characters, expected, `Point writer example ${index}: ${input}`);
+  }
+}
+
+function isWhitespaceOnlyForTest(input) {
+  return /^[ \t\r\n\u00A0]*$/.test(input);
+}
+
+function runAdjacentPunctuationStylePreservationTests() {
+  const mixedInput = 'Он сказал "это очень важно..." и ушёл.';
+  const mixedOutput = "Он\u00A0сказал «это очень важно…» и\u00A0ушёл.";
+  const mixedEdits = calculatePointTextEdits(mixedInput, mixedOutput);
+
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(mixedEdits)), [
+    { start: 2, end: 3, insertText: NBSP },
+    { start: 10, end: 11, insertText: "«" },
+    { start: 26, end: 29, insertText: "…" },
+    { start: 29, end: 30, insertText: "»" },
+    { start: 32, end: 33, insertText: NBSP },
+  ]);
+  assert.strictEqual(applyPointTextEditsToString(mixedInput, mixedEdits), mixedOutput);
+
+  const mixedStyleMap = buildPointTextEditStyleMap(mixedInput, [
+    { start: 0, end: 26 },
+    { start: 26, end: 29 },
+    { start: 29, end: mixedInput.length },
+  ], mixedEdits);
+  assert.strictEqual(mixedStyleMap[26], 1, "The ellipsis must keep the dots' underline style");
+  assert.strictEqual(mixedStyleMap[27], 2, "The closing quote must keep its own non-underlined style");
+
+  const linkInput = 'Открыть "справку"... и закрыть старую версию.';
+  const linkOutput = "Открыть «справку»… и\u00A0закрыть старую версию.";
+  const linkEdits = calculatePointTextEdits(linkInput, linkOutput);
+
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(linkEdits)), [
+    { start: 8, end: 9, insertText: "«" },
+    { start: 16, end: 17, insertText: "»" },
+    { start: 17, end: 20, insertText: "…" },
+    { start: 22, end: 23, insertText: NBSP },
+  ]);
+  assert.strictEqual(applyPointTextEditsToString(linkInput, linkEdits), linkOutput);
+
+  const linkStyleMap = buildPointTextEditStyleMap(linkInput, [
+    { start: 0, end: 17 },
+    { start: 17, end: 20 },
+    { start: 20, end: linkInput.length },
+  ], linkEdits);
+  assert.strictEqual(linkStyleMap[16], 0, "The closing quote must keep its own non-underlined style");
+  assert.strictEqual(linkStyleMap[17], 1, "The ellipsis must keep the dots' underline style");
+}
+
+async function runPointInsertionProcessingTests() {
+  const node = createProcessTextNodeMock("point-insertion-node", "Температура 100F", { height: 20, width: 160, x: 0, y: 0 });
+  const calls = [];
+  const originalInsertCharacters = node.insertCharacters;
+  const originalText = node.characters;
+  const styleBoundary = originalText.length - 1;
+  const baseStyle = node.getStyledTextSegments()[0];
+  const originalSegments = [
+    {
+      ...baseStyle,
+      characters: originalText.slice(0, styleBoundary),
+      end: styleBoundary,
+      textStyleId: "body-style-id",
+    },
+    {
+      ...baseStyle,
+      characters: "F",
+      end: originalText.length,
+      fontName: { family: "Inter", style: "Bold" },
+      start: styleBoundary,
+      textDecoration: "UNDERLINE",
+      textStyleId: "accent-style-id",
+      textStyleOverrides: [{ type: "SEMANTIC_WEIGHT" }, { type: "TEXT_DECORATION" }],
+    },
+  ];
+
+  node.getRangeTextStyleId = (start) => start < styleBoundary ? "body-style-id" : "accent-style-id";
+  node.getStyledTextSegments = () => {
+    if (node.characters === originalText) {
+      return originalSegments;
+    }
+
+    const insertedWhitespaceEnd = styleBoundary + 1;
+
+    return [
+      {
+        ...originalSegments[0],
+        characters: node.characters.slice(0, insertedWhitespaceEnd),
+        start: 0,
+        end: insertedWhitespaceEnd,
+      },
+      {
+        ...originalSegments[1],
+        characters: node.characters.slice(insertedWhitespaceEnd),
+        start: insertedWhitespaceEnd,
+        end: node.characters.length,
+      },
+    ];
+  };
+  node.insertCharacters = (start, value, useStyle) => {
+    calls.push([start, value, useStyle]);
+    originalInsertCharacters(start, value, useStyle);
+  };
+  context.figma.loadFontAsync = async () => {};
+
+  const result = await processTextNodes([node], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(result, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, `Температура 100${NBSP}°F`);
+  assert.deepStrictEqual(calls, [
+    [styleBoundary, "°", "AFTER"],
+    [styleBoundary, NBSP, "BEFORE"],
+  ]);
+
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(buildPointTextEditStyleMap(originalText, [
+      { start: 0, end: styleBoundary },
+      { start: styleBoundary, end: originalText.length },
+    ], [{ start: styleBoundary, end: styleBoundary, insertText: `${NBSP}°` }]))),
+    [
+      ...new Array(styleBoundary).fill(0),
+      0,
+      1,
+      1,
+    ],
+    "The inserted space must keep the number style, while the degree sign must keep the unit style"
+  );
+
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(buildPointTextEditStyleMap("12F", [
+      { start: 0, end: 2 },
+      { start: 2, end: 3 },
+    ], [{ start: 2, end: 2, insertText: NBSP }]))),
+    [0, 0, 0, 1],
+    "An inserted separator space between styles must keep the style on its left"
+  );
+}
+
+async function runPointWriteRollbackTests() {
+  const node = createProcessTextNodeMock("point-write-rollback-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalText = node.characters;
+  const originalConsole = context.console;
+  const originalDeleteCharacters = node.deleteCharacters;
+  let deleteCalls = 0;
+
+  node.deleteCharacters = (start, end) => {
+    deleteCalls += 1;
+
+    if (deleteCalls === 1) {
+      throw new Error("Point deletion failed");
+    }
+
+    originalDeleteCharacters(start, end);
+  };
+  context.figma.loadFontAsync = async () => {};
+  const undo = configureFigmaUndoForNodes([node]);
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, originalText);
+  assert.strictEqual(result.failedStage, "write_text");
+  assert.strictEqual(result.requiresStyleWarning, false);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
+}
+
+async function runPointStyleVerificationRollbackTests() {
+  const node = createProcessTextNodeMock("point-style-verification-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalText = node.characters;
+  const originalGetStyledTextSegments = node.getStyledTextSegments;
+  const originalConsole = context.console;
+
+  node.getRangeTextStyleId = () => "body-style-id";
+  node.getStyledTextSegments = () => {
+    const style = originalGetStyledTextSegments()[0];
+    return [
+      {
+        ...style,
+        characters: node.characters,
+        end: node.characters.length,
+        fontSize: node.characters === originalText ? 16 : 18,
+        textStyleId: "body-style-id",
+      },
+    ];
+  };
+  context.figma.loadFontAsync = async () => {};
+  const undo = configureFigmaUndoForNodes([node]);
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, originalText);
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.requiresStyleWarning, false);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
+}
+
+async function runMixedStyleVerificationRollbackTests() {
+  const node = createProcessTextNodeMock("mixed-style-verification-node", "Один... Два", { height: 20, width: 120, x: 0, y: 0 });
+  const originalText = node.characters;
+  const baseStyle = node.getStyledTextSegments()[0];
+  const originalSegments = [
+    {
+      ...baseStyle,
+      characters: "Один...",
+      end: 7,
+      textStyleId: "body-style-id",
+    },
+    {
+      ...baseStyle,
+      characters: " Два",
+      end: 11,
+      fontName: { family: "Inter", style: "Bold" },
+      start: 7,
+      textDecoration: "UNDERLINE",
+      textStyleId: "accent-style-id",
+      textStyleOverrides: [{ type: "SEMANTIC_WEIGHT" }, { type: "TEXT_DECORATION" }],
+    },
+  ];
+
+  node.getRangeTextStyleId = () => "body-style-id";
+  node.getStyledTextSegments = () => {
+    if (node.characters === originalText) {
+      return originalSegments;
+    }
+
+    return [
+      {
+        ...baseStyle,
+        characters: node.characters,
+        end: node.characters.length,
+        textStyleId: "body-style-id",
+      },
+    ];
+  };
+  node.setRangeBoundVariable = () => {};
+  node.setRangeFills = () => {};
+  node.setRangeFontName = () => {};
+  node.setRangeIndentation = () => {};
+  node.setRangeListOptions = () => {};
+  node.setRangeParagraphIndent = () => {};
+  node.setRangeParagraphSpacing = () => {};
+  node.setRangeTextDecoration = () => {};
+  node.setRangeTextDecorationColor = () => {};
+  node.setRangeTextDecorationOffset = () => {};
+  node.setRangeTextDecorationSkipInk = () => {};
+  node.setRangeTextDecorationStyle = () => {};
+  node.setRangeTextDecorationThickness = () => {};
+  node.setRangeTextStyleIdAsync = async () => {};
+  context.figma.loadFontAsync = async () => {};
+  const undo = configureFigmaUndoForNodes([node]);
+  const originalConsole = context.console;
+  context.console = {
+    ...console,
+    error: () => {},
+  };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions, "full");
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 0,
+    failed: 1,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, originalText);
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(result.requiresStyleWarning, false);
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
 }
 
 async function runNotificationLifecycleTests() {
@@ -2305,6 +2909,7 @@ runLongTextStyleMappingTests();
 runHighPrecisionTimingTests();
 runDevelopmentMarkerPluginDataTests();
 runParentStateCacheTests();
+runAdjacentPunctuationStylePreservationTests();
 
 runStyleRestorationTests()
   .then(runWholeTextStyleRestorationTests)
@@ -2323,7 +2928,13 @@ runStyleRestorationTests()
   .then(runFailedStyleRollbackTests)
   .then(runPrioritizedRollbackFailureTests)
   .then(runLibraryInstanceSafetyContractTests)
+  .then(runAllTypographyExamplesThroughPointWriterTests)
   .then(runIntegratedMixedStyleProcessingTests)
+  .then(runPointStyleBoundaryProcessingTests)
+  .then(runPointInsertionProcessingTests)
+  .then(runPointWriteRollbackTests)
+  .then(runPointStyleVerificationRollbackTests)
+  .then(runMixedStyleVerificationRollbackTests)
   .then(runNotificationLifecycleTests)
   .then(() => {
     console.log("cleanTypography tests passed");
