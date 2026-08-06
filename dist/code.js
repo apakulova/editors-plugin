@@ -4019,7 +4019,7 @@ function cleanupSpaces(input, ruleAnalyticsCollector = null) {
 }
 function cleanupQuotesAndPunctuation(input, ruleAnalyticsCollector = null) {
     try {
-        let text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_ellipsis", input, (value) => value.replace(/\.{3}/g, "…"));
+        let text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_ellipsis", input, (value) => value.replace(/(^|[^.])\.{3}(?!\.)/g, "$1…"));
         if (/(?:…["'»“”]|["'»“”]…)/.test(text)) {
             recordTypographyRuleObservation(ruleAnalyticsCollector, "quote_ellipsis_position");
         }

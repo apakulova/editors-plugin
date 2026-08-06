@@ -5333,7 +5333,9 @@ function cleanupSpaces(input: string, ruleAnalyticsCollector: TypographyRuleAnal
 
 function cleanupQuotesAndPunctuation(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null): string {
   try {
-    let text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_ellipsis", input, (value) => value.replace(/\.{3}/g, "…"));
+    let text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_ellipsis", input, (value) =>
+      value.replace(/(^|[^.])\.{3}(?!\.)/g, "$1…")
+    );
 
     if (/(?:…["'»“”]|["'»“”]…)/.test(text)) {
       recordTypographyRuleObservation(ruleAnalyticsCollector, "quote_ellipsis_position");

@@ -829,6 +829,11 @@ expectClean("Кнопка называется \"Start\".", "Кнопка наз
 expectClean('Он сказал "Use \'clean typography\' mode".', `Он${NBSP}сказал «Use „clean typography“ mode».`);
 expectClean('Он сказал "привет...".', `Он${NBSP}сказал «привет…».`);
 expectClean('Он сказал "привет"...', `Он${NBSP}сказал «привет»…`);
+expectClean("...", "…");
+expectClean("слово...слово", "слово…слово");
+expectClean("....", "....");
+expectClean(".....", ".....");
+expectClean("......", "......");
 expectClean('He said "Use "clean typography" mode".', 'He said "Use \'clean typography\' mode".');
 expectClean('He said "Use \'clean typography\' mode".', 'He said "Use \'clean typography\' mode".');
 expectClean('He said "The word "привет" means hello".', 'He said "The word \'привет\' means hello".');
