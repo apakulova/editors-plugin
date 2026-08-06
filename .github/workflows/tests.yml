@@ -10,9 +10,13 @@ permissions:
 
 jobs:
   tests:
-    name: Сборка и тесты
+    name: Сборка и тесты — Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
 
     steps:
       - name: Скачать код
@@ -21,7 +25,7 @@ jobs:
       - name: Подготовить Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Установить зависимости
@@ -29,3 +33,6 @@ jobs:
 
       - name: Собрать и проверить
         run: npm test
+
+      - name: Проверить собранные файлы
+        run: git diff --exit-code

@@ -26,7 +26,10 @@ const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
 const ANALYTICS_MAX_QUEUED_EVENTS = 100;
 const FINAL_NOTIFICATION_CLOSE_FALLBACK_MS = 6000;
 const FINAL_NOTIFICATION_TIMEOUT_MS = 4000;
+const TEXT_LAYER_PREPARATION_MAX_ATTEMPTS = 3;
+const TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME = "TextLayerContentChangedError";
 const LETTERS = "A-Za-zА-Яа-яЁё";
+let unicodeMarkPattern: RegExp | null | undefined;
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
 type PreservedStyleField =
@@ -34,8 +37,11 @@ type PreservedStyleField =
   | "fillStyleId"
   | "fontName"
   | "fontSize"
+  | "fontStyle"
+  | "fontWeight"
   | "fills"
   | "hyperlink"
+  | "openTypeFeatures"
   | "textCase"
   | "textDecoration"
   | "textDecorationColor"
@@ -58,8 +64,11 @@ const STYLE_FIELDS: PreservedStyleField[] = [
   "fillStyleId",
   "fontName",
   "fontSize",
+  "fontStyle",
+  "fontWeight",
   "fills",
   "hyperlink",
+  "openTypeFeatures",
   "textCase",
   "textDecoration",
   "textDecorationColor",
@@ -338,6 +347,7 @@ interface TextProcessResult {
   failureDiagnostic: AnalyticsErrorDiagnostic | null;
   failedStage: AnalyticsErrorStage | null;
   requiresStyleWarning: boolean;
+  textLayerContentChanged: boolean;
   skippedHidden: number;
   skippedLocked: number;
   analytics: TextProcessAnalytics;
@@ -427,6 +437,10 @@ interface StyleRestorationPlan {
 }
 
 interface TextLayerStateSnapshot {
+  componentPropertyReferences: Record<string, string> | null;
+  developmentMarkerIndexesPluginData: string;
+  developmentMarkerTextPluginData: string;
+  parentChainIds: string[];
   styles: StyleSegment[];
   text: string;
   textNode: TextNode;
@@ -628,6 +642,8 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
 
       if (result.failureDiagnostic?.category === "rollback_failed" || result.requiresStyleWarning) {
         processingError.name = "RollbackFailureError";
+      } else if (result.textLayerContentChanged) {
+        processingError.name = TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME;
       }
 
       throw processingError;
@@ -809,6 +825,10 @@ function getFailureNotificationMessage(error: unknown): string {
   try {
     if (getErrorName(error) === "RollbackFailureError") {
       return "Плагин случайно сломал какие-то стили — проверьте текстовые слои 🛑";
+    }
+
+    if (getErrorName(error) === TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME) {
+      return "Тут изменился текст — запустите типограф заново 🔄";
     }
   } catch {
     // Fall back to the regular error message.
@@ -1580,7 +1600,7 @@ function classifyAnalyticsError(error: unknown, stage: AnalyticsErrorStage): Ana
     return "layer_not_editable";
   }
 
-  if (/(removed|detached|deleted|invalid node|node.*not found|does not exist)/.test(message)) {
+  if (/(removed|detached|deleted|invalid node|node.*not found|does not exist|text layer changed)/.test(message)) {
     return "layer_changed";
   }
 
@@ -1905,6 +1925,7 @@ async function processTextNodes(
     let failureDiagnostic: AnalyticsErrorDiagnostic | null = null;
     let failedStage: AnalyticsErrorStage | null = null;
     let requiresStyleWarning = false;
+    let textLayerContentChanged = false;
     const timings = createEmptyTextProcessTimings();
     let charactersChangedTotal = 0;
     let charactersProcessedTotal = 0;
@@ -1938,10 +1959,24 @@ async function processTextNodes(
       let countedAsProcessed = false;
       let originalTextForRuleAnalytics: string | null = null;
       let shouldStopProcessing = false;
-      let currentLayerWasWritten = false;
+      let currentLayerWasMutated = false;
+      let currentLayerSnapshot: TextLayerStateSnapshot | null = null;
 
       try {
+        if (isTextNodeRemoved(textNode)) {
+          console.warn("[Чистовик] Skipped removed text node");
+          continue;
+        }
+
         const oldText = textNode.characters;
+        const ensureCurrentLayerSnapshot = (knownStyles?: StyleSegment[]): TextLayerStateSnapshot => {
+          if (currentLayerSnapshot === null) {
+            currentLayerSnapshot = createTextLayerStateSnapshot(textNode, oldText, knownStyles ?? captureTextStyles(textNode));
+            modifiedLayerSnapshots.push(currentLayerSnapshot);
+          }
+
+          return currentLayerSnapshot;
+        };
 
         if (isWhitespaceOnlyText(oldText)) {
           continue;
@@ -1995,23 +2030,38 @@ async function processTextNodes(
             }
           }
 
-          currentStage = "load_fonts";
-          await measureAsyncDuration(
-            (duration) => {
-              timings.fonts += duration;
-            },
-            () => loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys)
-          );
-
           currentStage = "read_styles";
-          const styles = measureDuration(
+          let styles = measureDuration(
             (duration) => {
               timings.readStyles += duration;
             },
             () => captureTextStyles(textNode)
           );
+          let textLayerPreparationStable = false;
 
-          if (writeStrategy === "full") {
+          for (let preparationAttempt = 0; preparationAttempt < TEXT_LAYER_PREPARATION_MAX_ATTEMPTS; preparationAttempt += 1) {
+            currentStage = "load_fonts";
+            await measureAsyncDuration(
+              (duration) => {
+                timings.fonts += duration;
+              },
+              () => loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys)
+            );
+
+            assertTextNodeCharactersUnchanged(textNode, oldText);
+            currentStage = "read_styles";
+            const stylesAfterFontLoading = measureDuration(
+              (duration) => {
+                timings.readStyles += duration;
+              },
+              () => captureTextStyles(textNode)
+            );
+
+            if (!areTextStyleSegmentsEqual(styles, stylesAfterFontLoading)) {
+              styles = stylesAfterFontLoading;
+              continue;
+            }
+
             currentStage = "restore_styles";
             await measureAsyncDuration(
               (duration) => {
@@ -2019,6 +2069,33 @@ async function processTextNodes(
               },
               () => assertLinkedStylesAvailable(styles, linkedStyleAvailabilityCache)
             );
+
+            assertTextNodeCharactersUnchanged(textNode, oldText);
+            currentStage = "read_styles";
+            const stylesAfterLinkedStyleLoading = measureDuration(
+              (duration) => {
+                timings.readStyles += duration;
+              },
+              () => captureTextStyles(textNode)
+            );
+
+            if (!areTextStyleSegmentsEqual(styles, stylesAfterLinkedStyleLoading)) {
+              styles = stylesAfterLinkedStyleLoading;
+              continue;
+            }
+
+            styles = stylesAfterLinkedStyleLoading;
+            textLayerPreparationStable = true;
+            break;
+          }
+
+          if (!textLayerPreparationStable) {
+            const error = new Error("Text layer styles kept changing while the typograph was preparing the write");
+            error.name = "TextLayerStylesChangedError";
+            throw error;
+          }
+
+          if (writeStrategy === "full") {
             currentStage = "compare_text";
             const styleComparison = measureDuration(
               (duration) => {
@@ -2028,12 +2105,9 @@ async function processTextNodes(
             );
 
             currentStage = "write_text";
-            modifiedLayerSnapshots.push({
-              styles,
-              text: oldText,
-              textNode,
-            });
-            currentLayerWasWritten = true;
+            assertTextNodeCharactersUnchanged(textNode, oldText);
+            ensureCurrentLayerSnapshot(styles);
+            currentLayerWasMutated = true;
             measureDuration(
               (duration) => {
                 timings.writeText += duration;
@@ -2069,28 +2143,26 @@ async function processTextNodes(
             }
           } else {
             currentStage = "compare_text";
+            const pointEdits = coalesceDensePointTextEdits(oldText, pointEditPlan.edits, styles);
             const pointStyleMap = measureDuration(
               (duration) => {
                 timings.compareText += duration;
               },
               () => {
-                assertPointTextEditsSafeForCurrentStage(oldText, pointEditPlan.edits, styles);
-                return buildPointTextEditStyleMap(oldText, styles, pointEditPlan.edits);
+                assertPointTextEditsSafeForCurrentStage(oldText, pointEdits, styles);
+                return buildPointTextEditStyleMap(oldText, styles, pointEdits);
               }
             );
 
             currentStage = "write_text";
-            modifiedLayerSnapshots.push({
-              styles,
-              text: oldText,
-              textNode,
-            });
-            currentLayerWasWritten = true;
+            assertTextNodeCharactersUnchanged(textNode, oldText);
+            ensureCurrentLayerSnapshot(styles);
+            currentLayerWasMutated = true;
             measureDuration(
               (duration) => {
                 timings.writeText += duration;
               },
-              () => applyPointTextEditsToTextNode(textNode, pointEditPlan.edits)
+              () => applyPointTextEditsToTextNode(textNode, pointEdits)
             );
 
             if (textNode.characters !== newText) {
@@ -2128,6 +2200,8 @@ async function processTextNodes(
             },
             () => {
               if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
+                ensureCurrentLayerSnapshot();
+                currentLayerWasMutated = true;
                 applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
               }
             }
@@ -2135,17 +2209,21 @@ async function processTextNodes(
         }
 
         currentStage = "development_markers";
-        measureDuration(
-          (duration) => {
-            timings.developmentMarkers += duration;
-          },
-          () => syncDevelopmentMarkerPluginData(textNode, options, cleanResult.developmentMarkerIndexes)
-        );
+        if (needsDevelopmentMarkerPluginDataSync(textNode, options, cleanResult.developmentMarkerIndexes)) {
+          ensureCurrentLayerSnapshot();
+          currentLayerWasMutated = true;
+          measureDuration(
+            (duration) => {
+              timings.developmentMarkers += duration;
+            },
+            () => syncDevelopmentMarkerPluginData(textNode, options, cleanResult.developmentMarkerIndexes)
+          );
+        }
       } catch (error) {
         let caughtError = error;
         let rollbackFailed = false;
 
-        if (currentLayerWasWritten) {
+        if (currentLayerWasMutated) {
           const failureStageBeforeRollback = currentStage;
           rollbackAttemptedLayersCount += 1;
           const rollbackSucceeded = measureDuration(
@@ -2172,17 +2250,34 @@ async function processTextNodes(
           }
         }
 
-        failed += 1;
-        if (rollbackFailed) {
+        const diagnostic = createAnalyticsErrorDiagnostic(caughtError, rollbackFailed ? "rollback_styles" : currentStage);
+        const safelySkippedMissingTextNode = !currentLayerWasMutated && isTextNodeRemoved(textNode);
+
+        if (safelySkippedMissingTextNode) {
+          if (countedAsProcessed) {
+            processed = Math.max(0, processed - 1);
+            charactersProcessedTotal = Math.max(0, charactersProcessedTotal - (originalTextForRuleAnalytics?.length ?? 0));
+          }
+
+          console.warn("[Чистовик] Skipped missing text node");
+        } else if (rollbackFailed) {
+          failed += 1;
           failedStage = "rollback_styles";
-          failureDiagnostic = createAnalyticsErrorDiagnostic(caughtError, "rollback_styles");
+          failureDiagnostic = diagnostic;
         } else {
-          const diagnostic = createAnalyticsErrorDiagnostic(caughtError, currentStage);
+          failed += 1;
+
+          if (diagnostic.name === TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME) {
+            textLayerContentChanged = true;
+          }
+
           failedStage ??= currentStage;
           failureDiagnostic ??= diagnostic;
         }
 
-        console.error(`[Чистовик] Failed to process text node ${textNode.id}`, caughtError);
+        if (!safelySkippedMissingTextNode) {
+          console.error(`[Чистовик] Failed to process text node ${textNode.id}`, caughtError);
+        }
       } finally {
         if (countedAsProcessed) {
           let finalTextChanged = false;
@@ -2210,6 +2305,7 @@ async function processTextNodes(
       failureDiagnostic,
       failedStage,
       requiresStyleWarning,
+      textLayerContentChanged,
       skippedHidden,
       skippedLocked,
       analytics: {
@@ -2238,11 +2334,40 @@ async function processTextNodes(
 function restoreRunWithFigmaUndo(snapshots: TextLayerStateSnapshot[]): boolean {
   try {
     figma.triggerUndo();
-    return snapshots.every((snapshot) => verifyRestoredOriginalTextState(snapshot.textNode, snapshot.text, snapshot.styles));
+    return snapshots.every(verifyRestoredTextLayerSnapshot);
   } catch (rollbackError) {
     console.error("[Чистовик] Failed to restore typograph run with Figma undo", rollbackError);
     return false;
   }
+}
+
+function createTextLayerStateSnapshot(textNode: TextNode, text: string, styles: StyleSegment[]): TextLayerStateSnapshot {
+  return {
+    componentPropertyReferences: cloneComponentPropertyReferences(textNode),
+    developmentMarkerIndexesPluginData: textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY),
+    developmentMarkerTextPluginData: textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY),
+    parentChainIds: getTextNodeParentChainIds(textNode),
+    styles,
+    text,
+    textNode,
+  };
+}
+
+function cloneComponentPropertyReferences(textNode: TextNode): Record<string, string> | null {
+  const references = textNode.componentPropertyReferences;
+  return references == null ? null : { ...references };
+}
+
+function getTextNodeParentChainIds(textNode: TextNode): string[] {
+  const ids: string[] = [];
+  let current: BaseNode | null | undefined = textNode.parent;
+
+  while (current != null) {
+    ids.push(current.id);
+    current = "parent" in current ? current.parent : null;
+  }
+
+  return ids;
 }
 
 function verifyRestoredOriginalTextState(textNode: TextNode, oldText: string, originalStyles: StyleSegment[]): boolean {
@@ -2272,6 +2397,21 @@ function verifyRestoredOriginalTextState(textNode: TextNode, oldText: string, or
   }
 }
 
+function verifyRestoredTextLayerSnapshot(snapshot: TextLayerStateSnapshot): boolean {
+  try {
+    return (
+      verifyRestoredOriginalTextState(snapshot.textNode, snapshot.text, snapshot.styles) &&
+      snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY) === snapshot.developmentMarkerIndexesPluginData &&
+      snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY) === snapshot.developmentMarkerTextPluginData &&
+      areStyleValuesEqual(cloneComponentPropertyReferences(snapshot.textNode), snapshot.componentPropertyReferences) &&
+      areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds)
+    );
+  } catch (verificationError) {
+    console.error(`[Чистовик] Failed to verify original text layer snapshot for text node ${snapshot.textNode.id}`, verificationError);
+    return false;
+  }
+}
+
 function createEmptyTextProcessTimings(): TextProcessTimings {
   return {
     typography: 0,
@@ -2291,6 +2431,38 @@ function isWhitespaceOnlyText(input: string): boolean {
   } catch (error) {
     console.error("[Чистовик] Failed to check whitespace-only text", error);
     throw error;
+  }
+}
+
+function assertTextNodeCharactersUnchanged(textNode: TextNode, expectedText: string): void {
+  if (textNode.characters !== expectedText) {
+    const error = new Error("Text layer changed while the typograph was preparing the write");
+    error.name = TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME;
+    throw error;
+  }
+}
+
+function areTextStyleSegmentsEqual(firstStyles: StyleSegment[], secondStyles: StyleSegment[]): boolean {
+  return (
+    firstStyles.length === secondStyles.length &&
+    firstStyles.every((firstStyle, index) => {
+      const secondStyle = secondStyles[index];
+
+      return (
+        firstStyle.start === secondStyle.start &&
+        firstStyle.end === secondStyle.end &&
+        firstStyle.characters === secondStyle.characters &&
+        STYLE_FIELDS.every((field) => areStyleValuesEqual(firstStyle[field], secondStyle[field]))
+      );
+    })
+  );
+}
+
+function isTextNodeRemoved(textNode: TextNode): boolean {
+  try {
+    return textNode.removed === true;
+  } catch {
+    return false;
   }
 }
 
@@ -2326,22 +2498,34 @@ function getTextNodeLayoutInfos(textNodes: TextNode[]): TextNodeLayoutInfo[] {
     const result: TextNodeLayoutInfo[] = [];
 
     for (const textNode of textNodes) {
-      const text = textNode.characters;
+      try {
+        if (isTextNodeRemoved(textNode)) {
+          continue;
+        }
 
-      if (
-        isWhitespaceOnlyText(text) ||
-        (!isStandaloneRussianPhoneCountryPrefix(text) && !isRussianPhoneTailToken(text)) ||
-        textNode.absoluteBoundingBox === null
-      ) {
-        continue;
+        const text = textNode.characters;
+
+        if (
+          isWhitespaceOnlyText(text) ||
+          (!isStandaloneRussianPhoneCountryPrefix(text) && !isRussianPhoneTailToken(text)) ||
+          textNode.absoluteBoundingBox === null
+        ) {
+          continue;
+        }
+
+        result.push({
+          box: textNode.absoluteBoundingBox,
+          containerId: textNode.parent?.id ?? null,
+          id: textNode.id,
+          text,
+        });
+      } catch (error) {
+        if (!isTextNodeRemoved(textNode)) {
+          throw error;
+        }
+
+        console.warn("[Чистовик] Skipped missing text node while reading layout");
       }
-
-      result.push({
-        box: textNode.absoluteBoundingBox,
-        containerId: textNode.parent?.id ?? null,
-        id: textNode.id,
-        text,
-      });
     }
 
     return result;
@@ -2396,9 +2580,18 @@ function getFontLoadPromise(font: FontName, fontLoadCache: Map<string, Promise<v
     return cachedPromise;
   }
 
-  const loadPromise = figma.loadFontAsync(font).then(() => {
-    loadedFontKeys.add(key);
-  });
+  const loadPromise = figma.loadFontAsync(font).then(
+    () => {
+      loadedFontKeys.add(key);
+    },
+    (error) => {
+      if (fontLoadCache.get(key) === loadPromise) {
+        fontLoadCache.delete(key);
+      }
+
+      throw error;
+    }
+  );
 
   fontLoadCache.set(key, loadPromise);
   return loadPromise;
@@ -2703,15 +2896,17 @@ function verifyTextStyleRestorationPlan(textNode: TextNode, styleMap: number[], 
     }
 
     const currentStyles = captureTextStyles(textNode);
+    let characterIndex = 0;
     let currentStyleIndex = 0;
 
-    for (let characterIndex = 0; characterIndex < textNode.characters.length; characterIndex += 1) {
+    while (characterIndex < textNode.characters.length) {
       while (currentStyleIndex < currentStyles.length && characterIndex >= currentStyles[currentStyleIndex].end) {
         currentStyleIndex += 1;
       }
 
       const currentStyle = currentStyles[currentStyleIndex];
-      const expectedStyle = originalStyles[styleMap[characterIndex] ?? -1];
+      const expectedStyleIndex = styleMap[characterIndex] ?? -1;
+      const expectedStyle = originalStyles[expectedStyleIndex];
 
       if (
         currentStyle === undefined ||
@@ -2721,6 +2916,14 @@ function verifyTextStyleRestorationPlan(textNode: TextNode, styleMap: number[], 
       ) {
         return false;
       }
+
+      let expectedRunEnd = characterIndex + 1;
+
+      while (expectedRunEnd < styleMap.length && styleMap[expectedRunEnd] === expectedStyleIndex) {
+        expectedRunEnd += 1;
+      }
+
+      characterIndex = Math.min(currentStyle.end, expectedRunEnd);
     }
 
     return true;
@@ -3230,6 +3433,16 @@ function syncDevelopmentMarkerPluginData(textNode: TextNode, options: PluginRunO
   }
 }
 
+function needsDevelopmentMarkerPluginDataSync(textNode: TextNode, options: PluginRunOptions, markerIndexes: number[]): boolean {
+  const expectedText = options.mode === "development" && markerIndexes.length > 0 ? textNode.characters : "";
+  const expectedIndexes = options.mode === "development" && markerIndexes.length > 0 ? JSON.stringify(markerIndexes) : "";
+
+  return (
+    textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY) !== expectedText ||
+    textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY) !== expectedIndexes
+  );
+}
+
 function setPluginDataIfChanged(textNode: TextNode, key: string, value: string): void {
   try {
     if (textNode.getPluginData(key) !== value) {
@@ -3310,7 +3523,9 @@ function refinePointTextEditsForStylePreservation(oldText: string, edits: PointT
     const refinedEdits: PointTextEdit[] = [];
 
     for (const edit of edits) {
-      refinedEdits.push(...splitPointTextEditBySemanticPunctuation(oldText, edit));
+      for (const alignedEdit of splitPointTextEditByAlignedSegments(oldText, edit)) {
+        refinedEdits.push(...splitPointTextEditBySemanticPunctuation(oldText, alignedEdit));
+      }
     }
 
     return refinedEdits;
@@ -3318,6 +3533,38 @@ function refinePointTextEditsForStylePreservation(oldText: string, edits: PointT
     console.error("[Чистовик] Failed to refine point text edits for style preservation", error);
     throw error;
   }
+}
+
+function splitPointTextEditByAlignedSegments(oldText: string, edit: PointTextEdit): PointTextEdit[] {
+  if (edit.start === edit.end || edit.insertText === "") {
+    return [edit];
+  }
+
+  const oldSegments = segmentTextForPointEdits(oldText.slice(edit.start, edit.end));
+  const newSegments = segmentTextForPointEdits(edit.insertText);
+
+  if (oldSegments.length <= 1 || oldSegments.length !== newSegments.length) {
+    return [edit];
+  }
+
+  const result: PointTextEdit[] = [];
+
+  for (let index = 0; index < oldSegments.length; index += 1) {
+    const oldSegment = oldSegments[index];
+    const newSegment = newSegments[index];
+
+    if (oldSegment.text === newSegment.text) {
+      continue;
+    }
+
+    result.push({
+      start: edit.start + oldSegment.start,
+      end: edit.start + oldSegment.end,
+      insertText: newSegment.text,
+    });
+  }
+
+  return result.length > 0 ? result : [edit];
 }
 
 function splitPointTextEditBySemanticPunctuation(oldText: string, edit: PointTextEdit): PointTextEdit[] {
@@ -3438,9 +3685,87 @@ function applyPointTextEditsToString(input: string, edits: PointTextEdit[]): str
   }
 }
 
+function coalesceDensePointTextEdits(oldText: string, edits: PointTextEdit[], styles: StyleSegment[]): PointTextEdit[] {
+  if (edits.length <= 256) {
+    return edits;
+  }
+
+  const result: PointTextEdit[] = [];
+  let group: PointTextEdit[] = [];
+  let groupStyle: StyleSegment | null = null;
+
+  const finishGroup = (): void => {
+    if (group.length === 0) {
+      return;
+    }
+
+    result.push(group.length === 1 ? group[0] : mergePointTextEditGroup(oldText, group));
+    group = [];
+    groupStyle = null;
+  };
+
+  for (const edit of edits) {
+    const sourcePosition = edit.insertText === "" ? Math.min(edit.start, Math.max(0, oldText.length - 1)) : getPointTextEditStyleSourcePosition(oldText, edit);
+    const style = styles.find((candidate) => candidate.start <= sourcePosition && sourcePosition < candidate.end) ?? null;
+
+    if (style === null || edit.start < style.start || edit.end > style.end) {
+      finishGroup();
+      result.push(edit);
+      continue;
+    }
+
+    if (group.length === 0) {
+      group = [edit];
+      groupStyle = style;
+      continue;
+    }
+
+    const groupStart = group[0].start;
+    const candidateSpanLength = edit.end - groupStart;
+    const candidateAverageDistance = candidateSpanLength / (group.length + 1);
+
+    if (
+      style !== groupStyle ||
+      candidateSpanLength > 4096 ||
+      candidateAverageDistance > 64 ||
+      edit.start < group[group.length - 1].end
+    ) {
+      finishGroup();
+      group = [edit];
+      groupStyle = style;
+      continue;
+    }
+
+    group.push(edit);
+  }
+
+  finishGroup();
+  return result;
+}
+
+function mergePointTextEditGroup(oldText: string, group: PointTextEdit[]): PointTextEdit {
+  const start = group[0].start;
+  const end = group[group.length - 1].end;
+  const localEdits = group.map((edit) => ({
+    start: edit.start - start,
+    end: edit.end - start,
+    insertText: edit.insertText,
+  }));
+
+  return {
+    start,
+    end,
+    insertText: applyPointTextEditsToString(oldText.slice(start, end), localEdits),
+  };
+}
+
 function assertPointTextEditsSafeForCurrentStage(oldText: string, edits: PointTextEdit[], styles: StyleSegment[]): void {
   try {
+    let mutationsCount = 0;
+
     for (const edit of edits) {
+      mutationsCount += getPointTextEditMutationCount(oldText, edit);
+
       if (edit.insertText === "") {
         continue;
       }
@@ -3456,10 +3781,30 @@ function assertPointTextEditsSafeForCurrentStage(oldText: string, edits: PointTe
         throw new Error("Point text edit has no safe style source");
       }
     }
+
+    if (mutationsCount > 2048) {
+      throw new Error("Point text edit plan requires too many safe write operations");
+    }
   } catch (error) {
     console.error("[Чистовик] Point text edits are not safe for the current stage", error);
     throw error;
   }
+}
+
+function getPointTextEditMutationCount(oldText: string, edit: PointTextEdit): number {
+  if (edit.insertText === "") {
+    return 1;
+  }
+
+  if (edit.start === edit.end) {
+    const leadingWhitespaceLength = getPointTextEditLeadingWhitespaceLength(edit.insertText);
+    return edit.start > 0 && edit.start < oldText.length && leadingWhitespaceLength > 0 && leadingWhitespaceLength < edit.insertText.length
+      ? 2
+      : 1;
+  }
+
+  const sourcePosition = getPointTextEditStyleSourcePosition(oldText, edit);
+  return edit.start < sourcePosition ? 3 : 2;
 }
 
 function buildPointTextEditStyleMap(oldText: string, styles: StyleSegment[], edits: PointTextEdit[]): number[] {
@@ -3642,7 +3987,12 @@ function segmentTextForPointEditsFallback(input: string): PointEditTextSegment[]
         continue;
       }
 
-      if (isGraphemeExtender(next.text) || (regionalIndicators === 1 && isRegionalIndicator(next.text))) {
+      if (
+        isGraphemeExtender(next.text) ||
+        shouldJoinHangulGraphemes(text, next.text) ||
+        endsWithIndicVirama(text) ||
+        (regionalIndicators === 1 && isRegionalIndicator(next.text))
+      ) {
         text += next.text;
         end = next.end;
         regionalIndicators += isRegionalIndicator(next.text) ? 1 : 0;
@@ -3670,6 +4020,9 @@ function segmentTextForPointEditsFallback(input: string): PointEditTextSegment[]
 function isGraphemeExtender(text: string): boolean {
   const codePoint = text.codePointAt(0) ?? 0;
   return (
+    isUnicodeMark(text) ||
+    isIndicScriptMark(codePoint) ||
+    isIndicViramaCodePoint(codePoint) ||
     (codePoint >= 0x0300 && codePoint <= 0x036f) ||
     (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
     (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
@@ -3677,8 +4030,118 @@ function isGraphemeExtender(text: string): boolean {
     (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
     (codePoint >= 0xfe20 && codePoint <= 0xfe2f) ||
     (codePoint >= 0x1f3fb && codePoint <= 0x1f3ff) ||
+    (codePoint >= 0xe0020 && codePoint <= 0xe007f) ||
     (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
   );
+}
+
+function isIndicScriptMark(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x0900 && codePoint <= 0x0903) ||
+    (codePoint >= 0x093a && codePoint <= 0x094f) ||
+    (codePoint >= 0x0951 && codePoint <= 0x0957) ||
+    (codePoint >= 0x0962 && codePoint <= 0x0963) ||
+    (codePoint >= 0x0981 && codePoint <= 0x0983) ||
+    codePoint === 0x09bc ||
+    (codePoint >= 0x09be && codePoint <= 0x09c4) ||
+    (codePoint >= 0x09c7 && codePoint <= 0x09c8) ||
+    (codePoint >= 0x09cb && codePoint <= 0x09cd) ||
+    codePoint === 0x09d7 ||
+    (codePoint >= 0x0a01 && codePoint <= 0x0a03) ||
+    (codePoint >= 0x0a3c && codePoint <= 0x0a4d) ||
+    (codePoint >= 0x0a70 && codePoint <= 0x0a71) ||
+    (codePoint >= 0x0a81 && codePoint <= 0x0a83) ||
+    (codePoint >= 0x0abc && codePoint <= 0x0acd) ||
+    (codePoint >= 0x0b01 && codePoint <= 0x0b03) ||
+    (codePoint >= 0x0b3c && codePoint <= 0x0b4d) ||
+    codePoint === 0x0b56 ||
+    codePoint === 0x0b57 ||
+    (codePoint >= 0x0b82 && codePoint <= 0x0b83) ||
+    (codePoint >= 0x0bbe && codePoint <= 0x0bcd) ||
+    codePoint === 0x0bd7 ||
+    (codePoint >= 0x0c00 && codePoint <= 0x0c04) ||
+    (codePoint >= 0x0c3c && codePoint <= 0x0c4d) ||
+    (codePoint >= 0x0c55 && codePoint <= 0x0c56) ||
+    (codePoint >= 0x0c81 && codePoint <= 0x0c83) ||
+    (codePoint >= 0x0cbc && codePoint <= 0x0ccd) ||
+    (codePoint >= 0x0d00 && codePoint <= 0x0d03) ||
+    (codePoint >= 0x0d3b && codePoint <= 0x0d4d) ||
+    codePoint === 0x0d57 ||
+    (codePoint >= 0x0d81 && codePoint <= 0x0d83) ||
+    (codePoint >= 0x0dca && codePoint <= 0x0dd4) ||
+    codePoint === 0x0dd6 ||
+    (codePoint >= 0x0dd8 && codePoint <= 0x0ddf)
+  );
+}
+
+function isUnicodeMark(text: string): boolean {
+  if (unicodeMarkPattern === undefined) {
+    try {
+      unicodeMarkPattern = new RegExp("^\\p{M}$", "u");
+    } catch {
+      unicodeMarkPattern = null;
+    }
+  }
+
+  return unicodeMarkPattern?.test(text) ?? false;
+}
+
+function shouldJoinHangulGraphemes(currentText: string, nextText: string): boolean {
+  const currentCodePoint = Array.from(currentText).pop()?.codePointAt(0) ?? 0;
+  const nextCodePoint = nextText.codePointAt(0) ?? 0;
+  const currentType = getHangulGraphemeType(currentCodePoint);
+  const nextType = getHangulGraphemeType(nextCodePoint);
+
+  return (
+    (currentType === "L" && (nextType === "L" || nextType === "V" || nextType === "LV" || nextType === "LVT")) ||
+    ((currentType === "LV" || currentType === "V") && (nextType === "V" || nextType === "T")) ||
+    ((currentType === "LVT" || currentType === "T") && nextType === "T")
+  );
+}
+
+function getHangulGraphemeType(codePoint: number): "L" | "V" | "T" | "LV" | "LVT" | null {
+  if (
+    (codePoint >= 0x1100 && codePoint <= 0x115f) ||
+    (codePoint >= 0xa960 && codePoint <= 0xa97c)
+  ) {
+    return "L";
+  }
+
+  if (
+    (codePoint >= 0x1160 && codePoint <= 0x11a7) ||
+    (codePoint >= 0xd7b0 && codePoint <= 0xd7c6)
+  ) {
+    return "V";
+  }
+
+  if (
+    (codePoint >= 0x11a8 && codePoint <= 0x11ff) ||
+    (codePoint >= 0xd7cb && codePoint <= 0xd7fb)
+  ) {
+    return "T";
+  }
+
+  if (codePoint >= 0xac00 && codePoint <= 0xd7a3) {
+    return (codePoint - 0xac00) % 28 === 0 ? "LV" : "LVT";
+  }
+
+  return null;
+}
+
+function endsWithIndicVirama(text: string): boolean {
+  const codePoint = Array.from(text).pop()?.codePointAt(0) ?? 0;
+  return isIndicViramaCodePoint(codePoint);
+}
+
+function isIndicViramaCodePoint(codePoint: number): boolean {
+  return [
+    0x094d, 0x09cd, 0x0a4d, 0x0acd, 0x0b4d, 0x0bcd, 0x0c4d, 0x0ccd, 0x0d3b, 0x0d3c, 0x0d4d,
+    0x0dca, 0x0e3a, 0x0f84, 0x1039, 0x103a, 0x1714, 0x1734, 0x17d2, 0x1a60, 0x1b44, 0x1baa, 0x1bab,
+    0x1bf2, 0x1bf3, 0x2d7f, 0xa806, 0xa82c, 0xa8c4, 0xa953, 0xa9c0, 0xaaf6, 0xabed, 0x10a3f, 0x11046,
+    0x11070, 0x11133, 0x11134, 0x111c0, 0x11235, 0x112ea, 0x1134d, 0x11442, 0x114c2, 0x115bf, 0x1163f,
+    0x116b6, 0x1172b, 0x11839, 0x1193d, 0x1193e, 0x119e0, 0x11a34, 0x11a47, 0x11a99, 0x11c3f, 0x11d44,
+    0x11d45, 0x11d97, 0x16af0, 0x16b44, 0x16d6c,
+  ].includes(codePoint);
 }
 
 function isRegionalIndicator(text: string): boolean {
@@ -3695,78 +4158,244 @@ function getPointEditBoundary(segments: PointEditTextSegment[], segmentIndex: nu
 }
 
 function buildPointEditDiffSteps(oldParts: string[], newParts: string[]): PointEditDiffStep[] | null {
-  const maximumDistance = Math.min(oldParts.length + newParts.length, 2048);
-  let frontier = new Map<number, number>();
-  frontier.set(1, 0);
-  const trace: Map<number, number>[] = [];
+  try {
+    const steps: PointEditDiffStep[] = [];
+    appendPointEditDiffSteps(oldParts, newParts, 0, oldParts.length, 0, newParts.length, steps);
+    return steps;
+  } catch (error) {
+    console.error("[Чистовик] Failed to build point edit diff", error);
+    return null;
+  }
+}
 
-  for (let distance = 0; distance <= maximumDistance; distance += 1) {
-    trace.push(new Map(frontier));
+function appendPointEditDiffSteps(
+  oldParts: string[],
+  newParts: string[],
+  oldStart: number,
+  oldEnd: number,
+  newStart: number,
+  newEnd: number,
+  steps: PointEditDiffStep[]
+): void {
+  while (oldStart < oldEnd && newStart < newEnd && oldParts[oldStart] === newParts[newStart]) {
+    steps.push({ type: "equal", text: oldParts[oldStart] });
+    oldStart += 1;
+    newStart += 1;
+  }
 
-    for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
-      const previousDelete = frontier.get(diagonal - 1) ?? Number.NEGATIVE_INFINITY;
-      const previousInsert = frontier.get(diagonal + 1) ?? Number.NEGATIVE_INFINITY;
-      let oldIndex: number;
+  let commonSuffixLength = 0;
 
-      if (diagonal === -distance || (diagonal !== distance && previousDelete < previousInsert)) {
-        oldIndex = previousInsert === Number.NEGATIVE_INFINITY ? 0 : previousInsert;
-      } else {
-        oldIndex = (previousDelete === Number.NEGATIVE_INFINITY ? 0 : previousDelete) + 1;
+  while (
+    oldStart < oldEnd - commonSuffixLength &&
+    newStart < newEnd - commonSuffixLength &&
+    oldParts[oldEnd - commonSuffixLength - 1] === newParts[newEnd - commonSuffixLength - 1]
+  ) {
+    commonSuffixLength += 1;
+  }
+
+  const oldMiddleEnd = oldEnd - commonSuffixLength;
+  const newMiddleEnd = newEnd - commonSuffixLength;
+
+  if (oldStart === oldMiddleEnd) {
+    for (let index = newStart; index < newMiddleEnd; index += 1) {
+      steps.push({ type: "insert", text: newParts[index] });
+    }
+  } else if (newStart === newMiddleEnd) {
+    for (let index = oldStart; index < oldMiddleEnd; index += 1) {
+      steps.push({ type: "delete", text: oldParts[index] });
+    }
+  } else if (oldMiddleEnd - oldStart === 1 || newMiddleEnd - newStart === 1) {
+    appendSmallPointEditDiffSteps(oldParts, newParts, oldStart, oldMiddleEnd, newStart, newMiddleEnd, steps);
+  } else {
+    const split = findPointEditBisectSplit(oldParts, newParts, oldStart, oldMiddleEnd, newStart, newMiddleEnd);
+
+    if (
+      split === null ||
+      (split.oldIndex === oldStart && split.newIndex === newStart) ||
+      (split.oldIndex === oldMiddleEnd && split.newIndex === newMiddleEnd)
+    ) {
+      appendPointEditReplacementSteps(oldParts, newParts, oldStart, oldMiddleEnd, newStart, newMiddleEnd, steps);
+    } else {
+      appendPointEditDiffSteps(oldParts, newParts, oldStart, split.oldIndex, newStart, split.newIndex, steps);
+      appendPointEditDiffSteps(oldParts, newParts, split.oldIndex, oldMiddleEnd, split.newIndex, newMiddleEnd, steps);
+    }
+  }
+
+  for (let index = commonSuffixLength; index > 0; index -= 1) {
+    steps.push({ type: "equal", text: oldParts[oldEnd - index] });
+  }
+}
+
+function appendSmallPointEditDiffSteps(
+  oldParts: string[],
+  newParts: string[],
+  oldStart: number,
+  oldEnd: number,
+  newStart: number,
+  newEnd: number,
+  steps: PointEditDiffStep[]
+): void {
+  if (oldEnd - oldStart === 1) {
+    const sharedNewIndex = newParts.indexOf(oldParts[oldStart], newStart);
+
+    if (sharedNewIndex >= newStart && sharedNewIndex < newEnd) {
+      for (let index = newStart; index < sharedNewIndex; index += 1) {
+        steps.push({ type: "insert", text: newParts[index] });
       }
 
+      steps.push({ type: "equal", text: oldParts[oldStart] });
+
+      for (let index = sharedNewIndex + 1; index < newEnd; index += 1) {
+        steps.push({ type: "insert", text: newParts[index] });
+      }
+
+      return;
+    }
+  } else if (newEnd - newStart === 1) {
+    const sharedOldIndex = oldParts.indexOf(newParts[newStart], oldStart);
+
+    if (sharedOldIndex >= oldStart && sharedOldIndex < oldEnd) {
+      for (let index = oldStart; index < sharedOldIndex; index += 1) {
+        steps.push({ type: "delete", text: oldParts[index] });
+      }
+
+      steps.push({ type: "equal", text: newParts[newStart] });
+
+      for (let index = sharedOldIndex + 1; index < oldEnd; index += 1) {
+        steps.push({ type: "delete", text: oldParts[index] });
+      }
+
+      return;
+    }
+  }
+
+  appendPointEditReplacementSteps(oldParts, newParts, oldStart, oldEnd, newStart, newEnd, steps);
+}
+
+function appendPointEditReplacementSteps(
+  oldParts: string[],
+  newParts: string[],
+  oldStart: number,
+  oldEnd: number,
+  newStart: number,
+  newEnd: number,
+  steps: PointEditDiffStep[]
+): void {
+  for (let index = oldStart; index < oldEnd; index += 1) {
+    steps.push({ type: "delete", text: oldParts[index] });
+  }
+
+  for (let index = newStart; index < newEnd; index += 1) {
+    steps.push({ type: "insert", text: newParts[index] });
+  }
+}
+
+function findPointEditBisectSplit(
+  oldParts: string[],
+  newParts: string[],
+  oldStart: number,
+  oldEnd: number,
+  newStart: number,
+  newEnd: number
+): { oldIndex: number; newIndex: number } | null {
+  const oldLength = oldEnd - oldStart;
+  const newLength = newEnd - newStart;
+  const maximumDistance = Math.ceil((oldLength + newLength) / 2);
+  const vectorOffset = maximumDistance + 1;
+  const vectorLength = vectorOffset * 2 + 1;
+  const forward = new Int32Array(vectorLength);
+  const backward = new Int32Array(vectorLength);
+  forward.fill(-1);
+  backward.fill(-1);
+  forward[vectorOffset + 1] = 0;
+  backward[vectorOffset + 1] = 0;
+  const delta = oldLength - newLength;
+  const overlapsOnForwardPass = delta % 2 !== 0;
+  let forwardStart = 0;
+  let forwardEnd = 0;
+  let backwardStart = 0;
+  let backwardEnd = 0;
+
+  for (let distance = 0; distance <= maximumDistance; distance += 1) {
+    for (let diagonal = -distance + forwardStart; diagonal <= distance - forwardEnd; diagonal += 2) {
+      const vectorIndex = vectorOffset + diagonal;
+      let oldIndex =
+        diagonal === -distance || (diagonal !== distance && forward[vectorIndex - 1] < forward[vectorIndex + 1])
+          ? forward[vectorIndex + 1]
+          : forward[vectorIndex - 1] + 1;
       let newIndex = oldIndex - diagonal;
 
-      while (oldIndex < oldParts.length && newIndex < newParts.length && oldParts[oldIndex] === newParts[newIndex]) {
+      while (
+        oldIndex < oldLength &&
+        newIndex < newLength &&
+        oldParts[oldStart + oldIndex] === newParts[newStart + newIndex]
+      ) {
         oldIndex += 1;
         newIndex += 1;
       }
 
-      frontier.set(diagonal, oldIndex);
+      forward[vectorIndex] = oldIndex;
 
-      if (oldIndex >= oldParts.length && newIndex >= newParts.length) {
-        return backtrackPointEditDiff(trace, oldParts, newParts);
+      if (oldIndex > oldLength) {
+        forwardEnd += 2;
+      } else if (newIndex > newLength) {
+        forwardStart += 2;
+      } else if (overlapsOnForwardPass) {
+        const backwardIndex = vectorOffset + delta - diagonal;
+
+        if (backwardIndex >= 0 && backwardIndex < vectorLength && backward[backwardIndex] !== -1) {
+          const backwardOldIndex = oldLength - backward[backwardIndex];
+
+          if (oldIndex >= backwardOldIndex) {
+            return { oldIndex: oldStart + oldIndex, newIndex: newStart + newIndex };
+          }
+        }
+      }
+    }
+
+    for (let diagonal = -distance + backwardStart; diagonal <= distance - backwardEnd; diagonal += 2) {
+      const vectorIndex = vectorOffset + diagonal;
+      let oldIndex =
+        diagonal === -distance || (diagonal !== distance && backward[vectorIndex - 1] < backward[vectorIndex + 1])
+          ? backward[vectorIndex + 1]
+          : backward[vectorIndex - 1] + 1;
+      let newIndex = oldIndex - diagonal;
+
+      while (
+        oldIndex < oldLength &&
+        newIndex < newLength &&
+        oldParts[oldEnd - oldIndex - 1] === newParts[newEnd - newIndex - 1]
+      ) {
+        oldIndex += 1;
+        newIndex += 1;
+      }
+
+      backward[vectorIndex] = oldIndex;
+
+      if (oldIndex > oldLength) {
+        backwardEnd += 2;
+      } else if (newIndex > newLength) {
+        backwardStart += 2;
+      } else if (!overlapsOnForwardPass) {
+        const forwardDiagonal = delta - diagonal;
+        const forwardIndex = vectorOffset + forwardDiagonal;
+
+        if (forwardIndex >= 0 && forwardIndex < vectorLength && forward[forwardIndex] !== -1) {
+          const forwardOldIndex = forward[forwardIndex];
+          const backwardOldIndex = oldLength - oldIndex;
+
+          if (forwardOldIndex >= backwardOldIndex) {
+            return {
+              oldIndex: oldStart + forwardOldIndex,
+              newIndex: newStart + forwardOldIndex - forwardDiagonal,
+            };
+          }
+        }
       }
     }
   }
 
   return null;
-}
-
-function backtrackPointEditDiff(trace: Map<number, number>[], oldParts: string[], newParts: string[]): PointEditDiffStep[] {
-  const reversed: PointEditDiffStep[] = [];
-  let oldIndex = oldParts.length;
-  let newIndex = newParts.length;
-
-  for (let distance = trace.length - 1; distance >= 0; distance -= 1) {
-    const frontier = trace[distance];
-    const diagonal = oldIndex - newIndex;
-    const previousDelete = frontier.get(diagonal - 1) ?? Number.NEGATIVE_INFINITY;
-    const previousInsert = frontier.get(diagonal + 1) ?? Number.NEGATIVE_INFINITY;
-    const previousDiagonal =
-      diagonal === -distance || (diagonal !== distance && previousDelete < previousInsert) ? diagonal + 1 : diagonal - 1;
-    const previousOldIndex = Math.max(0, frontier.get(previousDiagonal) ?? 0);
-    const previousNewIndex = previousOldIndex - previousDiagonal;
-
-    while (oldIndex > previousOldIndex && newIndex > previousNewIndex) {
-      reversed.push({ type: "equal", text: oldParts[oldIndex - 1] });
-      oldIndex -= 1;
-      newIndex -= 1;
-    }
-
-    if (distance === 0) {
-      break;
-    }
-
-    if (oldIndex === previousOldIndex) {
-      reversed.push({ type: "insert", text: newParts[newIndex - 1] });
-      newIndex -= 1;
-    } else {
-      reversed.push({ type: "delete", text: oldParts[oldIndex - 1] });
-      oldIndex -= 1;
-    }
-  }
-
-  return reversed.reverse();
 }
 
 function pointEditDiffStepsToEdits(diffSteps: PointEditDiffStep[], oldSegments: PointEditTextSegment[], middleStart: number): PointTextEdit[] {
@@ -4135,6 +4764,7 @@ function cleanTypographyForBeauty(input: string, ruleAnalyticsCollector: Typogra
     text = cleanupDashesAndHyphens(text, ruleAnalyticsCollector);
     text = formatPhoneNumbers(text, ruleAnalyticsCollector);
     text = formatNumbersAndMoney(text, ruleAnalyticsCollector);
+    text = normalizeEditorialRanges(text, ruleAnalyticsCollector);
     text = normalizeAbbreviations(text, ruleAnalyticsCollector);
     text = applyNonBreakingSpaces(text, ruleAnalyticsCollector);
     text = normalizeMathAndSymbols(text, ruleAnalyticsCollector);
@@ -4207,7 +4837,18 @@ function cleanupQuotesAndPunctuation(input: string, ruleAnalyticsCollector: Typo
     text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_repeated_marks", text, (value) =>
       value.replace(/!{2,}/g, "!").replace(/\?{2,}/g, "?")
     );
-    text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_question_exclamation_order", text, (value) => value.replace(/!\?/g, "?!"));
+    text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_question_exclamation_order", text, (value) =>
+      value.replace(/[!?]{2,}/g, (sequence) => {
+        const hasQuestionMark = sequence.includes("?");
+        const hasExclamationMark = sequence.includes("!");
+
+        if (hasQuestionMark && hasExclamationMark) {
+          return "?!";
+        }
+
+        return hasQuestionMark ? "?" : "!";
+      })
+    );
     text = applyTypographyRule(ruleAnalyticsCollector, "quote_context_script", text, (value) => formatQuotes(value, ruleAnalyticsCollector));
     text = applyTypographyRule(ruleAnalyticsCollector, "quote_question_exclamation", text, (value) =>
       value

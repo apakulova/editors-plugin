@@ -24,6 +24,7 @@ function createPayload(overrides = {}) {
       $geoip_disable: true,
       $process_person_profile: false,
       analytics_schema_version: 9,
+      identity_type: "anonymous",
       plugin_release: "2026-08-05",
       run_id: "run_test",
     },
@@ -84,6 +85,35 @@ async function run() {
     () => Promise.resolve(validateAnalyticsPayload("x".repeat(MAX_ANALYTICS_PAYLOAD_BYTES + 1))),
     413,
     "payload_too_large"
+  );
+  await expectCaptureError(
+    () => Promise.resolve(validateAnalyticsPayload(createPayload({
+      properties: {
+        ...createPayload().properties,
+        user_text: "Секретный текст макета",
+      },
+    }))),
+    400,
+    "unknown_property"
+  );
+  await expectCaptureError(
+    () => Promise.resolve(validateAnalyticsPayload({
+      ...createPayload(),
+      raw_text: "Секретный текст макета",
+    })),
+    400,
+    "unknown_payload_field"
+  );
+  await expectCaptureError(
+    () => Promise.resolve(validateAnalyticsPayload(createPayload({
+      event: "plugin_run_completed",
+      properties: {
+        ...createPayload().properties,
+        rule_metrics_json: JSON.stringify({ safe_code: { note: "Секретный текст макета" } }),
+      },
+    }))),
+    400,
+    "invalid_property_value"
   );
 
   let queuedTopic = "";
