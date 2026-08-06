@@ -15,9 +15,9 @@ const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
-const ANALYTICS_SCHEMA_VERSION = 11;
-const ANALYTICS_PLUGIN_RELEASE = "2026-08-05";
-const PERFORMANCE_MEASUREMENT_VERSION = 5;
+const ANALYTICS_SCHEMA_VERSION = 13;
+const ANALYTICS_PLUGIN_RELEASE = "2026-08-06";
+const PERFORMANCE_MEASUREMENT_VERSION = 6;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
 const DEFAULT_TEXT_WRITE_STRATEGY = "point";
 const RULE_ANALYTICS_VERSION = 2;
@@ -157,55 +157,67 @@ async function run() {
         presentRunOutcome({
             error: true,
             message: getFailureNotificationMessage(error),
+            report: createStartupErrorReport("quick_run"),
         }, "quick_run", true);
     }
 }
 function openSettingsUI() {
     try {
-        figma.showUI(__html__, {
-            height: 372,
-            themeColors: true,
-            width: 360,
-        });
+        showPluginUI();
         queueAnalyticsEvent("settings_opened", { source: "settings" });
-        figma.ui.onmessage = async (message) => {
-            try {
-                if (message.type === "close") {
-                    figma.closePlugin();
-                    return;
-                }
-                if (message.type === "channel-link-clicked") {
-                    queueAnalyticsEvent("channel_link_clicked", {
-                        link: "channel",
-                        source: "about_tab",
-                    });
-                    return;
-                }
-                if (message.type === "website-link-clicked") {
-                    queueAnalyticsEvent("website_link_clicked", {
-                        link: "website",
-                        source: "about_tab",
-                    });
-                    return;
-                }
-                if (message.type === "run-typograph") {
-                    await runTypograph(getRunOptionsFromMessage(message), "settings");
-                }
-            }
-            catch (error) {
-                console.error("[Чистовик] Failed to handle UI message", error);
-                presentRunOutcome({
-                    error: true,
-                    message: getFailureNotificationMessage(error),
-                }, "settings", true);
-                postTypographRunFinished();
-            }
-        };
     }
     catch (error) {
         console.error("[Чистовик] Failed to open settings UI", error);
         throw error;
     }
+}
+function showPluginUI() {
+    figma.showUI(__html__, {
+        height: 372,
+        themeColors: true,
+        width: 360,
+    });
+    configurePluginUIMessageHandler();
+}
+function configurePluginUIMessageHandler() {
+    figma.ui.onmessage = async (message) => {
+        try {
+            if (message.type === "close") {
+                figma.closePlugin();
+                return;
+            }
+            if (message.type === "select-problem-layer" && typeof message.nodeId === "string") {
+                await selectProblemTextLayer(message.nodeId);
+                return;
+            }
+            if (message.type === "channel-link-clicked") {
+                queueAnalyticsEvent("channel_link_clicked", {
+                    link: "channel",
+                    source: "about_tab",
+                });
+                return;
+            }
+            if (message.type === "website-link-clicked") {
+                queueAnalyticsEvent("website_link_clicked", {
+                    link: "website",
+                    source: "about_tab",
+                });
+                return;
+            }
+            if (message.type === "run-typograph") {
+                await runTypograph(getRunOptionsFromMessage(message), "settings");
+            }
+        }
+        catch (error) {
+            console.error("[Чистовик] Failed to handle UI message", error);
+            presentRunOutcome({
+                error: true,
+                message: getFailureNotificationMessage(error),
+                report: createStartupErrorReport("settings"),
+            }, "settings", true);
+            postTypographRunFinished();
+        }
+    };
 }
 function runTypograph(options, source) {
     if (typographRunPromise !== null) {
@@ -225,7 +237,7 @@ function runTypograph(options, source) {
     return currentRunPromise;
 }
 async function executeTypographRun(options, source) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w;
     const analyticsContext = createAnalyticsRunContext(options, source);
     let analyticsStage = "unknown";
     let collectTextDuration = 0;
@@ -235,6 +247,7 @@ async function executeTypographRun(options, source) {
     let outcome = {
         error: true,
         message: "Ой, не получилось почистить 🛑",
+        report: null,
     };
     let workingNotificationCancelled = true;
     try {
@@ -264,16 +277,18 @@ async function executeTypographRun(options, source) {
         outcome = {
             error: false,
             message: getCleanResultNotificationMessage(result),
+            report: null,
         };
-        queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_layers_count: result.changed, characters_changed_total: result.analytics.charactersChangedTotal, characters_processed_total: result.analytics.charactersProcessedTotal, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_layers_count: result.failed, found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked, largest_text_layer_characters: result.analytics.largestTextLayerCharacters, point_edit_max_operations_count: result.analytics.pointEditMaxOperationsCount, point_edit_mismatch_layers_count: result.analytics.pointEditMismatchLayersCount, point_edit_operations_count: result.analytics.pointEditOperationsCount, point_edit_planned_layers_count: result.analytics.pointEditPlannedLayersCount, processed_text_layers_count: result.processed, rollback_attempted_layers_count: result.analytics.rollbackAttemptedLayersCount, rollback_failed_layers_count: result.analytics.rollbackFailedLayersCount, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked, slowest_text_layer_ms: result.analytics.slowestTextLayerMs, changed_style_segments_count: result.analytics.styleSegmentsCount, timing_collect_text_ms: collectTextDuration }), getTextProcessTimingAnalyticsProperties(result.analytics.timings)), getTypographyRuleAnalyticsProperties(result.analytics.ruleAnalytics)), { timing_other_ms: getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: result.analytics.uniqueFontsCount }));
+        queueAnalyticsEvent("plugin_run_completed", Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { changed_anything: result.changed > 0, changed_text_layers_count: result.changed, characters_changed_total: result.analytics.charactersChangedTotal, characters_processed_total: result.analytics.charactersProcessedTotal, duration_ms: getAnalyticsDuration(analyticsContext), failed_text_layers_count: result.failed, found_text_layers_count: collection.nodes.length + collection.skippedHidden + collection.skippedLocked, largest_text_layer_characters: result.analytics.largestTextLayerCharacters, point_edit_max_operations_count: result.analytics.pointEditMaxOperationsCount, point_edit_mismatch_layers_count: result.analytics.pointEditMismatchLayersCount, point_edit_operations_count: result.analytics.pointEditOperationsCount, point_edit_planned_layers_count: result.analytics.pointEditPlannedLayersCount, processed_text_layers_count: result.processed, successful_text_layers_count: result.successful, rollback_attempted_layers_count: result.analytics.rollbackAttemptedLayersCount, rollback_failed_layers_count: result.analytics.rollbackFailedLayersCount, skipped_hidden_count: result.skippedHidden, skipped_locked_count: result.skippedLocked, slowest_text_layer_ms: result.analytics.slowestTextLayerMs, changed_style_segments_count: result.analytics.styleSegmentsCount, timing_collect_text_ms: collectTextDuration }), getTextProcessTimingAnalyticsProperties(result.analytics.timings)), getTypographyRuleAnalyticsProperties(result.analytics.ruleAnalytics)), { timing_other_ms: getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: result.analytics.uniqueFontsCount }));
     }
     catch (error) {
         console.error("[Чистовик] Failed to run typograph", error);
         const errorDiagnostic = (_c = result === null || result === void 0 ? void 0 : result.failureDiagnostic) !== null && _c !== void 0 ? _c : createAnalyticsErrorDiagnostic(error, analyticsStage);
-        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_d = result === null || result === void 0 ? void 0 : result.failed) !== null && _d !== void 0 ? _d : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _e !== void 0 ? _e : null, characters_processed_total: (_f = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _f !== void 0 ? _f : null, largest_text_layer_characters: (_g = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _g !== void 0 ? _g : null, point_edit_max_operations_count: (_h = result === null || result === void 0 ? void 0 : result.analytics.pointEditMaxOperationsCount) !== null && _h !== void 0 ? _h : null, point_edit_mismatch_layers_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.pointEditMismatchLayersCount) !== null && _j !== void 0 ? _j : null, point_edit_operations_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.pointEditOperationsCount) !== null && _k !== void 0 ? _k : null, point_edit_planned_layers_count: (_l = result === null || result === void 0 ? void 0 : result.analytics.pointEditPlannedLayersCount) !== null && _l !== void 0 ? _l : null, processed_text_layers_count: (_m = result === null || result === void 0 ? void 0 : result.processed) !== null && _m !== void 0 ? _m : null, rollback_attempted_layers_count: (_o = result === null || result === void 0 ? void 0 : result.analytics.rollbackAttemptedLayersCount) !== null && _o !== void 0 ? _o : null, rollback_failed_layers_count: (_p = result === null || result === void 0 ? void 0 : result.analytics.rollbackFailedLayersCount) !== null && _p !== void 0 ? _p : null, slowest_text_layer_ms: (_q = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _q !== void 0 ? _q : null, stage: analyticsStage, changed_style_segments_count: (_r = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _r !== void 0 ? _r : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), (result === null ? {} : getTypographyRuleAnalyticsProperties(result.analytics.ruleAnalytics))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_s = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _s !== void 0 ? _s : null }));
+        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_d = result === null || result === void 0 ? void 0 : result.failed) !== null && _d !== void 0 ? _d : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _e !== void 0 ? _e : null, characters_processed_total: (_f = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _f !== void 0 ? _f : null, largest_text_layer_characters: (_g = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _g !== void 0 ? _g : null, point_edit_max_operations_count: (_h = result === null || result === void 0 ? void 0 : result.analytics.pointEditMaxOperationsCount) !== null && _h !== void 0 ? _h : null, point_edit_mismatch_layers_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.pointEditMismatchLayersCount) !== null && _j !== void 0 ? _j : null, point_edit_operations_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.pointEditOperationsCount) !== null && _k !== void 0 ? _k : null, point_edit_planned_layers_count: (_l = result === null || result === void 0 ? void 0 : result.analytics.pointEditPlannedLayersCount) !== null && _l !== void 0 ? _l : null, processed_text_layers_count: (_m = result === null || result === void 0 ? void 0 : result.processed) !== null && _m !== void 0 ? _m : null, successful_text_layers_count: (_o = result === null || result === void 0 ? void 0 : result.successful) !== null && _o !== void 0 ? _o : null, safe_failure_text_layers_count: (_p = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "safe_failure").length) !== null && _p !== void 0 ? _p : null, critical_integrity_text_layers_count: (_q = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "critical_integrity").length) !== null && _q !== void 0 ? _q : null, not_reached_text_layers_count: (_r = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "not_reached").length) !== null && _r !== void 0 ? _r : null, rollback_attempted_layers_count: (_s = result === null || result === void 0 ? void 0 : result.analytics.rollbackAttemptedLayersCount) !== null && _s !== void 0 ? _s : null, rollback_failed_layers_count: (_t = result === null || result === void 0 ? void 0 : result.analytics.rollbackFailedLayersCount) !== null && _t !== void 0 ? _t : null, slowest_text_layer_ms: (_u = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _u !== void 0 ? _u : null, stage: analyticsStage, changed_style_segments_count: (_v = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _v !== void 0 ? _v : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), (result === null ? {} : getTypographyRuleAnalyticsProperties(result.analytics.ruleAnalytics))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_w = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _w !== void 0 ? _w : null }));
         outcome = {
             error: true,
             message: getFailureNotificationMessage(error),
+            report: result === null ? createStartupErrorReport(source) : createTextProcessErrorReport(result, source),
         };
     }
     finally {
@@ -303,6 +318,10 @@ function cancelNotificationSafely(notification) {
     }
 }
 function presentRunOutcome(outcome, source, workingNotificationCancelled) {
+    if (outcome.error && outcome.report != null) {
+        showErrorReport(outcome.report);
+        return;
+    }
     if (source === "settings") {
         try {
             figma.notify(outcome.message, {
@@ -350,6 +369,57 @@ function presentRunOutcome(outcome, source, workingNotificationCancelled) {
     catch (error) {
         console.error("[Чистовик] Failed to show final quick-run notification", error);
         closePluginWithMessageSafely(outcome.message);
+    }
+}
+function createStartupErrorReport(source) {
+    return {
+        kind: "startup_failure",
+        layers: [],
+        source,
+        successfulLayerCount: 0,
+    };
+}
+function createTextProcessErrorReport(result, source) {
+    return {
+        kind: result.requiresStyleWarning ? "critical_failure" : "safe_failure",
+        layers: result.problemLayers,
+        source,
+        successfulLayerCount: result.successful,
+    };
+}
+function showErrorReport(report) {
+    var _a;
+    try {
+        if (report.source === "quick_run") {
+            showPluginUI();
+        }
+        figma.ui.postMessage({
+            report,
+            type: "show-error-report",
+        });
+        const firstLayer = report.kind === "critical_failure"
+            ? (_a = report.layers.find((layer) => layer.kind === "critical_integrity")) !== null && _a !== void 0 ? _a : report.layers[0]
+            : report.layers[0];
+        if (firstLayer !== undefined) {
+            void selectProblemTextLayer(firstLayer.nodeId);
+        }
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to show error report", error);
+        closePluginWithMessageSafely(getFailureNotificationMessage(error));
+    }
+}
+async function selectProblemTextLayer(nodeId) {
+    try {
+        const node = await figma.getNodeByIdAsync(nodeId);
+        if (node === null || node.type !== "TEXT" || node.removed) {
+            return;
+        }
+        figma.currentPage.selection = [node];
+        figma.viewport.scrollAndZoomIntoView([node]);
+    }
+    catch (error) {
+        console.error(`[Чистовик] Failed to select problem text layer ${nodeId}`, error);
     }
 }
 async function closeQuickPluginAfterAnalyticsGrace() {
@@ -609,21 +679,6 @@ function finishTypographyRuleAnalyticsTextLayer(collector, finalTextChanged) {
         collector.pendingChangeSequence = [];
     }
     catch (_b) {
-        // Rule analytics must never affect typography.
-    }
-}
-function discardConfirmedTypographyRuleChanges(collector) {
-    try {
-        collector.changePairs.clear();
-        collector.currentTextLayerIndex = -1;
-        collector.pendingChangedApplications.clear();
-        collector.pendingChangeSequence = [];
-        for (const metric of collector.metrics.values()) {
-            metric.changedApplications = 0;
-            metric.changedTextLayers.clear();
-        }
-    }
-    catch (_a) {
         // Rule analytics must never affect typography.
     }
 }
@@ -1105,7 +1160,7 @@ function getAnalyticsErrorLocation(stage) {
         load_fonts: "src/code.ts:loadFontsForTextNode",
         read_styles: "src/code.ts:captureTextStyles",
         restore_styles: "src/code.ts:restoreTextStyles",
-        rollback_styles: "src/code.ts:restoreRunWithFigmaUndo",
+        rollback_styles: "src/code.ts:restoreTextLayerSnapshot",
         unknown: "src/code.ts:runTypograph",
         write_text: "src/code.ts:processTextNodes/write_clean_text",
     };
@@ -1333,9 +1388,10 @@ function hasLockedProperty(node) {
     }
 }
 async function processTextNodes(textNodes, skippedLocked, skippedHidden, options, writeStrategy = DEFAULT_TEXT_WRITE_STRATEGY) {
-    var _a;
+    var _a, _b, _c, _d, _e;
     try {
         let processed = 0;
+        let successful = 0;
         let changed = 0;
         let failed = 0;
         let failureDiagnostic = null;
@@ -1355,8 +1411,8 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         let slowestTextLayerMs = 0;
         let styleSegmentsCount = 0;
         let undoCheckpointCreated = false;
-        const modifiedLayerSnapshots = [];
-        const parentInstanceLinkCache = new Map();
+        let stoppedAtTextNodeIndex = null;
+        const problemLayers = [];
         const linkedStyleAvailabilityCache = new Map();
         const linkedVariableAvailabilityCache = new Map();
         const ruleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
@@ -1373,13 +1429,16 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             : measureDuration((duration) => {
                 timings.typography += duration;
             }, () => getStandalonePhoneCountryPrefixIds(textNodes));
-        for (const textNode of textNodes) {
+        for (let textNodeIndex = 0; textNodeIndex < textNodes.length; textNodeIndex += 1) {
+            const textNode = textNodes[textNodeIndex];
             const textLayerStartedAt = getMonotonicTimeMs();
             let currentStage = "unknown";
             let countedAsProcessed = false;
             let originalTextForRuleAnalytics = null;
             let shouldStopProcessing = false;
             let currentLayerWasMutated = false;
+            let currentLayerCountedAsChanged = false;
+            let currentLayerRecordedTextChange = false;
             let currentLayerSnapshot = null;
             try {
                 if (isTextNodeRemoved(textNode)) {
@@ -1387,10 +1446,9 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     continue;
                 }
                 const oldText = textNode.characters;
-                const ensureCurrentLayerSnapshot = async (knownStyles) => {
+                const ensureCurrentLayerSnapshot = (knownStyles) => {
                     if (currentLayerSnapshot === null) {
-                        currentLayerSnapshot = await createTextLayerStateSnapshot(textNode, oldText, knownStyles !== null && knownStyles !== void 0 ? knownStyles : captureTextStyles(textNode), parentInstanceLinkCache);
-                        modifiedLayerSnapshots.push(currentLayerSnapshot);
+                        currentLayerSnapshot = createTextLayerStateSnapshot(textNode, oldText, knownStyles !== null && knownStyles !== void 0 ? knownStyles : captureTextStyles(textNode));
                     }
                     return currentLayerSnapshot;
                 };
@@ -1480,7 +1538,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         }, () => createStyleRestorationPlan(oldText, newText, styles));
                         currentStage = "write_text";
                         assertTextNodeCharactersUnchanged(textNode, oldText);
-                        await ensureCurrentLayerSnapshot(styles);
+                        ensureCurrentLayerSnapshot(styles);
                         ensureUndoCheckpoint();
                         currentLayerWasMutated = true;
                         measureDuration((duration) => {
@@ -1518,7 +1576,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         });
                         currentStage = "write_text";
                         assertTextNodeCharactersUnchanged(textNode, oldText);
-                        await ensureCurrentLayerSnapshot(styles);
+                        ensureCurrentLayerSnapshot(styles);
                         ensureUndoCheckpoint();
                         currentLayerWasMutated = true;
                         measureDuration((duration) => {
@@ -1537,16 +1595,18 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     }
                     charactersChangedTotal += oldText.length;
                     styleSegmentsCount += styles.length;
+                    currentLayerRecordedTextChange = true;
                     currentStage = "development_markers";
                     measureDuration((duration) => {
                         timings.developmentMarkers += duration;
                     }, () => applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes));
                     changed += 1;
+                    currentLayerCountedAsChanged = true;
                 }
                 else {
                     currentStage = "development_markers";
                     if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
-                        await ensureCurrentLayerSnapshot();
+                        ensureCurrentLayerSnapshot();
                         ensureUndoCheckpoint();
                         currentLayerWasMutated = true;
                         measureDuration((duration) => {
@@ -1558,38 +1618,43 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 }
                 currentStage = "development_markers";
                 if (needsDevelopmentMarkerPluginDataSync(textNode, options, cleanResult.developmentMarkerIndexes)) {
-                    await ensureCurrentLayerSnapshot();
+                    ensureCurrentLayerSnapshot();
                     ensureUndoCheckpoint();
                     currentLayerWasMutated = true;
                     measureDuration((duration) => {
                         timings.developmentMarkers += duration;
                     }, () => syncDevelopmentMarkerPluginData(textNode, options, cleanResult.developmentMarkerIndexes));
                 }
-                if (currentLayerSnapshot !== null && !(await verifyPreservedTextLayerConnections(currentLayerSnapshot))) {
+                if (currentLayerSnapshot !== null && !verifyPreservedTextLayerConnections(currentLayerSnapshot)) {
                     currentStage = "restore_styles";
                     throw new Error("Text layer component connection verification failed");
                 }
+                successful += 1;
             }
             catch (error) {
                 let caughtError = error;
                 let rollbackFailed = false;
-                if (currentLayerWasMutated) {
+                if (currentLayerWasMutated && currentLayerSnapshot !== null) {
+                    const snapshotToRestore = currentLayerSnapshot;
                     const failureStageBeforeRollback = currentStage;
                     rollbackAttemptedLayersCount += 1;
                     const rollbackSucceeded = await measureAsyncDuration((duration) => {
                         timings.restoreStyles += duration;
-                    }, () => restoreRunWithFigmaUndo(modifiedLayerSnapshots));
-                    changed = 0;
-                    charactersChangedTotal = 0;
-                    styleSegmentsCount = 0;
-                    discardConfirmedTypographyRuleChanges(ruleAnalyticsCollector);
-                    shouldStopProcessing = true;
+                    }, () => restoreTextLayerSnapshot(snapshotToRestore));
+                    if (currentLayerCountedAsChanged) {
+                        changed = Math.max(0, changed - 1);
+                    }
+                    if (currentLayerRecordedTextChange) {
+                        charactersChangedTotal = Math.max(0, charactersChangedTotal - snapshotToRestore.text.length);
+                        styleSegmentsCount = Math.max(0, styleSegmentsCount - snapshotToRestore.styles.length);
+                    }
                     if (!rollbackSucceeded) {
                         rollbackFailedLayersCount += 1;
                         requiresStyleWarning = true;
                         rollbackFailed = true;
                         currentStage = "rollback_styles";
                         caughtError = new Error("Failed to restore original text layer state");
+                        shouldStopProcessing = true;
                     }
                     else {
                         currentStage = failureStageBeforeRollback;
@@ -1608,9 +1673,11 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     failed += 1;
                     failedStage = "rollback_styles";
                     failureDiagnostic = diagnostic;
+                    problemLayers.push(createProblemLayerReportItem(textNode, "critical_integrity", (_c = (_b = currentLayerSnapshot === null || currentLayerSnapshot === void 0 ? void 0 : currentLayerSnapshot.text) !== null && _b !== void 0 ? _b : originalTextForRuleAnalytics) !== null && _c !== void 0 ? _c : ""));
                 }
                 else {
                     failed += 1;
+                    problemLayers.push(createProblemLayerReportItem(textNode, "safe_failure", (_e = (_d = currentLayerSnapshot === null || currentLayerSnapshot === void 0 ? void 0 : currentLayerSnapshot.text) !== null && _d !== void 0 ? _d : originalTextForRuleAnalytics) !== null && _e !== void 0 ? _e : ""));
                     if (diagnostic.name === TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME) {
                         textLayerContentChanged = true;
                     }
@@ -1627,7 +1694,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     try {
                         finalTextChanged = originalTextForRuleAnalytics !== null && textNode.characters !== originalTextForRuleAnalytics;
                     }
-                    catch (_b) {
+                    catch (_f) {
                         // If Figma no longer allows reading the layer, rule changes cannot be confirmed.
                     }
                     finishTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, finalTextChanged);
@@ -1635,11 +1702,27 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 }
             }
             if (shouldStopProcessing) {
+                stoppedAtTextNodeIndex = textNodeIndex;
                 break;
+            }
+        }
+        if (stoppedAtTextNodeIndex !== null) {
+            for (let textNodeIndex = stoppedAtTextNodeIndex + 1; textNodeIndex < textNodes.length; textNodeIndex += 1) {
+                const textNode = textNodes[textNodeIndex];
+                try {
+                    if (isTextNodeRemoved(textNode) || isWhitespaceOnlyText(textNode.characters)) {
+                        continue;
+                    }
+                    problemLayers.push(createProblemLayerReportItem(textNode, "not_reached", textNode.characters));
+                }
+                catch (_g) {
+                    // A layer removed while the report is being prepared no longer needs user action.
+                }
             }
         }
         return {
             processed,
+            successful,
             changed,
             failed,
             failureDiagnostic,
@@ -1648,6 +1731,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             textLayerContentChanged,
             skippedHidden,
             skippedLocked,
+            problemLayers,
             analytics: {
                 charactersChangedTotal,
                 charactersProcessedTotal,
@@ -1671,28 +1755,86 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         throw error;
     }
 }
-async function restoreRunWithFigmaUndo(snapshots) {
+function createProblemLayerReportItem(textNode, kind, preferredText) {
+    return {
+        kind,
+        nodeId: textNode.id,
+        nodePath: getProblemLayerPath(textNode),
+        textPreview: getProblemLayerCurrentText(textNode, preferredText),
+    };
+}
+function getProblemLayerCurrentText(textNode, fallbackText) {
     try {
-        figma.triggerUndo();
-        const verificationResults = await Promise.all(snapshots.map(verifyRestoredTextLayerSnapshot));
-        return verificationResults.every(Boolean);
+        return textNode.characters;
+    }
+    catch (_a) {
+        return fallbackText;
+    }
+}
+function getProblemLayerPath(textNode) {
+    try {
+        const names = [];
+        let current = textNode;
+        while (current != null && current.type !== "PAGE" && current.type !== "DOCUMENT") {
+            if ("name" in current && typeof current.name === "string" && current.name.trim() !== "") {
+                names.unshift(current.name.trim());
+            }
+            current = "parent" in current ? current.parent : null;
+        }
+        return names.slice(-3).join(" / ");
+    }
+    catch (_a) {
+        return "";
+    }
+}
+async function restoreTextLayerSnapshot(snapshot) {
+    try {
+        snapshot.textNode.characters = snapshot.text;
+        snapshot.textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, snapshot.developmentMarkerIndexesPluginData);
+        snapshot.textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, snapshot.developmentMarkerTextPluginData);
+        for (const markerFill of snapshot.developmentMarkerFills) {
+            snapshot.textNode.setRangeFills(markerFill.index, markerFill.index + 1, markerFill.fills);
+        }
+        if (verifyRestoredTextLayerSnapshot(snapshot)) {
+            return true;
+        }
+        const wholeTextStyle = getWholeTextStyle(snapshot.styles, snapshot.text);
+        if (wholeTextStyle !== null) {
+            await restoreWholeTextStyle(snapshot.textNode, wholeTextStyle);
+        }
+        else {
+            await restoreTextStyles(snapshot.textNode, buildStyleMap(snapshot.text, snapshot.text, snapshot.styles), snapshot.styles);
+        }
+        return verifyRestoredTextLayerSnapshot(snapshot);
     }
     catch (rollbackError) {
-        console.error("[Чистовик] Failed to restore typograph run with Figma undo", rollbackError);
+        console.error(`[Чистовик] Failed to restore text layer ${snapshot.textNode.id}`, rollbackError);
         return false;
     }
 }
-async function createTextLayerStateSnapshot(textNode, text, styles, parentInstanceLinkCache) {
+function createTextLayerStateSnapshot(textNode, text, styles) {
     return {
         componentPropertyReferences: cloneComponentPropertyReferences(textNode),
+        developmentMarkerFills: captureDevelopmentMarkerFills(textNode, text),
         developmentMarkerIndexesPluginData: textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY),
         developmentMarkerTextPluginData: textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY),
-        parentInstanceLinks: await getTextNodeParentInstanceLinks(textNode, parentInstanceLinkCache),
         parentChainIds: getTextNodeParentChainIds(textNode),
         styles,
         text,
         textNode,
     };
+}
+function captureDevelopmentMarkerFills(textNode, text) {
+    const result = [];
+    let index = text.indexOf(DEVELOPMENT_NBSP_MARKER);
+    while (index !== -1) {
+        const fills = textNode.getRangeFills(index, index + 1);
+        if (fills !== figma.mixed) {
+            result.push({ fills: Array.from(fills), index });
+        }
+        index = text.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
+    }
+    return result;
 }
 function cloneComponentPropertyReferences(textNode) {
     const references = textNode.componentPropertyReferences;
@@ -1707,40 +1849,10 @@ function getTextNodeParentChainIds(textNode) {
     }
     return ids;
 }
-async function getTextNodeParentInstanceLinks(textNode, cache) {
-    const instances = [];
-    let current = textNode.parent;
-    while (current != null) {
-        if (current.type === "INSTANCE") {
-            instances.push(current);
-        }
-        current = "parent" in current ? current.parent : null;
-    }
-    return Promise.all(instances.map((instance) => getParentInstanceLink(instance, cache)));
-}
-function getParentInstanceLink(instance, cache) {
-    const cached = cache === null || cache === void 0 ? void 0 : cache.get(instance.id);
-    if (cached !== undefined) {
-        return cached;
-    }
-    const promise = (async () => {
-        var _a;
-        const mainComponent = typeof instance.getMainComponentAsync === "function"
-            ? await withFigmaOperationTimeout(() => instance.getMainComponentAsync(), "main_component_load")
-            : instance.mainComponent;
-        return {
-            instanceId: instance.id,
-            mainComponentId: (_a = mainComponent === null || mainComponent === void 0 ? void 0 : mainComponent.id) !== null && _a !== void 0 ? _a : null,
-        };
-    })();
-    cache === null || cache === void 0 ? void 0 : cache.set(instance.id, promise);
-    return promise;
-}
-async function verifyPreservedTextLayerConnections(snapshot) {
+function verifyPreservedTextLayerConnections(snapshot) {
     try {
         return (areStyleValuesEqual(cloneComponentPropertyReferences(snapshot.textNode), snapshot.componentPropertyReferences) &&
-            areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds) &&
-            areStyleValuesEqual(await getTextNodeParentInstanceLinks(snapshot.textNode), snapshot.parentInstanceLinks));
+            areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds));
     }
     catch (verificationError) {
         console.error(`[Чистовик] Failed to verify text layer component connections for text node ${snapshot.textNode.id}`, verificationError);
@@ -1769,17 +1881,24 @@ function verifyRestoredOriginalTextState(textNode, oldText, originalStyles) {
         return false;
     }
 }
-async function verifyRestoredTextLayerSnapshot(snapshot) {
+function verifyRestoredTextLayerSnapshot(snapshot) {
     try {
         return (verifyRestoredOriginalTextState(snapshot.textNode, snapshot.text, snapshot.styles) &&
+            verifyDevelopmentMarkerFills(snapshot) &&
             snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY) === snapshot.developmentMarkerIndexesPluginData &&
             snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY) === snapshot.developmentMarkerTextPluginData &&
-            (await verifyPreservedTextLayerConnections(snapshot)));
+            verifyPreservedTextLayerConnections(snapshot));
     }
     catch (verificationError) {
         console.error(`[Чистовик] Failed to verify original text layer snapshot for text node ${snapshot.textNode.id}`, verificationError);
         return false;
     }
+}
+function verifyDevelopmentMarkerFills(snapshot) {
+    return snapshot.developmentMarkerFills.every((markerFill) => {
+        const currentFills = snapshot.textNode.getRangeFills(markerFill.index, markerFill.index + 1);
+        return currentFills !== figma.mixed && areStyleValuesEqual(Array.from(currentFills), Array.from(markerFill.fills));
+    });
 }
 function createEmptyTextProcessTimings() {
     return {

@@ -71,6 +71,21 @@ async function run() {
   assert.strictEqual(validatedPayload.uuid, EVENT_UUID);
   assert.strictEqual(ANALYTICS_QUEUE_RETENTION_SECONDS, 7 * 24 * 60 * 60);
 
+  const validatedErrorLayerCounts = validateAnalyticsPayload(createPayload({
+    event: "plugin_run_failed",
+    properties: {
+      ...createPayload().properties,
+      critical_integrity_text_layers_count: 1,
+      not_reached_text_layers_count: 3,
+      safe_failure_text_layers_count: 2,
+      successful_text_layers_count: 10,
+    },
+  }));
+  assert.strictEqual(validatedErrorLayerCounts.properties.critical_integrity_text_layers_count, 1);
+  assert.strictEqual(validatedErrorLayerCounts.properties.not_reached_text_layers_count, 3);
+  assert.strictEqual(validatedErrorLayerCounts.properties.safe_failure_text_layers_count, 2);
+  assert.strictEqual(validatedErrorLayerCounts.properties.successful_text_layers_count, 10);
+
   await expectCaptureError(
     () => Promise.resolve(validateAnalyticsPayload(createPayload({ event: "unknown_event" }))),
     400,

@@ -15,6 +15,7 @@ const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
 assert.strictEqual(compiledSource.includes(".detachInstance("), false, "The plugin must not detach library instances");
 assert.strictEqual(compiledSource.includes("figma.createText("), false, "The plugin must not replace text layers with new layers");
 assert.strictEqual(compiledSource.includes("typographRunInProgress"), false, "A repeated run must not end with a silent early return");
+assert.strictEqual(compiledSource.includes("MANUAL_ERROR_REPORT_TEST_KIND"), false, "Manual error report test mode must never remain in the build");
 assert.match(uiSource, /data-channel-link[^>]+href="https:\/\/t\.me\/akanna_notes"/, "The Telegram link must keep its analytics marker");
 assert.match(uiSource, /data-website-link[^>]+href="https:\/\/annaakulova\.ru\/"/, "The website link must have its own analytics marker");
 assert.strictEqual(uiSource.includes('type: "channel-link-clicked"'), true, "The Telegram link must notify the plugin code");
@@ -30,6 +31,16 @@ assert.deepStrictEqual(
 assert.strictEqual(uiSource.includes('id="rulesScrollIndicator"'), true, "Scrollable rules must have a persistent indicator");
 assert.strictEqual(uiSource.includes("updatePersistentScrollIndicator"), true, "Scrollable UI areas must share the persistent indicator logic");
 assert.strictEqual(uiSource.includes("persistent-scroll-thumb"), true, "The persistent scroll indicator must use the shared thumb style");
+assert.strictEqual(uiSource.includes('id="errorReportShell"'), true, "The agreed error report must be part of the working plugin UI");
+assert.strictEqual(uiSource.includes('type === "show-error-report"'), true, "The working UI must accept real error reports");
+assert.strictEqual(uiSource.includes("Не всё удалось обработать"), true, "The safe failure title must keep the agreed text");
+assert.strictEqual(uiSource.includes("Типограф остановил работу"), true, "The critical failure title must keep the agreed text");
+assert.strictEqual(uiSource.includes("Не удалось запустить типограф"), true, "The startup failure title must keep the agreed text");
+assert.strictEqual(uiSource.includes("Вернуться к типографу"), true, "The settings error report must keep the agreed return action");
+assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="report-warning\.png"/, "The warning illustration must be bundled into the UI");
+assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="report-critical\.png"/, "The critical illustration must be bundled into the UI");
+assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="startup-error\.png"/, "The startup illustration must be bundled into the UI");
+assert.match(uiSource, /src: url\("data:font\/woff2;base64,[^"]+"\)/, "The text-layer icon font must be bundled into the UI");
 
 const source = compiledSource.replace(
   "void run();",
@@ -81,6 +92,7 @@ const testPerformance = {
   now: () => testMonotonicNow,
 };
 const context = {
+  __html__: uiSource,
   clearTimeout,
   console,
   figma: {
@@ -184,9 +196,9 @@ assert.match(createAnalyticsEventId(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 11);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 13);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
-assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-05");
+assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-06");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
 
 const legacyQueuedEvent = {
@@ -217,7 +229,7 @@ const shadowRunAnalyticsProperties = getRunAnalyticsProperties({
     source: "quick_run",
     startedAt: 0,
   });
-assert.strictEqual(shadowRunAnalyticsProperties.performance_measurement_version, 5);
+assert.strictEqual(shadowRunAnalyticsProperties.performance_measurement_version, 6);
 assert.strictEqual(shadowRunAnalyticsProperties.point_editing_phase, "point_safe");
 
 assert.deepStrictEqual(
@@ -2084,7 +2096,7 @@ async function runLibraryStyleVerificationRollbackTests() {
   });
   assert.strictEqual(node.characters, originalText);
   assert.strictEqual(rollbackStyleRestorations, 0);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
   assert.strictEqual(result.failedStage, "restore_styles");
   assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
   assert.strictEqual(result.requiresStyleWarning, false);
@@ -2096,9 +2108,10 @@ async function runLibraryStyleVerificationRollbackTests() {
 
 async function runDetectedRollbackDamageTests() {
   const node = createProcessTextNodeMock("detected-rollback-damage-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const laterNode = createProcessTextNodeMock("not-reached-after-critical-node", "Позже...", { height: 20, width: 80, x: 0, y: 30 });
   const originalGetStyledTextSegments = node.getStyledTextSegments;
   const originalConsole = context.console;
-  let undoTriggered = false;
+  let styleRestorationAttempted = false;
 
   context.figma.loadFontAsync = async () => {};
   node.getRangeTextStyleId = () => "";
@@ -2108,19 +2121,15 @@ async function runDetectedRollbackDamageTests() {
     return [
       {
         ...originalStyle,
-        fontSize: undoTriggered ? 18 : 16,
+        fontSize: styleRestorationAttempted ? 18 : 16,
       },
     ];
   };
   node.setTextStyleIdAsync = async () => {
+    styleRestorationAttempted = true;
     throw new Error("Style restoration failed");
   };
-  const undo = configureFigmaUndoForNodes([node]);
-  const triggerUndo = context.figma.triggerUndo;
-  context.figma.triggerUndo = () => {
-    triggerUndo();
-    undoTriggered = true;
-  };
+  const undo = configureFigmaUndoForNodes([node, laterNode]);
   context.console = {
     ...console,
     error: () => {},
@@ -2129,7 +2138,7 @@ async function runDetectedRollbackDamageTests() {
   let result;
 
   try {
-    result = await processTextNodes([node], 0, 0, beautyOptions, "full");
+    result = await processTextNodes([node, laterNode], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
   }
@@ -2146,7 +2155,26 @@ async function runDetectedRollbackDamageTests() {
   assert.strictEqual(result.requiresStyleWarning, true);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
+  assert.strictEqual(laterNode.characters, "Позже...");
+  assert.strictEqual(result.successful, 0);
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(result.problemLayers)),
+    [
+      {
+        kind: "critical_integrity",
+        nodeId: "detected-rollback-damage-node",
+        nodePath: "",
+        textPreview: "Текст...",
+      },
+      {
+        kind: "not_reached",
+        nodeId: "not-reached-after-critical-node",
+        nodePath: "",
+        textPreview: "Позже...",
+      },
+    ]
+  );
 }
 
 async function runUnavailableLinkedStylePreflightTests() {
@@ -2402,7 +2430,7 @@ async function runStyleRestorationRollbackTests() {
   });
   assert.strictEqual(node.characters, originalText);
   assert.strictEqual(styleRestorationAttempts, 1);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
   assert.strictEqual(result.failedStage, "restore_styles");
   assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
   assert.strictEqual(result.analytics.charactersChangedTotal, 0);
@@ -2411,9 +2439,10 @@ async function runStyleRestorationRollbackTests() {
   assert.strictEqual(result.analytics.styleSegmentsCount, 0);
 }
 
-async function runWholeRunNativeUndoTests() {
+async function runSafeLayerFailureContinuesTests() {
   const firstNode = createProcessTextNodeMock("successful-before-undo-node", "Первый...", { height: 20, width: 80, x: 0, y: 0 });
   const failingNode = createProcessTextNodeMock("failure-triggering-undo-node", "Второй...", { height: 20, width: 80, x: 0, y: 30 });
+  const thirdNode = createProcessTextNodeMock("successful-after-safe-failure-node", "Третий...", { height: 20, width: 80, x: 0, y: 60 });
   const originalFirstText = firstNode.characters;
   const originalFailingText = failingNode.characters;
   const originalConsole = context.console;
@@ -2422,7 +2451,7 @@ async function runWholeRunNativeUndoTests() {
   failingNode.setTextStyleIdAsync = async () => {
     throw new Error("Style restoration failed");
   };
-  const undo = configureFigmaUndoForNodes([firstNode, failingNode]);
+  const undo = configureFigmaUndoForNodes([firstNode, failingNode, thirdNode]);
   context.console = {
     ...console,
     error: () => {},
@@ -2431,30 +2460,42 @@ async function runWholeRunNativeUndoTests() {
   let result;
 
   try {
-    result = await processTextNodes([firstNode, failingNode], 0, 0, beautyOptions, "full");
+    result = await processTextNodes([firstNode, failingNode, thirdNode], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
   }
 
   assertTextProcessCounts(result, {
-    changed: 0,
+    changed: 2,
     failed: 1,
-    processed: 2,
+    processed: 3,
     skippedHidden: 0,
     skippedLocked: 0,
   });
-  assert.strictEqual(firstNode.characters, originalFirstText);
+  assert.notStrictEqual(firstNode.characters, originalFirstText);
+  assert.strictEqual(firstNode.characters, "Первый…");
   assert.strictEqual(failingNode.characters, originalFailingText);
+  assert.strictEqual(thirdNode.characters, "Третий…");
   assert.strictEqual(result.failedStage, "restore_styles");
   assert.strictEqual(result.requiresStyleWarning, false);
-  assert.strictEqual(result.analytics.charactersChangedTotal, 0);
-  assert.strictEqual(result.analytics.styleSegmentsCount, 0);
+  assert(result.analytics.charactersChangedTotal > 0);
+  assert(result.analytics.styleSegmentsCount > 0);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(result.analytics.ruleAnalytics.changedCodes)), []);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(result.analytics.ruleAnalytics.changePairs)), {});
   assert.strictEqual(undo.getCommitCalls(), 1);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
+  assert.strictEqual(result.successful, 2);
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(result.problemLayers)),
+    [
+      {
+        kind: "safe_failure",
+        nodeId: "failure-triggering-undo-node",
+        nodePath: "",
+        textPreview: "Второй...",
+      },
+    ]
+  );
 }
 
 async function runFailedStyleRollbackTests() {
@@ -2482,21 +2523,21 @@ async function runFailedStyleRollbackTests() {
   }
 
   assertTextProcessCounts(result, {
-    changed: 0,
+    changed: 1,
     failed: 1,
-    processed: 1,
+    processed: 2,
     skippedHidden: 0,
     skippedLocked: 0,
   });
-  assert.notStrictEqual(failingNode.characters, originalText);
-  assert.strictEqual(untouchedNode.characters, "Второй...");
-  assert.strictEqual(result.failedStage, "rollback_styles");
-  assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
-  assert.strictEqual(result.analytics.charactersChangedTotal, 0);
+  assert.strictEqual(failingNode.characters, originalText);
+  assert.strictEqual(untouchedNode.characters, "Второй…");
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+  assert(result.analytics.charactersChangedTotal > 0);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
-  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
-  assert.strictEqual(result.analytics.styleSegmentsCount, 0);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert(result.analytics.styleSegmentsCount > 0);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
 }
 
 async function runPrioritizedRollbackFailureTests() {
@@ -2534,10 +2575,10 @@ async function runPrioritizedRollbackFailureTests() {
     skippedHidden: 0,
     skippedLocked: 0,
   });
-  assert.strictEqual(result.failedStage, "rollback_styles");
-  assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
-  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(result.failedStage, "load_fonts");
+  assert.strictEqual(result.failureDiagnostic.category, "font_unavailable");
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
 }
 
 async function runLibraryInstanceSafetyContractTests() {
@@ -2582,10 +2623,50 @@ async function runLibraryInstanceSafetyContractTests() {
   assert.deepStrictEqual(node.componentPropertyReferences, { characters: "Label" });
 }
 
+async function runComponentHeavyScreenWithoutLibraryLoadsTests() {
+  const nodes = [];
+  let mainComponentLoadCalls = 0;
+
+  for (let index = 0; index < 150; index += 1) {
+    const instance = {
+      id: `component-heavy-instance-${index}`,
+      get mainComponent() {
+        throw new Error("The synchronous mainComponent getter must not be used");
+      },
+      getMainComponentAsync: () => {
+        mainComponentLoadCalls += 1;
+        return new Promise(() => {});
+      },
+      parent: null,
+      type: "INSTANCE",
+    };
+    const node = createProcessTextNodeMock(
+      `component-heavy-text-${index}`,
+      `Экран ${index}...`,
+      { height: 20, width: 120, x: 0, y: index * 24 }
+    );
+
+    node.parent = instance;
+    node.componentPropertyReferences = { characters: `Label ${index}` };
+    nodes.push(node);
+  }
+
+  context.figma.loadFontAsync = async () => {};
+  const result = await processTextNodes(nodes, 0, 0, beautyOptions);
+
+  assertTextProcessCounts(result, {
+    changed: 150,
+    failed: 0,
+    processed: 150,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(mainComponentLoadCalls, 0);
+  assert(nodes.every((node) => node.characters.endsWith("…")));
+}
+
 async function runSuccessfulWriteConnectionVerificationTests() {
-  const originalMainComponent = { id: "main-component-original" };
-  const changedMainComponent = { id: "main-component-changed" };
-  let currentMainComponent = originalMainComponent;
+  let mainComponentLoadCalls = 0;
   const instance = {
     componentProperties: {
       Label: { type: "TEXT", value: "Текст..." },
@@ -2594,7 +2675,10 @@ async function runSuccessfulWriteConnectionVerificationTests() {
     get mainComponent() {
       throw new Error("The synchronous mainComponent getter is unavailable with dynamic-page access");
     },
-    getMainComponentAsync: async () => currentMainComponent,
+    getMainComponentAsync: () => {
+      mainComponentLoadCalls += 1;
+      return new Promise(() => {});
+    },
     parent: null,
     type: "INSTANCE",
   };
@@ -2604,13 +2688,15 @@ async function runSuccessfulWriteConnectionVerificationTests() {
 
   node.componentPropertyReferences = { characters: "Label" };
   node.parent = instance;
-  node.captureUndoState = () => ({ mainComponent: currentMainComponent });
+  node.captureUndoState = () => ({
+    componentPropertyReferences: { ...node.componentPropertyReferences },
+  });
   node.restoreUndoState = (state) => {
-    currentMainComponent = state.mainComponent;
+    node.componentPropertyReferences = state.componentPropertyReferences;
   };
   node.insertCharacters = (start, value, useStyle) => {
     originalInsertCharacters(start, value, useStyle);
-    currentMainComponent = changedMainComponent;
+    node.componentPropertyReferences = { characters: "Changed label" };
   };
   context.figma.loadFontAsync = async () => {};
   const undo = configureFigmaUndoForNodes([node]);
@@ -2627,11 +2713,12 @@ async function runSuccessfulWriteConnectionVerificationTests() {
 
   assert.strictEqual(result.failed, 1);
   assert.strictEqual(result.changed, 0);
-  assert.strictEqual(result.failedStage, "restore_styles");
-  assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(result.failedStage, "rollback_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
   assert.strictEqual(node.characters, originalText);
-  assert.strictEqual(await instance.getMainComponentAsync(), originalMainComponent);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.deepStrictEqual(node.componentPropertyReferences, { characters: "Changed label" });
+  assert.strictEqual(mainComponentLoadCalls, 0);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
 }
 
 async function runLinkedVariablePreflightTests() {
@@ -3100,7 +3187,44 @@ async function runPointWriteRollbackTests() {
   assert.strictEqual(result.requiresStyleWarning, false);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
+}
+
+async function runPointSafeFailureContinuesTests() {
+  const firstNode = createProcessTextNodeMock("point-safe-first-node", "Первый...", { height: 20, width: 80, x: 0, y: 0 });
+  const failingNode = createProcessTextNodeMock("point-safe-failing-node", "Второй...", { height: 20, width: 80, x: 0, y: 30 });
+  const thirdNode = createProcessTextNodeMock("point-safe-third-node", "Третий...", { height: 20, width: 80, x: 0, y: 60 });
+  const originalFailingText = failingNode.characters;
+  const undo = configureFigmaUndoForNodes([firstNode, failingNode, thirdNode]);
+  const originalConsole = context.console;
+
+  failingNode.deleteCharacters = () => {
+    throw new Error("Injected safe point failure");
+  };
+  context.figma.loadFontAsync = async () => {};
+  context.console = { ...console, error: () => {} };
+
+  let result;
+
+  try {
+    result = await processTextNodes([firstNode, failingNode, thirdNode], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assertTextProcessCounts(result, {
+    changed: 2,
+    failed: 1,
+    processed: 3,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(firstNode.characters, "Первый…");
+  assert.strictEqual(failingNode.characters, originalFailingText);
+  assert.strictEqual(thirdNode.characters, "Третий…");
+  assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
+  assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
 }
 
 async function runPointStyleVerificationRollbackTests() {
@@ -3149,7 +3273,7 @@ async function runPointStyleVerificationRollbackTests() {
   assert.strictEqual(result.requiresStyleWarning, false);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
 }
 
 async function runMixedStyleVerificationRollbackTests() {
@@ -3233,7 +3357,7 @@ async function runMixedStyleVerificationRollbackTests() {
   assert.strictEqual(result.requiresStyleWarning, false);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
 }
 
 async function runChangedDuringFontLoadingTests() {
@@ -3306,7 +3430,7 @@ async function runUndoCheckpointTimingTests() {
 
   assert.strictEqual(result.failed, 1);
   assert.strictEqual(undo.getCommitCalls(), 1);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
   assert.strictEqual(targetNode.characters, originalTargetText);
   assert.strictEqual(unrelatedNode.characters, "Ручная правка во время подготовки");
 }
@@ -3597,7 +3721,7 @@ async function runDevelopmentMarkerRollbackTests() {
   assert.strictEqual(result.failed, 1);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(rangeFills.get(1))), []);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(rangeFills.get(7))), []);
   assert.strictEqual(pluginData.get("developmentMarkerText"), text);
@@ -3644,7 +3768,7 @@ async function runDevelopmentPluginDataRollbackTests() {
   assert.strictEqual(result.failed, 1);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
   assert.strictEqual(pluginData.get("developmentMarkerText"), "Старый текст");
   assert.strictEqual(pluginData.get("developmentMarkerIndexes"), "[1]");
 }
@@ -3690,7 +3814,7 @@ async function runPointOperationFailureMatrixTests() {
       assert.strictEqual(current.node.characters, input, `Point operation ${failureCall} must be undone`);
       assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
       assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-      assert.strictEqual(undo.getTriggerCalls(), 1);
+      assert.strictEqual(undo.getTriggerCalls(), 0);
     }
   } finally {
     context.console = originalConsole;
@@ -3763,7 +3887,7 @@ async function runOpenTypeFeatureVerificationTests() {
   assert.strictEqual(result.failedStage, "restore_styles");
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 0);
   assert.strictEqual(node.characters, originalText);
 }
 
@@ -3802,6 +3926,59 @@ async function runNotificationLifecycleTests() {
   assert.strictEqual(notifications.length, 1);
   assert.strictEqual(notifications[0].options.error, true);
   assert.strictEqual(closePluginCalls.length, 0, "The settings window must stay open after an error");
+
+  notifications.length = 0;
+  const showUICalls = [];
+  const errorReportMessages = [];
+  const selectedProblemNodes = [];
+  const problemNode = createProcessTextNodeMock("problem-layer-for-report", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  problemNode.type = "TEXT";
+  problemNode.removed = false;
+  context.figma.showUI = (_html, options) => {
+    showUICalls.push(options);
+  };
+  context.figma.ui = {
+    onmessage: null,
+    postMessage: (message) => {
+      errorReportMessages.push(message);
+    },
+  };
+  context.figma.getNodeByIdAsync = async () => problemNode;
+  context.figma.currentPage = { selection: [] };
+  context.figma.viewport = {
+    scrollAndZoomIntoView: (nodes) => {
+      selectedProblemNodes.push(nodes.map((node) => node.id));
+    },
+  };
+  presentRunOutcome(
+    {
+      error: true,
+      message: "Ой, не получилось почистить 🛑",
+      report: {
+        kind: "safe_failure",
+        layers: [
+          {
+            kind: "safe_failure",
+            nodeId: problemNode.id,
+            nodePath: "card / title",
+            textPreview: problemNode.characters,
+          },
+        ],
+        source: "quick_run",
+        successfulLayerCount: 2,
+      },
+    },
+    "quick_run",
+    true
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(showUICalls)), [{ height: 372, themeColors: true, width: 360 }]);
+  assert.strictEqual(notifications.length, 0, "A detailed report must replace the red final notification");
+  assert.strictEqual(errorReportMessages.length, 1);
+  assert.strictEqual(errorReportMessages[0].type, "show-error-report");
+  assert.strictEqual(errorReportMessages[0].report.layers[0].textPreview, "Текст...");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(selectedProblemNodes)), [["problem-layer-for-report"]]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(context.figma.currentPage.selection.map((node) => node.id))), ["problem-layer-for-report"]);
 
   notifications.length = 0;
   presentRunOutcome({ error: false, message: "Теперь всё чисто 🔥🔥🔥" }, "quick_run", true);
@@ -3945,14 +4122,30 @@ async function runNotificationLifecycleTests() {
     context.figma.loadFontAsync = async () => {};
   }
 
-  assert.strictEqual(notifications.length, 2);
+  assert.strictEqual(notifications.length, 1);
   assert.strictEqual(notifications[0].message, "Чистовик работает...");
   assert.strictEqual(notifications[0].cancelCalls, 1);
-  assert.strictEqual(notifications[1].message, "Тут изменился текст — запустите типограф заново 🔄");
-  assert.strictEqual(notifications[1].options.error, true);
   assert.strictEqual(changedDuringFontLoadNode.characters, "Текст изменён во время ожидания");
   assert.strictEqual(changedDuringFontLoadUndo.getTriggerCalls(), 0);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(uiMessages)), [{ type: "typograph-run-finished" }]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(uiMessages)), [
+    { type: "typograph-run-finished" },
+    {
+      report: {
+        kind: "safe_failure",
+        layers: [
+          {
+            kind: "safe_failure",
+            nodeId: "notification-changed-during-font-load-node",
+            nodePath: "",
+            textPreview: "Текст изменён во время ожидания",
+          },
+        ],
+        source: "settings",
+        successfulLayerCount: 0,
+      },
+      type: "show-error-report",
+    },
+  ]);
 
   notifications.length = 0;
   uiMessages.length = 0;
@@ -3983,10 +4176,16 @@ async function runNotificationLifecycleTests() {
     context.figma.loadFontAsync = async () => {};
   }
 
-  assert.strictEqual(notifications.length, 2);
-  assert.strictEqual(notifications[1].message, "Тут изменился текст — запустите типограф заново 🔄");
-  assert.strictEqual(notifications[1].options.error, true);
+  assert.strictEqual(notifications.length, 1);
+  assert.strictEqual(notifications[0].message, "Чистовик работает...");
   assert.strictEqual(laterChangedTextNode.characters, "Второй изменён во время ожидания");
+  assert.strictEqual(uiMessages[1].type, "show-error-report");
+  assert.strictEqual(uiMessages[1].report.kind, "safe_failure");
+  assert.strictEqual(uiMessages[1].report.layers.length, 2);
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(uiMessages[1].report.layers.map((layer) => layer.nodeId))),
+    ["notification-earlier-font-failure-node", "notification-later-changed-text-node"]
+  );
 }
 
 runStyleCaptureTests();
@@ -4011,10 +4210,11 @@ runStyleRestorationTests()
   .then(runRuleAnalyticsFinalTextTests)
   .then(runProcessingFailureAnalyticsTests)
   .then(runStyleRestorationRollbackTests)
-  .then(runWholeRunNativeUndoTests)
+  .then(runSafeLayerFailureContinuesTests)
   .then(runFailedStyleRollbackTests)
   .then(runPrioritizedRollbackFailureTests)
   .then(runLibraryInstanceSafetyContractTests)
+  .then(runComponentHeavyScreenWithoutLibraryLoadsTests)
   .then(runSuccessfulWriteConnectionVerificationTests)
   .then(runLinkedVariablePreflightTests)
   .then(runAllTypographyExamplesThroughPointWriterTests)
@@ -4023,6 +4223,7 @@ runStyleRestorationTests()
   .then(runPointStyleBoundaryProcessingTests)
   .then(runPointInsertionProcessingTests)
   .then(runPointWriteRollbackTests)
+  .then(runPointSafeFailureContinuesTests)
   .then(runPointStyleVerificationRollbackTests)
   .then(runMixedStyleVerificationRollbackTests)
   .then(runChangedDuringFontLoadingTests)

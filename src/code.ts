@@ -14,9 +14,9 @@ const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
-const ANALYTICS_SCHEMA_VERSION = 11;
-const ANALYTICS_PLUGIN_RELEASE = "2026-08-05";
-const PERFORMANCE_MEASUREMENT_VERSION = 5;
+const ANALYTICS_SCHEMA_VERSION = 13;
+const ANALYTICS_PLUGIN_RELEASE = "2026-08-06";
+const PERFORMANCE_MEASUREMENT_VERSION = 6;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
 const DEFAULT_TEXT_WRITE_STRATEGY: TextWriteStrategy = "point";
 const RULE_ANALYTICS_VERSION = 2;
@@ -291,6 +291,7 @@ interface PluginRunOptions {
 }
 
 interface PluginUIMessage {
+  nodeId?: string;
   options?: Partial<PluginRunOptions>;
   type?: string;
 }
@@ -298,6 +299,24 @@ interface PluginUIMessage {
 interface PluginRunOutcome {
   error: boolean;
   message: string;
+  report: ErrorReport | null;
+}
+
+type ProblemLayerKind = "safe_failure" | "critical_integrity" | "not_reached";
+type ErrorReportKind = "safe_failure" | "critical_failure" | "startup_failure";
+
+interface ProblemLayerReportItem {
+  kind: ProblemLayerKind;
+  nodeId: string;
+  nodePath: string;
+  textPreview: string;
+}
+
+interface ErrorReport {
+  kind: ErrorReportKind;
+  layers: ProblemLayerReportItem[];
+  source: PluginRunSource;
+  successfulLayerCount: number;
 }
 
 interface AnalyticsIdentity {
@@ -343,6 +362,7 @@ interface QuoteState {
 
 interface TextProcessResult {
   processed: number;
+  successful: number;
   changed: number;
   failed: number;
   failureDiagnostic: AnalyticsErrorDiagnostic | null;
@@ -351,6 +371,7 @@ interface TextProcessResult {
   textLayerContentChanged: boolean;
   skippedHidden: number;
   skippedLocked: number;
+  problemLayers: ProblemLayerReportItem[];
   analytics: TextProcessAnalytics;
 }
 
@@ -439,18 +460,13 @@ interface StyleRestorationPlan {
 
 interface TextLayerStateSnapshot {
   componentPropertyReferences: Record<string, string> | null;
+  developmentMarkerFills: Array<{ fills: Paint[]; index: number }>;
   developmentMarkerIndexesPluginData: string;
   developmentMarkerTextPluginData: string;
-  parentInstanceLinks: ParentInstanceLink[];
   parentChainIds: string[];
   styles: StyleSegment[];
   text: string;
   textNode: TextNode;
-}
-
-interface ParentInstanceLink {
-  instanceId: string;
-  mainComponentId: string | null;
 }
 
 interface TypographyCleanResult {
@@ -525,6 +541,7 @@ async function run(): Promise<void> {
       {
         error: true,
         message: getFailureNotificationMessage(error),
+        report: createStartupErrorReport("quick_run"),
       },
       "quick_run",
       true
@@ -534,56 +551,69 @@ async function run(): Promise<void> {
 
 function openSettingsUI(): void {
   try {
-    figma.showUI(__html__, {
-      height: 372,
-      themeColors: true,
-      width: 360,
-    });
+    showPluginUI();
     queueAnalyticsEvent("settings_opened", { source: "settings" });
-
-    figma.ui.onmessage = async (message: PluginUIMessage) => {
-      try {
-        if (message.type === "close") {
-          figma.closePlugin();
-          return;
-        }
-
-        if (message.type === "channel-link-clicked") {
-          queueAnalyticsEvent("channel_link_clicked", {
-            link: "channel",
-            source: "about_tab",
-          });
-          return;
-        }
-
-        if (message.type === "website-link-clicked") {
-          queueAnalyticsEvent("website_link_clicked", {
-            link: "website",
-            source: "about_tab",
-          });
-          return;
-        }
-
-        if (message.type === "run-typograph") {
-          await runTypograph(getRunOptionsFromMessage(message), "settings");
-        }
-      } catch (error) {
-        console.error("[Чистовик] Failed to handle UI message", error);
-        presentRunOutcome(
-          {
-            error: true,
-            message: getFailureNotificationMessage(error),
-          },
-          "settings",
-          true
-        );
-        postTypographRunFinished();
-      }
-    };
   } catch (error) {
     console.error("[Чистовик] Failed to open settings UI", error);
     throw error;
   }
+}
+
+function showPluginUI(): void {
+  figma.showUI(__html__, {
+    height: 372,
+    themeColors: true,
+    width: 360,
+  });
+  configurePluginUIMessageHandler();
+}
+
+function configurePluginUIMessageHandler(): void {
+  figma.ui.onmessage = async (message: PluginUIMessage) => {
+    try {
+      if (message.type === "close") {
+        figma.closePlugin();
+        return;
+      }
+
+      if (message.type === "select-problem-layer" && typeof message.nodeId === "string") {
+        await selectProblemTextLayer(message.nodeId);
+        return;
+      }
+
+      if (message.type === "channel-link-clicked") {
+        queueAnalyticsEvent("channel_link_clicked", {
+          link: "channel",
+          source: "about_tab",
+        });
+        return;
+      }
+
+      if (message.type === "website-link-clicked") {
+        queueAnalyticsEvent("website_link_clicked", {
+          link: "website",
+          source: "about_tab",
+        });
+        return;
+      }
+
+      if (message.type === "run-typograph") {
+        await runTypograph(getRunOptionsFromMessage(message), "settings");
+      }
+    } catch (error) {
+      console.error("[Чистовик] Failed to handle UI message", error);
+      presentRunOutcome(
+        {
+          error: true,
+          message: getFailureNotificationMessage(error),
+          report: createStartupErrorReport("settings"),
+        },
+        "settings",
+        true
+      );
+      postTypographRunFinished();
+    }
+  };
 }
 
 function runTypograph(options: PluginRunOptions, source: PluginRunSource): Promise<void> {
@@ -620,6 +650,7 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
   let outcome: PluginRunOutcome = {
     error: true,
     message: "Ой, не получилось почистить 🛑",
+    report: null,
   };
   let workingNotificationCancelled = true;
 
@@ -658,6 +689,7 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
     outcome = {
       error: false,
       message: getCleanResultNotificationMessage(result),
+      report: null,
     };
     queueAnalyticsEvent("plugin_run_completed", {
       ...getRunAnalyticsProperties(analyticsContext),
@@ -674,6 +706,7 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
       point_edit_operations_count: result.analytics.pointEditOperationsCount,
       point_edit_planned_layers_count: result.analytics.pointEditPlannedLayersCount,
       processed_text_layers_count: result.processed,
+      successful_text_layers_count: result.successful,
       rollback_attempted_layers_count: result.analytics.rollbackAttemptedLayersCount,
       rollback_failed_layers_count: result.analytics.rollbackFailedLayersCount,
       skipped_hidden_count: result.skippedHidden,
@@ -707,6 +740,11 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
       point_edit_operations_count: result?.analytics.pointEditOperationsCount ?? null,
       point_edit_planned_layers_count: result?.analytics.pointEditPlannedLayersCount ?? null,
       processed_text_layers_count: result?.processed ?? null,
+      successful_text_layers_count: result?.successful ?? null,
+      safe_failure_text_layers_count: result?.problemLayers.filter((layer) => layer.kind === "safe_failure").length ?? null,
+      critical_integrity_text_layers_count:
+        result?.problemLayers.filter((layer) => layer.kind === "critical_integrity").length ?? null,
+      not_reached_text_layers_count: result?.problemLayers.filter((layer) => layer.kind === "not_reached").length ?? null,
       rollback_attempted_layers_count: result?.analytics.rollbackAttemptedLayersCount ?? null,
       rollback_failed_layers_count: result?.analytics.rollbackFailedLayersCount ?? null,
       slowest_text_layer_ms: result?.analytics.slowestTextLayerMs ?? null,
@@ -721,6 +759,7 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
     outcome = {
       error: true,
       message: getFailureNotificationMessage(error),
+      report: result === null ? createStartupErrorReport(source) : createTextProcessErrorReport(result, source),
     };
   } finally {
     workingNotificationCancelled = cancelNotificationSafely(workingNotification);
@@ -752,6 +791,11 @@ function cancelNotificationSafely(notification: NotificationHandler | null): boo
 }
 
 function presentRunOutcome(outcome: PluginRunOutcome, source: PluginRunSource, workingNotificationCancelled: boolean): void {
+  if (outcome.error && outcome.report != null) {
+    showErrorReport(outcome.report);
+    return;
+  }
+
   if (source === "settings") {
     try {
       figma.notify(outcome.message, {
@@ -807,6 +851,62 @@ function presentRunOutcome(outcome: PluginRunOutcome, source: PluginRunSource, w
   } catch (error) {
     console.error("[Чистовик] Failed to show final quick-run notification", error);
     closePluginWithMessageSafely(outcome.message);
+  }
+}
+
+function createStartupErrorReport(source: PluginRunSource): ErrorReport {
+  return {
+    kind: "startup_failure",
+    layers: [],
+    source,
+    successfulLayerCount: 0,
+  };
+}
+
+function createTextProcessErrorReport(result: TextProcessResult, source: PluginRunSource): ErrorReport {
+  return {
+    kind: result.requiresStyleWarning ? "critical_failure" : "safe_failure",
+    layers: result.problemLayers,
+    source,
+    successfulLayerCount: result.successful,
+  };
+}
+
+function showErrorReport(report: ErrorReport): void {
+  try {
+    if (report.source === "quick_run") {
+      showPluginUI();
+    }
+
+    figma.ui.postMessage({
+      report,
+      type: "show-error-report",
+    });
+
+    const firstLayer = report.kind === "critical_failure"
+      ? report.layers.find((layer) => layer.kind === "critical_integrity") ?? report.layers[0]
+      : report.layers[0];
+    if (firstLayer !== undefined) {
+      void selectProblemTextLayer(firstLayer.nodeId);
+    }
+  } catch (error) {
+    console.error("[Чистовик] Failed to show error report", error);
+    closePluginWithMessageSafely(getFailureNotificationMessage(error));
+  }
+}
+
+async function selectProblemTextLayer(nodeId: string): Promise<void> {
+  try {
+    const node = await figma.getNodeByIdAsync(nodeId);
+
+    if (node === null || node.type !== "TEXT" || node.removed) {
+      return;
+    }
+
+    figma.currentPage.selection = [node];
+    figma.viewport.scrollAndZoomIntoView([node]);
+  } catch (error) {
+    console.error(`[Чистовик] Failed to select problem text layer ${nodeId}`, error);
   }
 }
 
@@ -1085,22 +1185,6 @@ function finishTypographyRuleAnalyticsTextLayer(collector: TypographyRuleAnalyti
     collector.currentTextLayerIndex = -1;
     collector.pendingChangedApplications.clear();
     collector.pendingChangeSequence = [];
-  } catch {
-    // Rule analytics must never affect typography.
-  }
-}
-
-function discardConfirmedTypographyRuleChanges(collector: TypographyRuleAnalyticsCollector): void {
-  try {
-    collector.changePairs.clear();
-    collector.currentTextLayerIndex = -1;
-    collector.pendingChangedApplications.clear();
-    collector.pendingChangeSequence = [];
-
-    for (const metric of collector.metrics.values()) {
-      metric.changedApplications = 0;
-      metric.changedTextLayers.clear();
-    }
   } catch {
     // Rule analytics must never affect typography.
   }
@@ -1698,7 +1782,7 @@ function getAnalyticsErrorLocation(stage: AnalyticsErrorStage): string {
     load_fonts: "src/code.ts:loadFontsForTextNode",
     read_styles: "src/code.ts:captureTextStyles",
     restore_styles: "src/code.ts:restoreTextStyles",
-    rollback_styles: "src/code.ts:restoreRunWithFigmaUndo",
+    rollback_styles: "src/code.ts:restoreTextLayerSnapshot",
     unknown: "src/code.ts:runTypograph",
     write_text: "src/code.ts:processTextNodes/write_clean_text",
   };
@@ -1963,6 +2047,7 @@ async function processTextNodes(
 ): Promise<TextProcessResult> {
   try {
     let processed = 0;
+    let successful = 0;
     let changed = 0;
     let failed = 0;
     let failureDiagnostic: AnalyticsErrorDiagnostic | null = null;
@@ -1982,8 +2067,8 @@ async function processTextNodes(
     let slowestTextLayerMs = 0;
     let styleSegmentsCount = 0;
     let undoCheckpointCreated = false;
-    const modifiedLayerSnapshots: TextLayerStateSnapshot[] = [];
-    const parentInstanceLinkCache = new Map<string, Promise<ParentInstanceLink>>();
+    let stoppedAtTextNodeIndex: number | null = null;
+    const problemLayers: ProblemLayerReportItem[] = [];
     const linkedStyleAvailabilityCache = new Map<string, Promise<void>>();
     const linkedVariableAvailabilityCache = new Map<string, Promise<void>>();
     const ruleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
@@ -2004,13 +2089,16 @@ async function processTextNodes(
             },
             () => getStandalonePhoneCountryPrefixIds(textNodes)
           );
-    for (const textNode of textNodes) {
+    for (let textNodeIndex = 0; textNodeIndex < textNodes.length; textNodeIndex += 1) {
+      const textNode = textNodes[textNodeIndex];
       const textLayerStartedAt = getMonotonicTimeMs();
       let currentStage: AnalyticsErrorStage = "unknown";
       let countedAsProcessed = false;
       let originalTextForRuleAnalytics: string | null = null;
       let shouldStopProcessing = false;
       let currentLayerWasMutated = false;
+      let currentLayerCountedAsChanged = false;
+      let currentLayerRecordedTextChange = false;
       let currentLayerSnapshot: TextLayerStateSnapshot | null = null;
 
       try {
@@ -2020,15 +2108,13 @@ async function processTextNodes(
         }
 
         const oldText = textNode.characters;
-        const ensureCurrentLayerSnapshot = async (knownStyles?: StyleSegment[]): Promise<TextLayerStateSnapshot> => {
+        const ensureCurrentLayerSnapshot = (knownStyles?: StyleSegment[]): TextLayerStateSnapshot => {
           if (currentLayerSnapshot === null) {
-            currentLayerSnapshot = await createTextLayerStateSnapshot(
+            currentLayerSnapshot = createTextLayerStateSnapshot(
               textNode,
               oldText,
-              knownStyles ?? captureTextStyles(textNode),
-              parentInstanceLinkCache
+              knownStyles ?? captureTextStyles(textNode)
             );
-            modifiedLayerSnapshots.push(currentLayerSnapshot);
           }
 
           return currentLayerSnapshot;
@@ -2164,7 +2250,7 @@ async function processTextNodes(
 
             currentStage = "write_text";
             assertTextNodeCharactersUnchanged(textNode, oldText);
-            await ensureCurrentLayerSnapshot(styles);
+            ensureCurrentLayerSnapshot(styles);
             ensureUndoCheckpoint();
             currentLayerWasMutated = true;
             measureDuration(
@@ -2215,7 +2301,7 @@ async function processTextNodes(
 
             currentStage = "write_text";
             assertTextNodeCharactersUnchanged(textNode, oldText);
-            await ensureCurrentLayerSnapshot(styles);
+            ensureCurrentLayerSnapshot(styles);
             ensureUndoCheckpoint();
             currentLayerWasMutated = true;
             measureDuration(
@@ -2244,6 +2330,7 @@ async function processTextNodes(
 
           charactersChangedTotal += oldText.length;
           styleSegmentsCount += styles.length;
+          currentLayerRecordedTextChange = true;
           currentStage = "development_markers";
           measureDuration(
             (duration) => {
@@ -2252,10 +2339,11 @@ async function processTextNodes(
             () => applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)
           );
           changed += 1;
+          currentLayerCountedAsChanged = true;
         } else {
           currentStage = "development_markers";
           if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
-            await ensureCurrentLayerSnapshot();
+            ensureCurrentLayerSnapshot();
             ensureUndoCheckpoint();
             currentLayerWasMutated = true;
             measureDuration(
@@ -2271,7 +2359,7 @@ async function processTextNodes(
 
         currentStage = "development_markers";
         if (needsDevelopmentMarkerPluginDataSync(textNode, options, cleanResult.developmentMarkerIndexes)) {
-          await ensureCurrentLayerSnapshot();
+          ensureCurrentLayerSnapshot();
           ensureUndoCheckpoint();
           currentLayerWasMutated = true;
           measureDuration(
@@ -2282,29 +2370,35 @@ async function processTextNodes(
           );
         }
 
-        if (currentLayerSnapshot !== null && !(await verifyPreservedTextLayerConnections(currentLayerSnapshot))) {
+        if (currentLayerSnapshot !== null && !verifyPreservedTextLayerConnections(currentLayerSnapshot)) {
           currentStage = "restore_styles";
           throw new Error("Text layer component connection verification failed");
         }
+
+        successful += 1;
       } catch (error) {
         let caughtError = error;
         let rollbackFailed = false;
 
-        if (currentLayerWasMutated) {
+        if (currentLayerWasMutated && currentLayerSnapshot !== null) {
+          const snapshotToRestore = currentLayerSnapshot as TextLayerStateSnapshot;
           const failureStageBeforeRollback = currentStage;
           rollbackAttemptedLayersCount += 1;
           const rollbackSucceeded = await measureAsyncDuration(
             (duration) => {
               timings.restoreStyles += duration;
             },
-            () => restoreRunWithFigmaUndo(modifiedLayerSnapshots)
+            () => restoreTextLayerSnapshot(snapshotToRestore)
           );
 
-          changed = 0;
-          charactersChangedTotal = 0;
-          styleSegmentsCount = 0;
-          discardConfirmedTypographyRuleChanges(ruleAnalyticsCollector);
-          shouldStopProcessing = true;
+          if (currentLayerCountedAsChanged) {
+            changed = Math.max(0, changed - 1);
+          }
+
+          if (currentLayerRecordedTextChange) {
+            charactersChangedTotal = Math.max(0, charactersChangedTotal - snapshotToRestore.text.length);
+            styleSegmentsCount = Math.max(0, styleSegmentsCount - snapshotToRestore.styles.length);
+          }
 
           if (!rollbackSucceeded) {
             rollbackFailedLayersCount += 1;
@@ -2312,6 +2406,7 @@ async function processTextNodes(
             rollbackFailed = true;
             currentStage = "rollback_styles";
             caughtError = new Error("Failed to restore original text layer state");
+            shouldStopProcessing = true;
           } else {
             currentStage = failureStageBeforeRollback;
           }
@@ -2331,8 +2426,22 @@ async function processTextNodes(
           failed += 1;
           failedStage = "rollback_styles";
           failureDiagnostic = diagnostic;
+          problemLayers.push(
+            createProblemLayerReportItem(
+              textNode,
+              "critical_integrity",
+              (currentLayerSnapshot as TextLayerStateSnapshot | null)?.text ?? originalTextForRuleAnalytics ?? ""
+            )
+          );
         } else {
           failed += 1;
+          problemLayers.push(
+            createProblemLayerReportItem(
+              textNode,
+              "safe_failure",
+              (currentLayerSnapshot as TextLayerStateSnapshot | null)?.text ?? originalTextForRuleAnalytics ?? ""
+            )
+          );
 
           if (diagnostic.name === TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME) {
             textLayerContentChanged = true;
@@ -2361,12 +2470,30 @@ async function processTextNodes(
       }
 
       if (shouldStopProcessing) {
+        stoppedAtTextNodeIndex = textNodeIndex;
         break;
+      }
+    }
+
+    if (stoppedAtTextNodeIndex !== null) {
+      for (let textNodeIndex = stoppedAtTextNodeIndex + 1; textNodeIndex < textNodes.length; textNodeIndex += 1) {
+        const textNode = textNodes[textNodeIndex];
+
+        try {
+          if (isTextNodeRemoved(textNode) || isWhitespaceOnlyText(textNode.characters)) {
+            continue;
+          }
+
+          problemLayers.push(createProblemLayerReportItem(textNode, "not_reached", textNode.characters));
+        } catch {
+          // A layer removed while the report is being prepared no longer needs user action.
+        }
       }
     }
 
     return {
       processed,
+      successful,
       changed,
       failed,
       failureDiagnostic,
@@ -2375,6 +2502,7 @@ async function processTextNodes(
       textLayerContentChanged,
       skippedHidden,
       skippedLocked,
+      problemLayers,
       analytics: {
         charactersChangedTotal,
         charactersProcessedTotal,
@@ -2398,33 +2526,114 @@ async function processTextNodes(
   }
 }
 
-async function restoreRunWithFigmaUndo(snapshots: TextLayerStateSnapshot[]): Promise<boolean> {
+function createProblemLayerReportItem(
+  textNode: TextNode,
+  kind: ProblemLayerKind,
+  preferredText: string
+): ProblemLayerReportItem {
+  return {
+    kind,
+    nodeId: textNode.id,
+    nodePath: getProblemLayerPath(textNode),
+    textPreview: getProblemLayerCurrentText(textNode, preferredText),
+  };
+}
+
+function getProblemLayerCurrentText(textNode: TextNode, fallbackText: string): string {
   try {
-    figma.triggerUndo();
-    const verificationResults = await Promise.all(snapshots.map(verifyRestoredTextLayerSnapshot));
-    return verificationResults.every(Boolean);
+    return textNode.characters;
+  } catch {
+    return fallbackText;
+  }
+}
+
+function getProblemLayerPath(textNode: TextNode): string {
+  try {
+    const names: string[] = [];
+    let current: BaseNode | null | undefined = textNode;
+
+    while (current != null && current.type !== "PAGE" && current.type !== "DOCUMENT") {
+      if ("name" in current && typeof current.name === "string" && current.name.trim() !== "") {
+        names.unshift(current.name.trim());
+      }
+
+      current = "parent" in current ? current.parent : null;
+    }
+
+    return names.slice(-3).join(" / ");
+  } catch {
+    return "";
+  }
+}
+
+async function restoreTextLayerSnapshot(snapshot: TextLayerStateSnapshot): Promise<boolean> {
+  try {
+    snapshot.textNode.characters = snapshot.text;
+    snapshot.textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, snapshot.developmentMarkerIndexesPluginData);
+    snapshot.textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, snapshot.developmentMarkerTextPluginData);
+
+    for (const markerFill of snapshot.developmentMarkerFills) {
+      snapshot.textNode.setRangeFills(markerFill.index, markerFill.index + 1, markerFill.fills);
+    }
+
+    if (verifyRestoredTextLayerSnapshot(snapshot)) {
+      return true;
+    }
+
+    const wholeTextStyle = getWholeTextStyle(snapshot.styles, snapshot.text);
+
+    if (wholeTextStyle !== null) {
+      await restoreWholeTextStyle(snapshot.textNode, wholeTextStyle);
+    } else {
+      await restoreTextStyles(
+        snapshot.textNode,
+        buildStyleMap(snapshot.text, snapshot.text, snapshot.styles),
+        snapshot.styles
+      );
+    }
+
+    return verifyRestoredTextLayerSnapshot(snapshot);
   } catch (rollbackError) {
-    console.error("[Чистовик] Failed to restore typograph run with Figma undo", rollbackError);
+    console.error(`[Чистовик] Failed to restore text layer ${snapshot.textNode.id}`, rollbackError);
     return false;
   }
 }
 
-async function createTextLayerStateSnapshot(
+function createTextLayerStateSnapshot(
   textNode: TextNode,
   text: string,
-  styles: StyleSegment[],
-  parentInstanceLinkCache: Map<string, Promise<ParentInstanceLink>>
-): Promise<TextLayerStateSnapshot> {
+  styles: StyleSegment[]
+): TextLayerStateSnapshot {
   return {
     componentPropertyReferences: cloneComponentPropertyReferences(textNode),
+    developmentMarkerFills: captureDevelopmentMarkerFills(textNode, text),
     developmentMarkerIndexesPluginData: textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY),
     developmentMarkerTextPluginData: textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY),
-    parentInstanceLinks: await getTextNodeParentInstanceLinks(textNode, parentInstanceLinkCache),
     parentChainIds: getTextNodeParentChainIds(textNode),
     styles,
     text,
     textNode,
   };
+}
+
+function captureDevelopmentMarkerFills(
+  textNode: TextNode,
+  text: string
+): Array<{ fills: Paint[]; index: number }> {
+  const result: Array<{ fills: Paint[]; index: number }> = [];
+  let index = text.indexOf(DEVELOPMENT_NBSP_MARKER);
+
+  while (index !== -1) {
+    const fills = textNode.getRangeFills(index, index + 1);
+
+    if (fills !== figma.mixed) {
+      result.push({ fills: Array.from(fills), index });
+    }
+
+    index = text.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
+  }
+
+  return result;
 }
 
 function cloneComponentPropertyReferences(textNode: TextNode): Record<string, string> | null {
@@ -2444,56 +2653,11 @@ function getTextNodeParentChainIds(textNode: TextNode): string[] {
   return ids;
 }
 
-async function getTextNodeParentInstanceLinks(
-  textNode: TextNode,
-  cache?: Map<string, Promise<ParentInstanceLink>>
-): Promise<ParentInstanceLink[]> {
-  const instances: InstanceNode[] = [];
-  let current: BaseNode | null | undefined = textNode.parent;
-
-  while (current != null) {
-    if (current.type === "INSTANCE") {
-      instances.push(current);
-    }
-
-    current = "parent" in current ? current.parent : null;
-  }
-
-  return Promise.all(instances.map((instance) => getParentInstanceLink(instance, cache)));
-}
-
-function getParentInstanceLink(
-  instance: InstanceNode,
-  cache?: Map<string, Promise<ParentInstanceLink>>
-): Promise<ParentInstanceLink> {
-  const cached = cache?.get(instance.id);
-
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const promise = (async () => {
-    const mainComponent =
-      typeof instance.getMainComponentAsync === "function"
-        ? await withFigmaOperationTimeout(() => instance.getMainComponentAsync(), "main_component_load")
-        : instance.mainComponent;
-
-    return {
-      instanceId: instance.id,
-      mainComponentId: mainComponent?.id ?? null,
-    };
-  })();
-
-  cache?.set(instance.id, promise);
-  return promise;
-}
-
-async function verifyPreservedTextLayerConnections(snapshot: TextLayerStateSnapshot): Promise<boolean> {
+function verifyPreservedTextLayerConnections(snapshot: TextLayerStateSnapshot): boolean {
   try {
     return (
       areStyleValuesEqual(cloneComponentPropertyReferences(snapshot.textNode), snapshot.componentPropertyReferences) &&
-      areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds) &&
-      areStyleValuesEqual(await getTextNodeParentInstanceLinks(snapshot.textNode), snapshot.parentInstanceLinks)
+      areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds)
     );
   } catch (verificationError) {
     console.error(`[Чистовик] Failed to verify text layer component connections for text node ${snapshot.textNode.id}`, verificationError);
@@ -2528,18 +2692,26 @@ function verifyRestoredOriginalTextState(textNode: TextNode, oldText: string, or
   }
 }
 
-async function verifyRestoredTextLayerSnapshot(snapshot: TextLayerStateSnapshot): Promise<boolean> {
+function verifyRestoredTextLayerSnapshot(snapshot: TextLayerStateSnapshot): boolean {
   try {
     return (
       verifyRestoredOriginalTextState(snapshot.textNode, snapshot.text, snapshot.styles) &&
+      verifyDevelopmentMarkerFills(snapshot) &&
       snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY) === snapshot.developmentMarkerIndexesPluginData &&
       snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY) === snapshot.developmentMarkerTextPluginData &&
-      (await verifyPreservedTextLayerConnections(snapshot))
+      verifyPreservedTextLayerConnections(snapshot)
     );
   } catch (verificationError) {
     console.error(`[Чистовик] Failed to verify original text layer snapshot for text node ${snapshot.textNode.id}`, verificationError);
     return false;
   }
+}
+
+function verifyDevelopmentMarkerFills(snapshot: TextLayerStateSnapshot): boolean {
+  return snapshot.developmentMarkerFills.every((markerFill) => {
+    const currentFills = snapshot.textNode.getRangeFills(markerFill.index, markerFill.index + 1);
+    return currentFills !== figma.mixed && areStyleValuesEqual(Array.from(currentFills), Array.from(markerFill.fills));
+  });
 }
 
 function createEmptyTextProcessTimings(): TextProcessTimings {

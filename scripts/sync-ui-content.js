@@ -5,6 +5,35 @@ const content = require("../src/ui-content.js");
 const rootDir = path.resolve(__dirname, "..");
 const uiPath = path.join(rootDir, "src", "ui.html");
 
+function createDataUrl(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  const mimeType = extension === ".woff2" ? "font/woff2" : extension === ".png" ? "image/png" : "application/octet-stream";
+  return `data:${mimeType};base64,${fs.readFileSync(filePath).toString("base64")}`;
+}
+
+function inlineUIAssets(html) {
+  const withImages = html.replace(/src="[^"]*" data-inline-asset="([^"]+)"/g, (_match, fileName) => {
+    const assetPath = path.join(rootDir, "assets", fileName);
+    return `src="${createDataUrl(assetPath)}" data-inline-asset="${fileName}"`;
+  });
+
+  return withImages.replace(
+    /\/\* chistovik-inline-font:([^:]+):start \*\/[\s\S]*?\/\* chistovik-inline-font:\1:end \*\//g,
+    (_match, fileName) => {
+      const fontDataUrl = createDataUrl(path.join(rootDir, "assets", "fonts", fileName));
+      return `/* chistovik-inline-font:${fileName}:start */
+      @font-face {
+        font-display: block;
+        font-family: "Cactus Classical Serif";
+        font-style: normal;
+        font-weight: 400;
+        src: url("${fontDataUrl}") format("woff2");
+      }
+      /* chistovik-inline-font:${fileName}:end */`;
+    }
+  );
+}
+
 function indent(lines, spaces) {
   const prefix = " ".repeat(spaces);
 
@@ -153,6 +182,11 @@ function syncUIContent() {
   html = replaceBlock(html, "rules", renderRules());
   html = replaceBlock(html, "about", renderAbout());
   html = replaceBlock(html, "actions", renderActions());
+  html = html.replace(
+    /(<img class="report-status-icon" id="reportStatusIcon") src="[^"]*"(?: data-inline-asset="report-warning\.png")?/,
+    '$1 src=""'
+  );
+  html = inlineUIAssets(html);
 
   fs.writeFileSync(uiPath, html);
 }
