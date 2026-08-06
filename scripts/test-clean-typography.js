@@ -43,6 +43,7 @@ const source = compiledSource.replace(
     "globalThis.coalesceDensePointTextEdits = coalesceDensePointTextEdits;",
     "globalThis.getPointTextEditStyleSourcePosition = getPointTextEditStyleSourcePosition;",
     "globalThis.segmentTextForPointEdits = segmentTextForPointEdits;",
+    "globalThis.findLocalPointEditAlignment = findLocalPointEditAlignment;",
     "globalThis.captureTextStyles = captureTextStyles;",
     "globalThis.getWholeTextStyle = getWholeTextStyle;",
     "globalThis.restoreWholeTextStyle = restoreWholeTextStyle;",
@@ -52,6 +53,7 @@ const source = compiledSource.replace(
     "globalThis.loadFontsForTextNode = loadFontsForTextNode;",
     "globalThis.getFontLoadPromise = getFontLoadPromise;",
     "globalThis.measureDuration = measureDuration;",
+    "globalThis.withFigmaOperationTimeout = withFigmaOperationTimeout;",
     "globalThis.filterProcessableTextNodes = filterProcessableTextNodes;",
     "globalThis.processTextNodes = processTextNodes;",
     "globalThis.syncDevelopmentMarkerPluginData = syncDevelopmentMarkerPluginData;",
@@ -109,6 +111,7 @@ const buildPointTextEditStyleMap = context.globalThis.buildPointTextEditStyleMap
 const coalesceDensePointTextEdits = context.globalThis.coalesceDensePointTextEdits;
 const getPointTextEditStyleSourcePosition = context.globalThis.getPointTextEditStyleSourcePosition;
 const segmentTextForPointEdits = context.globalThis.segmentTextForPointEdits;
+const findLocalPointEditAlignment = context.globalThis.findLocalPointEditAlignment;
 const captureTextStyles = context.globalThis.captureTextStyles;
 const getWholeTextStyle = context.globalThis.getWholeTextStyle;
 const restoreWholeTextStyle = context.globalThis.restoreWholeTextStyle;
@@ -118,6 +121,7 @@ const createStyleRestorationPlan = context.globalThis.createStyleRestorationPlan
 const loadFontsForTextNode = context.globalThis.loadFontsForTextNode;
 const getFontLoadPromise = context.globalThis.getFontLoadPromise;
 const measureDuration = context.globalThis.measureDuration;
+const withFigmaOperationTimeout = context.globalThis.withFigmaOperationTimeout;
 const filterProcessableTextNodes = context.globalThis.filterProcessableTextNodes;
 const processTextNodes = context.globalThis.processTextNodes;
 const syncDevelopmentMarkerPluginData = context.globalThis.syncDevelopmentMarkerPluginData;
@@ -307,6 +311,9 @@ assert(abbreviationLineBreakSummary.changedCodes.includes("abbr_line_break"));
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Node is read-only"), "write_text").category, "layer_not_editable");
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unexpected write failure"), "write_text").category, "write_text_failed");
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unsupported mixed property"), "restore_styles").category, "mixed_or_unsupported_property");
+assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Style does not exist"), "restore_styles").category, "restore_styles_failed");
+assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Variable does not exist"), "restore_styles").category, "restore_styles_failed");
+assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Figma operation timed out: font_load"), "load_fonts").category, "timeout");
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Original state rollback failed"), "rollback_styles").category, "rollback_failed");
 const rollbackFailureNotificationError = new Error("Failed to process text layer");
 rollbackFailureNotificationError.name = "RollbackFailureError";
@@ -418,6 +425,31 @@ function runStyleCaptureTests() {
   assert.strictEqual(rangeCapturedStyles.length, 1);
   assert.strictEqual(rangeCapturedStyles[0].fillStyleId, "range-fill-style-id");
   assert.strictEqual(rangeCapturedStyles[0].textStyleId, "range-text-style-id");
+
+  const longDetachedText = "т".repeat(90000);
+  let detachedFillStyleReads = 0;
+  let detachedTextStyleReads = 0;
+  const longDetachedNode = {
+    characters: longDetachedText,
+    fillStyleId: "",
+    getRangeFillStyleId: () => {
+      detachedFillStyleReads += 1;
+      return "";
+    },
+    getRangeTextStyleId: () => {
+      detachedTextStyleReads += 1;
+      return "";
+    },
+    getStyledTextSegments: () => [{ ...baseSegment, characters: longDetachedText, end: longDetachedText.length }],
+    id: "long-detached-style",
+    textStyleId: "",
+  };
+
+  const longDetachedStyles = captureTextStyles(longDetachedNode);
+
+  assert.strictEqual(longDetachedStyles.length, 1);
+  assert.strictEqual(detachedFillStyleReads, 1, "Detached fill style must be read once for the whole segment");
+  assert.strictEqual(detachedTextStyleReads, 1, "Detached text style must be read once for the whole segment");
 }
 
 const pointWriterTypographyExamples = [];
@@ -449,6 +481,112 @@ function expectDevelopmentStableWithoutMarkers(input, expected = input) {
 
   assert.strictEqual(actual.text, expected, `${input} development run without marker indexes`);
   assert.strictEqual(applyPointTextEditsToString(input, calculatePointTextEdits(input, actual.text)), actual.text);
+}
+
+function findLocalPointEditAlignmentReference(oldParts, newParts, oldStart, newStart) {
+  const lookahead = 32;
+  const oldEnd = Math.min(oldParts.length, oldStart + lookahead + 1);
+  const newEnd = Math.min(newParts.length, newStart + lookahead + 1);
+  let best = null;
+
+  const hasStableAnchor = (oldCandidate, newCandidate) => {
+    const availableLength = Math.min(oldParts.length - oldCandidate, newParts.length - newCandidate);
+    const requiredLength = Math.min(4, availableLength);
+
+    if (requiredLength === 0) return false;
+
+    for (let offset = 0; offset < requiredLength; offset += 1) {
+      if (oldParts[oldCandidate + offset] !== newParts[newCandidate + offset]) return false;
+    }
+
+    return true;
+  };
+
+  for (let oldCandidate = oldStart; oldCandidate < oldEnd; oldCandidate += 1) {
+    for (let newCandidate = newStart; newCandidate < newEnd; newCandidate += 1) {
+      if (oldParts[oldCandidate] !== newParts[newCandidate] || !hasStableAnchor(oldCandidate, newCandidate)) continue;
+      const score = oldCandidate - oldStart + (newCandidate - newStart);
+
+      if (score !== 0 && (best === null || score < best.score)) {
+        best = { oldIndex: oldCandidate, newIndex: newCandidate, score };
+      }
+    }
+  }
+
+  return best === null ? null : { oldIndex: best.oldIndex, newIndex: best.newIndex };
+}
+
+function buildPointTextEditStyleMapReference(oldText, styles, edits) {
+  const styleMap = new Array(oldText.length).fill(0);
+
+  for (let styleIndex = 0; styleIndex < styles.length; styleIndex += 1) {
+    for (let index = styles[styleIndex].start; index < styles[styleIndex].end; index += 1) {
+      styleMap[index] = styleIndex;
+    }
+  }
+
+  for (let editIndex = edits.length - 1; editIndex >= 0; editIndex -= 1) {
+    const edit = edits[editIndex];
+    let insertedStyles;
+
+    if (edit.start === edit.end) {
+      const leadingWhitespaceLength = edit.insertText.match(/^[ \t\r\n\u00A0]+/)?.[0].length ?? 0;
+      const leftStyleIndex = edit.start > 0 ? styleMap[edit.start - 1] : undefined;
+      const rightStyleIndex = edit.start < oldText.length ? styleMap[edit.start] : undefined;
+      const defaultStyleIndex = rightStyleIndex ?? leftStyleIndex ?? 0;
+      insertedStyles = new Array(edit.insertText.length).fill(defaultStyleIndex);
+
+      if (leftStyleIndex !== undefined && leadingWhitespaceLength > 0) {
+        insertedStyles.fill(leftStyleIndex, 0, leadingWhitespaceLength);
+      }
+    } else {
+      const sourcePosition = getPointTextEditStyleSourcePosition(oldText, edit);
+      insertedStyles = new Array(edit.insertText.length).fill(styleMap[sourcePosition] ?? 0);
+    }
+
+    styleMap.splice(edit.start, edit.end - edit.start, ...insertedStyles);
+  }
+
+  return styleMap;
+}
+
+function runPointTextEditAlignmentEquivalenceTests() {
+  const repeatedCases = [
+    [Array(70).fill("."), Array(70).fill(".")],
+    [Array.from("абракадабра".repeat(7)), Array.from("кадабраабра".repeat(6))],
+    [Array(40).fill(" ").concat(Array(40).fill("а")), Array(20).fill(" ").concat(Array(60).fill("а"))],
+  ];
+
+  for (const [oldParts, newParts] of repeatedCases) {
+    for (const oldStart of [0, 1, 17, 35]) {
+      for (const newStart of [0, 2, 19, 36]) {
+        assert.deepStrictEqual(
+          JSON.parse(JSON.stringify(findLocalPointEditAlignment(oldParts, newParts, oldStart, newStart))),
+          findLocalPointEditAlignmentReference(oldParts, newParts, oldStart, newStart)
+        );
+      }
+    }
+  }
+
+  let state = 0x716f31;
+  const units = ["а", "б", " ", ".", "…", "?", "!", "👩‍💻"];
+  const next = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state;
+  };
+
+  for (let caseIndex = 0; caseIndex < 20000; caseIndex += 1) {
+    const oldParts = Array.from({ length: 1 + (next() % 80) }, () => units[next() % units.length]);
+    const newParts = Array.from({ length: 1 + (next() % 80) }, () => units[next() % units.length]);
+    const oldStart = next() % oldParts.length;
+    const newStart = next() % newParts.length;
+
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(findLocalPointEditAlignment(oldParts, newParts, oldStart, newStart))),
+      findLocalPointEditAlignmentReference(oldParts, newParts, oldStart, newStart),
+      `Nearest-first alignment must match the former exhaustive search in case ${caseIndex}`
+    );
+  }
 }
 
 function runPointTextEditCalculationTests() {
@@ -537,6 +675,7 @@ function runPointTextEditCalculationTests() {
     for (const cluster of ["🏴\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}", "क्ष", "நி", "가"]) {
       assert.strictEqual(segmentTextForPointEdits(cluster).length, 1, `Fallback must keep ${cluster} together`);
     }
+
   } finally {
     context.Intl = sandboxIntl;
   }
@@ -557,6 +696,29 @@ function runPointTextEditCalculationTests() {
     assert(denseEdits.every((edit) => edit.insertText.length <= 4096));
   }
 
+  const manyEllipsesSource = Array(10000).fill("слово...").join(" ");
+  const manyEllipsesTarget = cleanTypography(manyEllipsesSource);
+  const manyEllipsesEdits = calculatePointTextEdits(manyEllipsesSource, manyEllipsesTarget);
+
+  assert.strictEqual(
+    applyPointTextEditsToString(manyEllipsesSource, manyEllipsesEdits),
+    manyEllipsesTarget,
+    "A layer with 10,000 ellipses must be processed instead of rejected"
+  );
+  assert.strictEqual(manyEllipsesEdits.length, 10000);
+  const manyEllipsesCoalesced = coalesceDensePointTextEdits(manyEllipsesSource, manyEllipsesEdits, [
+    { start: 0, end: manyEllipsesSource.length },
+  ]);
+  assert.strictEqual(manyEllipsesCoalesced.length, 1, "Dense edits in one style segment must use one Figma write");
+  assert.strictEqual(applyPointTextEditsToString(manyEllipsesSource, manyEllipsesCoalesced), manyEllipsesTarget);
+  const manyEllipsesStyleMap = buildPointTextEditStyleMap(
+    manyEllipsesSource,
+    [{ start: 0, end: manyEllipsesSource.length }],
+    manyEllipsesCoalesced
+  );
+  assert.strictEqual(manyEllipsesStyleMap.length, manyEllipsesTarget.length);
+  assert(manyEllipsesStyleMap.every((styleIndex) => styleIndex === 0));
+
   const styledDenseSource = "а дом ".repeat(600);
   const styledDenseTarget = cleanTypography(styledDenseSource);
   const styledDenseEdits = calculatePointTextEdits(styledDenseSource, styledDenseTarget);
@@ -569,6 +731,8 @@ function runPointTextEditCalculationTests() {
   const coalescedDenseEdits = coalesceDensePointTextEdits(styledDenseSource, styledDenseEdits, styledDenseSegments);
   assert.strictEqual(applyPointTextEditsToString(styledDenseSource, coalescedDenseEdits), styledDenseTarget);
   assert(coalescedDenseEdits.length < styledDenseEdits.length);
+  assert.strictEqual(coalescedDenseEdits.length, styledDenseSegments.length);
+  assert(coalescedDenseEdits.every((edit) => styledDenseSegments.some((style) => style.start <= edit.start && edit.end <= style.end)));
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(buildPointTextEditStyleMap(styledDenseSource, styledDenseSegments, coalescedDenseEdits))),
     JSON.parse(JSON.stringify(buildPointTextEditStyleMap(styledDenseSource, styledDenseSegments, styledDenseEdits)))
@@ -616,11 +780,25 @@ function runPointTextEditCalculationTests() {
     const source = createRandomText();
     const target = createRandomText();
     const edits = calculatePointTextEdits(source, target);
+    const styles = [];
+    let styleStart = 0;
+
+    while (styleStart < source.length) {
+      const styleEnd = Math.min(source.length, styleStart + 1 + (nextRandom() % 4));
+      styles.push({ start: styleStart, end: styleEnd });
+      styleStart = styleEnd;
+    }
 
     assert.strictEqual(applyPointTextEditsToString(source, edits), target, `Seeded point edit pair ${index}`);
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(buildPointTextEditStyleMap(source, styles, edits))),
+      buildPointTextEditStyleMapReference(source, styles, edits),
+      `Linear style map must match the former splice-based result in case ${index}`
+    );
   }
 }
 
+runPointTextEditAlignmentEquivalenceTests();
 runPointTextEditCalculationTests();
 
 expectClean(
@@ -628,6 +806,7 @@ expectClean(
   `Она спросила «как дела?» Я${NBSP}подумала «ну${NBSP}всё… приехали!» «Она сказала: „Я${NBSP}приду завтра!“»`
 );
 expectClean("«Она сказала: „Я приду завтра!“»", `«Она сказала: „Я${NBSP}приду завтра!“»`);
+expectClean("«Ты правда спросил „зачем?“?»", `«Ты${NBSP}правда спросил „зачем?“»`);
 expectClean("»Она сказала: „Я приду завтра!“»", `«Она сказала: „Я${NBSP}приду завтра!“»`);
 expectClean("«Она сказала: “Я приду завтра!“»", `«Она сказала: „Я${NBSP}приду завтра!“»`);
 expectClean("«Она сказала: „Я приду завтра!„»", `«Она сказала: „Я${NBSP}приду завтра!“»`);
@@ -642,9 +821,9 @@ expectClean('He said "Use "clean typography" mode".', 'He said "Use \'clean typo
 expectClean('He said "Use \'clean typography\' mode".', 'He said "Use \'clean typography\' mode".');
 expectClean('He said "The word "привет" means hello".', 'He said "The word \'привет\' means hello".');
 expectClean("Что?? Да!! Правда!?", "Что? Да! Правда?!");
-expectClean("!?!!", "?!");
-expectClean("?!?", "?!");
-expectClean("?!?!", "?!");
+expectClean("!?!!", "!?!");
+expectClean("?!?", "?!?");
+expectClean("?!?!", "?!?!");
 expectClean("5 1000 - 1000", `5 1${NBSP}000${NBSP}${EM_DASH} 1${NBSP}000`);
 
 for (let length = 1; length <= 10; length += 1) {
@@ -659,8 +838,22 @@ for (let length = 1; length <= 10; length += 1) {
     assert.strictEqual(cleanTypography(first), first, `${punctuation} must be stable after the first run`);
   }
 }
+
+for (const insideMark of ["?", "!"]) {
+  for (const outsideMark of ["?", "!"]) {
+    const input = `«Он сказал „текст${insideMark}“${outsideMark}»`;
+    const first = cleanTypography(input);
+    assert.strictEqual(cleanTypography(first), first, `${input} must be stable after punctuation moves inside quotes`);
+  }
+}
+
 expectDevelopmentIdempotent("«Она сказала: „Я приду завтра!“»", "«Она сказала: „Я*приду завтра!“»");
 expectDevelopmentIdempotent("«Ты правда спросил „зачем??“»", "«Ты*правда спросил „зачем?“»");
+expectDevelopmentIdempotent("«Ты правда спросил „зачем?“?»", "«Ты*правда спросил „зачем?“»");
+expectDevelopmentIdempotent(
+  "«„Как это скучно!“ — воскликнул я невольно».\n«Она сказала: „Я приду завтра!“»\n«Ты правда спросил „зачем??“»",
+  "«„Как это скучно!“*— воскликнул я*невольно».\n«Она сказала: „Я*приду завтра!“»\n«Ты*правда спросил „зачем?“»"
+);
 expectDevelopmentIdempotent("«„Как это скучно!“ — воскликнул я невольно».", "«„Как это скучно!“*— воскликнул я*невольно».");
 expectDevelopmentIdempotent(`Он*сказал "Use 'clean typography' mode".`, `Он*сказал «Use „clean typography“ mode».`);
 expectDevelopmentIdempotent(`Он*сказал*"Use*'clean typography'*mode".`, `Он*сказал*«Use*„clean typography“*mode».`);
@@ -1486,6 +1679,14 @@ function runHighPrecisionTimingTests() {
   testMonotonicNow = 0;
 }
 
+async function runFigmaOperationTimeoutTests() {
+  assert.strictEqual(await withFigmaOperationTimeout(async () => "готово", "test_success", 20), "готово");
+  await assert.rejects(
+    withFigmaOperationTimeout(() => new Promise(() => {}), "test_timeout", 5),
+    (error) => error?.name === "FigmaOperationTimeoutError" && /test_timeout/.test(error?.message || "")
+  );
+}
+
 async function runFontLoadingCacheTests() {
   const loadCalls = [];
   const fontLoadCache = new Map();
@@ -1969,7 +2170,7 @@ async function runUnavailableLinkedStylePreflightTests() {
   let result;
 
   try {
-    result = await processTextNodes([node], 0, 0, beautyOptions);
+    result = await processTextNodes([node], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
     context.figma.getStyleByIdAsync = originalGetStyleByIdAsync;
@@ -1989,8 +2190,44 @@ async function runUnavailableLinkedStylePreflightTests() {
   assert.strictEqual(result.requiresStyleWarning, false);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 0);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 0);
-  assert.strictEqual(undo.getCommitCalls(), 1);
+  assert.strictEqual(undo.getCommitCalls(), 0);
   assert.strictEqual(undo.getTriggerCalls(), 0);
+
+  const pointNode = createProcessTextNodeMock("point-linked-resources-node", "Текст...", { height: 20, width: 80, x: 0, y: 30 });
+  const pointSegments = pointNode.getStyledTextSegments;
+  let linkedResourceLookupCalls = 0;
+
+  pointNode.getRangeTextStyleId = () => "phone-style-id";
+  pointNode.getStyledTextSegments = () =>
+    pointSegments().map((segment) => ({
+      ...segment,
+      boundVariables: {
+        fontSize: { id: "point-variable-id", type: "VARIABLE_ALIAS" },
+      },
+      characters: pointNode.characters,
+      end: pointNode.characters.length,
+      textStyleId: "phone-style-id",
+    }));
+  context.figma.getStyleByIdAsync = async () => {
+    linkedResourceLookupCalls += 1;
+    throw new Error("Point mode must not open a linked style before editing text");
+  };
+  const originalGetVariableByIdAsync = context.figma.variables.getVariableByIdAsync;
+  context.figma.variables.getVariableByIdAsync = async () => {
+    linkedResourceLookupCalls += 1;
+    throw new Error("Point mode must not open a linked variable before editing text");
+  };
+
+  try {
+    const pointResult = await processTextNodes([pointNode], 0, 0, beautyOptions, "point");
+    assert.strictEqual(pointResult.failed, 0);
+    assert.strictEqual(pointResult.changed, 1);
+    assert.strictEqual(pointNode.characters, "Текст…");
+    assert.strictEqual(linkedResourceLookupCalls, 0);
+  } finally {
+    context.figma.getStyleByIdAsync = originalGetStyleByIdAsync;
+    context.figma.variables.getVariableByIdAsync = originalGetVariableByIdAsync;
+  }
 }
 
 async function runStandalonePhoneCountryPrefixContextTests() {
@@ -2304,19 +2541,29 @@ async function runPrioritizedRollbackFailureTests() {
 }
 
 async function runLibraryInstanceSafetyContractTests() {
+  const outerInstance = {
+    componentProperties: {},
+    id: "outer-instance-id",
+    mainComponent: { id: "outer-main-component-id" },
+    parent: null,
+    type: "INSTANCE",
+  };
   const instance = {
     componentProperties: {
       Label: { type: "TEXT", value: "Текст..." },
     },
     id: "instance-id",
     mainComponent: { id: "main-component-id" },
+    parent: outerInstance,
     type: "INSTANCE",
   };
   const node = createProcessTextNodeMock("instance-text-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
   const originalMainComponent = instance.mainComponent;
   const originalComponentProperties = instance.componentProperties;
+  const originalOuterMainComponent = outerInstance.mainComponent;
 
   node.parent = instance;
+  node.componentPropertyReferences = { characters: "Label" };
   context.figma.loadFontAsync = async () => {};
 
   const result = await processTextNodes([node], 0, 0, beautyOptions);
@@ -2330,7 +2577,96 @@ async function runLibraryInstanceSafetyContractTests() {
   });
   assert.strictEqual(node.parent, instance);
   assert.strictEqual(instance.mainComponent, originalMainComponent);
+  assert.strictEqual(outerInstance.mainComponent, originalOuterMainComponent);
   assert.strictEqual(instance.componentProperties, originalComponentProperties);
+  assert.deepStrictEqual(node.componentPropertyReferences, { characters: "Label" });
+}
+
+async function runSuccessfulWriteConnectionVerificationTests() {
+  const originalMainComponent = { id: "main-component-original" };
+  const changedMainComponent = { id: "main-component-changed" };
+  let currentMainComponent = originalMainComponent;
+  const instance = {
+    componentProperties: {
+      Label: { type: "TEXT", value: "Текст..." },
+    },
+    id: "connection-verification-instance",
+    get mainComponent() {
+      throw new Error("The synchronous mainComponent getter is unavailable with dynamic-page access");
+    },
+    getMainComponentAsync: async () => currentMainComponent,
+    parent: null,
+    type: "INSTANCE",
+  };
+  const node = createProcessTextNodeMock("connection-verification-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalInsertCharacters = node.insertCharacters;
+  const originalText = node.characters;
+
+  node.componentPropertyReferences = { characters: "Label" };
+  node.parent = instance;
+  node.captureUndoState = () => ({ mainComponent: currentMainComponent });
+  node.restoreUndoState = (state) => {
+    currentMainComponent = state.mainComponent;
+  };
+  node.insertCharacters = (start, value, useStyle) => {
+    originalInsertCharacters(start, value, useStyle);
+    currentMainComponent = changedMainComponent;
+  };
+  context.figma.loadFontAsync = async () => {};
+  const undo = configureFigmaUndoForNodes([node]);
+  const originalConsole = context.console;
+  context.console = { ...console, error: () => {} };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions, "point");
+  } finally {
+    context.console = originalConsole;
+  }
+
+  assert.strictEqual(result.failed, 1);
+  assert.strictEqual(result.changed, 0);
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(node.characters, originalText);
+  assert.strictEqual(await instance.getMainComponentAsync(), originalMainComponent);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
+}
+
+async function runLinkedVariablePreflightTests() {
+  const node = createProcessTextNodeMock("missing-variable-node", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const originalSegments = node.getStyledTextSegments;
+  const originalGetVariableByIdAsync = context.figma.variables.getVariableByIdAsync;
+  const undo = configureFigmaUndoForNodes([node]);
+
+  node.getStyledTextSegments = () =>
+    originalSegments().map((segment) => ({
+      ...segment,
+      boundVariables: {
+        fontSize: { id: "missing-variable-id", type: "VARIABLE_ALIAS" },
+      },
+    }));
+  context.figma.loadFontAsync = async () => {};
+  context.figma.variables.getVariableByIdAsync = async () => null;
+  const originalConsole = context.console;
+  context.console = { ...console, error: () => {} };
+
+  let result;
+
+  try {
+    result = await processTextNodes([node], 0, 0, beautyOptions, "full");
+  } finally {
+    context.console = originalConsole;
+    context.figma.variables.getVariableByIdAsync = originalGetVariableByIdAsync;
+  }
+
+  assert.strictEqual(result.failed, 1);
+  assert.strictEqual(result.changed, 0);
+  assert.strictEqual(result.failedStage, "restore_styles");
+  assert.strictEqual(result.failureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(node.characters, "Текст...");
+  assert.strictEqual(undo.getTriggerCalls(), 0);
 }
 
 async function runIntegratedMixedStyleProcessingTests() {
@@ -2522,6 +2858,44 @@ async function runAllTypographyExamplesThroughPointWriterTests() {
     });
     assert.strictEqual(node.characters, expected, `Point writer example ${index}: ${input}`);
   }
+}
+
+async function runSinglePassDevelopmentPunctuationTests() {
+  const input = "«„Как это скучно!“ — воскликнул я невольно».\n«Она сказала: „Я приду завтра!“»\n«Ты правда спросил „зачем?“?»";
+  const expected = "«„Как это скучно!“*— воскликнул я*невольно».\n«Она сказала: „Я*приду завтра!“»\n«Ты*правда спросил „зачем?“»";
+  const node = createProcessTextNodeMock("single-pass-development-punctuation-node", input, { height: 60, width: 420, x: 0, y: 0 });
+  const pluginData = new Map();
+  const rangeFills = new Map();
+
+  node.getPluginData = (key) => pluginData.get(key) || "";
+  node.setPluginData = (key, value) => pluginData.set(key, value);
+  node.getRangeFills = (start) => rangeFills.get(start) || [];
+  node.setRangeFills = (start, _end, fills) => rangeFills.set(start, JSON.parse(JSON.stringify(fills)));
+
+  context.figma.loadFontAsync = async () => {};
+  configureFigmaUndoForNodes([node]);
+
+  const firstResult = await processTextNodes([node], 0, 0, developmentOptions);
+
+  assertTextProcessCounts(firstResult, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, expected, "One development-mode run must remove the repeated question mark");
+
+  const secondResult = await processTextNodes([node], 0, 0, developmentOptions);
+
+  assertTextProcessCounts(secondResult, {
+    changed: 0,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(node.characters, expected, "A repeated development-mode run must not change the result");
 }
 
 function isWhitespaceOnlyForTest(input) {
@@ -2886,7 +3260,7 @@ async function runChangedDuringFontLoadingTests() {
     let result;
 
     try {
-      result = await processTextNodes([node], 0, 0, beautyOptions);
+      result = await processTextNodes([node], 0, 0, beautyOptions, stage === "linked-style" ? "full" : "point");
     } finally {
       context.console = originalConsole;
       context.figma.loadFontAsync = async () => {};
@@ -2901,6 +3275,40 @@ async function runChangedDuringFontLoadingTests() {
     assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 0);
     assert.strictEqual(undo.getTriggerCalls(), 0);
   }
+}
+
+async function runUndoCheckpointTimingTests() {
+  const targetNode = createProcessTextNodeMock("late-undo-checkpoint-target", "Текст...", { height: 20, width: 80, x: 0, y: 0 });
+  const unrelatedNode = createProcessTextNodeMock("late-undo-checkpoint-unrelated", "Исходный соседний текст", { height: 20, width: 160, x: 100, y: 0 });
+  const originalTargetText = targetNode.characters;
+  const originalGetStyledTextSegments = targetNode.getStyledTextSegments;
+
+  targetNode.getStyledTextSegments = () =>
+    originalGetStyledTextSegments().map((segment) => ({
+      ...segment,
+      openTypeFeatures: { LIGA: targetNode.characters === originalTargetText },
+    }));
+  context.figma.loadFontAsync = async () => {
+    unrelatedNode.characters = "Ручная правка во время подготовки";
+  };
+  const undo = configureFigmaUndoForNodes([targetNode, unrelatedNode]);
+  const originalConsole = context.console;
+  context.console = { ...console, error: () => {} };
+
+  let result;
+
+  try {
+    result = await processTextNodes([targetNode], 0, 0, beautyOptions);
+  } finally {
+    context.console = originalConsole;
+    context.figma.loadFontAsync = async () => {};
+  }
+
+  assert.strictEqual(result.failed, 1);
+  assert.strictEqual(undo.getCommitCalls(), 1);
+  assert.strictEqual(undo.getTriggerCalls(), 1);
+  assert.strictEqual(targetNode.characters, originalTargetText);
+  assert.strictEqual(unrelatedNode.characters, "Ручная правка во время подготовки");
 }
 
 async function runRemovedDuringFontLoadingTests() {
@@ -2928,7 +3336,7 @@ async function runRemovedDuringFontLoadingTests() {
     configurable: true,
     get: () => removed,
   });
-  const removedDuringLoadUndo = configureFigmaUndoForNodes([removedNode, remainingNode]);
+  const removedDuringLoadUndo = configureFigmaUndoForNodes([remainingNode]);
 
   context.figma.loadFontAsync = async () => {
     removed = true;
@@ -3012,7 +3420,7 @@ async function runRemovedDuringFontLoadingTests() {
   let removedDuringLinkedStyleResult;
 
   try {
-    removedDuringLinkedStyleResult = await processTextNodes([removedDuringLinkedStyleNode], 0, 0, beautyOptions);
+    removedDuringLinkedStyleResult = await processTextNodes([removedDuringLinkedStyleNode], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
     context.figma.getStyleByIdAsync = getStyleBeforeRemovedDuringLinkedStyle;
@@ -3033,7 +3441,7 @@ async function runRemovedDuringFontLoadingTests() {
   let missingStyleResult;
 
   try {
-    missingStyleResult = await processTextNodes([missingStyleNode], 0, 0, beautyOptions);
+    missingStyleResult = await processTextNodes([missingStyleNode], 0, 0, beautyOptions, "full");
   } finally {
     context.console = originalConsole;
     context.figma.getStyleByIdAsync = originalGetStyleByIdAsync;
@@ -3082,7 +3490,7 @@ async function runChangedStylesDuringPreparationTests() {
     let result;
 
     try {
-      result = await processTextNodes([node], 0, 0, beautyOptions);
+      result = await processTextNodes([node], 0, 0, beautyOptions, stage === "linked-style" ? "full" : "point");
     } finally {
       context.console = originalConsole;
       context.figma.loadFontAsync = async () => {};
@@ -3094,7 +3502,11 @@ async function runChangedStylesDuringPreparationTests() {
     assert.strictEqual(result.textLayerContentChanged, false);
     assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 0);
     assert.strictEqual(undo.getTriggerCalls(), 0);
-    assert(pointWrites > 0);
+    if (stage === "font") {
+      assert(pointWrites > 0);
+    } else {
+      assert.strictEqual(pointWrites, 0);
+    }
     assert.strictEqual(fontSize, 18, `${stage}: the user's new style must stay untouched`);
     assert.strictEqual(node.characters, "Текст…");
   }
@@ -3308,6 +3720,19 @@ async function runDensePointProcessingTests() {
   assert.strictEqual(result.failed, 0);
   assert.strictEqual(node.characters, expected);
   assert(calls < 20, `Dense text must be written in a small number of safe chunks, received ${calls}`);
+
+  const manyEllipsesInput = Array(10000).fill("слово...").join(" ");
+  const manyEllipsesExpected = cleanTypography(manyEllipsesInput);
+  const manyEllipsesNode = createProcessTextNodeMock("many-ellipses-processing-node", manyEllipsesInput, {
+    height: 200,
+    width: 600,
+    x: 0,
+    y: 0,
+  });
+  const manyEllipsesResult = await processTextNodes([manyEllipsesNode], 0, 0, beautyOptions);
+
+  assert.strictEqual(manyEllipsesResult.failed, 0);
+  assert.strictEqual(manyEllipsesNode.characters, manyEllipsesExpected);
 }
 
 async function runOpenTypeFeatureVerificationTests() {
@@ -3574,6 +3999,7 @@ runAdjacentPunctuationStylePreservationTests();
 
 runStyleRestorationTests()
   .then(runWholeTextStyleRestorationTests)
+  .then(runFigmaOperationTimeoutTests)
   .then(runFontLoadingCacheTests)
   .then(runWhitespaceOnlyTextNodeTests)
   .then(runUnchangedTextNodeTests)
@@ -3589,7 +4015,10 @@ runStyleRestorationTests()
   .then(runFailedStyleRollbackTests)
   .then(runPrioritizedRollbackFailureTests)
   .then(runLibraryInstanceSafetyContractTests)
+  .then(runSuccessfulWriteConnectionVerificationTests)
+  .then(runLinkedVariablePreflightTests)
   .then(runAllTypographyExamplesThroughPointWriterTests)
+  .then(runSinglePassDevelopmentPunctuationTests)
   .then(runIntegratedMixedStyleProcessingTests)
   .then(runPointStyleBoundaryProcessingTests)
   .then(runPointInsertionProcessingTests)
@@ -3597,6 +4026,7 @@ runStyleRestorationTests()
   .then(runPointStyleVerificationRollbackTests)
   .then(runMixedStyleVerificationRollbackTests)
   .then(runChangedDuringFontLoadingTests)
+  .then(runUndoCheckpointTimingTests)
   .then(runRemovedDuringFontLoadingTests)
   .then(runChangedStylesDuringPreparationTests)
   .then(runDevelopmentMarkerRollbackTests)

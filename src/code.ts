@@ -26,6 +26,7 @@ const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
 const ANALYTICS_MAX_QUEUED_EVENTS = 100;
 const FINAL_NOTIFICATION_CLOSE_FALLBACK_MS = 6000;
 const FINAL_NOTIFICATION_TIMEOUT_MS = 4000;
+const FIGMA_OPERATION_TIMEOUT_MS = 15000;
 const TEXT_LAYER_PREPARATION_MAX_ATTEMPTS = 3;
 const TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME = "TextLayerContentChangedError";
 const LETTERS = "A-Za-zА-Яа-яЁё";
@@ -440,10 +441,16 @@ interface TextLayerStateSnapshot {
   componentPropertyReferences: Record<string, string> | null;
   developmentMarkerIndexesPluginData: string;
   developmentMarkerTextPluginData: string;
+  parentInstanceLinks: ParentInstanceLink[];
   parentChainIds: string[];
   styles: StyleSegment[];
   text: string;
   textNode: TextNode;
+}
+
+interface ParentInstanceLink {
+  instanceId: string;
+  mainComponentId: string | null;
 }
 
 interface TypographyCleanResult {
@@ -632,7 +639,6 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
           processLocked: options.processLockedNodes,
         })
     );
-
     analyticsStage = "clean_text";
     result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
 
@@ -1279,6 +1285,45 @@ function delay(timeoutMs: number): Promise<void> {
   });
 }
 
+function withFigmaOperationTimeout<T>(operation: () => Promise<T>, operationName: string, timeoutMs: number = FIGMA_OPERATION_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      const error = new Error(`Figma operation timed out: ${operationName}`);
+      error.name = "FigmaOperationTimeoutError";
+      reject(error);
+    }, timeoutMs);
+
+    void Promise.resolve()
+      .then(operation)
+      .then(
+        (result) => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          clearTimeout(timeoutId);
+          resolve(result);
+        },
+        (error) => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          clearTimeout(timeoutId);
+          reject(error);
+        }
+      );
+  });
+}
+
 async function trackAnalyticsEvent(event: AnalyticsEventName, properties: AnalyticsProperties = {}, capturedAt: string = new Date().toISOString(), eventId: string = createAnalyticsEventId()): Promise<void> {
   try {
     const identity = await getAnalyticsIdentity();
@@ -1600,7 +1645,7 @@ function classifyAnalyticsError(error: unknown, stage: AnalyticsErrorStage): Ana
     return "layer_not_editable";
   }
 
-  if (/(removed|detached|deleted|invalid node|node.*not found|does not exist|text layer changed)/.test(message)) {
+  if (/(removed|detached|deleted|invalid node|node.*not found|text layer changed)/.test(message)) {
     return "layer_changed";
   }
 
@@ -1752,7 +1797,7 @@ async function collectTargetTextNodes(options: { processHidden: boolean; process
     let candidates: TextNode[] = [];
 
     if (selection.length === 0) {
-      await figma.currentPage.loadAsync();
+      await withFigmaOperationTimeout(() => figma.currentPage.loadAsync(), "current_page_load");
       candidates = figma.currentPage.findAllWithCriteria({ types: ["TEXT"] });
     } else {
       const seen = new Set<string>();
@@ -1917,8 +1962,6 @@ async function processTextNodes(
   writeStrategy: TextWriteStrategy = DEFAULT_TEXT_WRITE_STRATEGY
 ): Promise<TextProcessResult> {
   try {
-    figma.commitUndo();
-
     let processed = 0;
     let changed = 0;
     let failed = 0;
@@ -1938,11 +1981,20 @@ async function processTextNodes(
     let rollbackFailedLayersCount = 0;
     let slowestTextLayerMs = 0;
     let styleSegmentsCount = 0;
+    let undoCheckpointCreated = false;
     const modifiedLayerSnapshots: TextLayerStateSnapshot[] = [];
+    const parentInstanceLinkCache = new Map<string, Promise<ParentInstanceLink>>();
     const linkedStyleAvailabilityCache = new Map<string, Promise<void>>();
+    const linkedVariableAvailabilityCache = new Map<string, Promise<void>>();
     const ruleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
     const fontLoadCache = new Map<string, Promise<void>>();
     const loadedFontKeys = new Set<string>();
+    const ensureUndoCheckpoint = (): void => {
+      if (!undoCheckpointCreated) {
+        figma.commitUndo();
+        undoCheckpointCreated = true;
+      }
+    };
     const standalonePhoneCountryPrefixIds =
       textNodes.length < 2
         ? new Set<string>()
@@ -1952,7 +2004,6 @@ async function processTextNodes(
             },
             () => getStandalonePhoneCountryPrefixIds(textNodes)
           );
-
     for (const textNode of textNodes) {
       const textLayerStartedAt = getMonotonicTimeMs();
       let currentStage: AnalyticsErrorStage = "unknown";
@@ -1969,9 +2020,14 @@ async function processTextNodes(
         }
 
         const oldText = textNode.characters;
-        const ensureCurrentLayerSnapshot = (knownStyles?: StyleSegment[]): TextLayerStateSnapshot => {
+        const ensureCurrentLayerSnapshot = async (knownStyles?: StyleSegment[]): Promise<TextLayerStateSnapshot> => {
           if (currentLayerSnapshot === null) {
-            currentLayerSnapshot = createTextLayerStateSnapshot(textNode, oldText, knownStyles ?? captureTextStyles(textNode));
+            currentLayerSnapshot = await createTextLayerStateSnapshot(
+              textNode,
+              oldText,
+              knownStyles ?? captureTextStyles(textNode),
+              parentInstanceLinkCache
+            );
             modifiedLayerSnapshots.push(currentLayerSnapshot);
           }
 
@@ -1996,7 +2052,6 @@ async function processTextNodes(
           },
           () => getExistingDevelopmentMarkerIndexes(textNode)
         );
-
         currentStage = "clean_text";
         const cleanResult = measureDuration(
           (duration) => {
@@ -2062,29 +2117,32 @@ async function processTextNodes(
               continue;
             }
 
-            currentStage = "restore_styles";
-            await measureAsyncDuration(
-              (duration) => {
-                timings.readStyles += duration;
-              },
-              () => assertLinkedStylesAvailable(styles, linkedStyleAvailabilityCache)
-            );
+            if (writeStrategy === "full") {
+              currentStage = "restore_styles";
+              await measureAsyncDuration(
+                (duration) => {
+                  timings.readStyles += duration;
+                },
+                () => assertLinkedResourcesAvailable(styles, linkedStyleAvailabilityCache, linkedVariableAvailabilityCache)
+              );
 
-            assertTextNodeCharactersUnchanged(textNode, oldText);
-            currentStage = "read_styles";
-            const stylesAfterLinkedStyleLoading = measureDuration(
-              (duration) => {
-                timings.readStyles += duration;
-              },
-              () => captureTextStyles(textNode)
-            );
+              assertTextNodeCharactersUnchanged(textNode, oldText);
+              currentStage = "read_styles";
+              const stylesAfterLinkedStyleLoading = measureDuration(
+                (duration) => {
+                  timings.readStyles += duration;
+                },
+                () => captureTextStyles(textNode)
+              );
 
-            if (!areTextStyleSegmentsEqual(styles, stylesAfterLinkedStyleLoading)) {
+              if (!areTextStyleSegmentsEqual(styles, stylesAfterLinkedStyleLoading)) {
+                styles = stylesAfterLinkedStyleLoading;
+                continue;
+              }
+
               styles = stylesAfterLinkedStyleLoading;
-              continue;
             }
 
-            styles = stylesAfterLinkedStyleLoading;
             textLayerPreparationStable = true;
             break;
           }
@@ -2106,7 +2164,8 @@ async function processTextNodes(
 
             currentStage = "write_text";
             assertTextNodeCharactersUnchanged(textNode, oldText);
-            ensureCurrentLayerSnapshot(styles);
+            await ensureCurrentLayerSnapshot(styles);
+            ensureUndoCheckpoint();
             currentLayerWasMutated = true;
             measureDuration(
               (duration) => {
@@ -2156,7 +2215,8 @@ async function processTextNodes(
 
             currentStage = "write_text";
             assertTextNodeCharactersUnchanged(textNode, oldText);
-            ensureCurrentLayerSnapshot(styles);
+            await ensureCurrentLayerSnapshot(styles);
+            ensureUndoCheckpoint();
             currentLayerWasMutated = true;
             measureDuration(
               (duration) => {
@@ -2194,23 +2254,25 @@ async function processTextNodes(
           changed += 1;
         } else {
           currentStage = "development_markers";
-          measureDuration(
-            (duration) => {
-              timings.developmentMarkers += duration;
-            },
-            () => {
-              if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
-                ensureCurrentLayerSnapshot();
-                currentLayerWasMutated = true;
+          if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
+            await ensureCurrentLayerSnapshot();
+            ensureUndoCheckpoint();
+            currentLayerWasMutated = true;
+            measureDuration(
+              (duration) => {
+                timings.developmentMarkers += duration;
+              },
+              () => {
                 applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes);
               }
-            }
-          );
+            );
+          }
         }
 
         currentStage = "development_markers";
         if (needsDevelopmentMarkerPluginDataSync(textNode, options, cleanResult.developmentMarkerIndexes)) {
-          ensureCurrentLayerSnapshot();
+          await ensureCurrentLayerSnapshot();
+          ensureUndoCheckpoint();
           currentLayerWasMutated = true;
           measureDuration(
             (duration) => {
@@ -2219,6 +2281,11 @@ async function processTextNodes(
             () => syncDevelopmentMarkerPluginData(textNode, options, cleanResult.developmentMarkerIndexes)
           );
         }
+
+        if (currentLayerSnapshot !== null && !(await verifyPreservedTextLayerConnections(currentLayerSnapshot))) {
+          currentStage = "restore_styles";
+          throw new Error("Text layer component connection verification failed");
+        }
       } catch (error) {
         let caughtError = error;
         let rollbackFailed = false;
@@ -2226,7 +2293,7 @@ async function processTextNodes(
         if (currentLayerWasMutated) {
           const failureStageBeforeRollback = currentStage;
           rollbackAttemptedLayersCount += 1;
-          const rollbackSucceeded = measureDuration(
+          const rollbackSucceeded = await measureAsyncDuration(
             (duration) => {
               timings.restoreStyles += duration;
             },
@@ -2331,21 +2398,28 @@ async function processTextNodes(
   }
 }
 
-function restoreRunWithFigmaUndo(snapshots: TextLayerStateSnapshot[]): boolean {
+async function restoreRunWithFigmaUndo(snapshots: TextLayerStateSnapshot[]): Promise<boolean> {
   try {
     figma.triggerUndo();
-    return snapshots.every(verifyRestoredTextLayerSnapshot);
+    const verificationResults = await Promise.all(snapshots.map(verifyRestoredTextLayerSnapshot));
+    return verificationResults.every(Boolean);
   } catch (rollbackError) {
     console.error("[Чистовик] Failed to restore typograph run with Figma undo", rollbackError);
     return false;
   }
 }
 
-function createTextLayerStateSnapshot(textNode: TextNode, text: string, styles: StyleSegment[]): TextLayerStateSnapshot {
+async function createTextLayerStateSnapshot(
+  textNode: TextNode,
+  text: string,
+  styles: StyleSegment[],
+  parentInstanceLinkCache: Map<string, Promise<ParentInstanceLink>>
+): Promise<TextLayerStateSnapshot> {
   return {
     componentPropertyReferences: cloneComponentPropertyReferences(textNode),
     developmentMarkerIndexesPluginData: textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY),
     developmentMarkerTextPluginData: textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY),
+    parentInstanceLinks: await getTextNodeParentInstanceLinks(textNode, parentInstanceLinkCache),
     parentChainIds: getTextNodeParentChainIds(textNode),
     styles,
     text,
@@ -2368,6 +2442,63 @@ function getTextNodeParentChainIds(textNode: TextNode): string[] {
   }
 
   return ids;
+}
+
+async function getTextNodeParentInstanceLinks(
+  textNode: TextNode,
+  cache?: Map<string, Promise<ParentInstanceLink>>
+): Promise<ParentInstanceLink[]> {
+  const instances: InstanceNode[] = [];
+  let current: BaseNode | null | undefined = textNode.parent;
+
+  while (current != null) {
+    if (current.type === "INSTANCE") {
+      instances.push(current);
+    }
+
+    current = "parent" in current ? current.parent : null;
+  }
+
+  return Promise.all(instances.map((instance) => getParentInstanceLink(instance, cache)));
+}
+
+function getParentInstanceLink(
+  instance: InstanceNode,
+  cache?: Map<string, Promise<ParentInstanceLink>>
+): Promise<ParentInstanceLink> {
+  const cached = cache?.get(instance.id);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const promise = (async () => {
+    const mainComponent =
+      typeof instance.getMainComponentAsync === "function"
+        ? await withFigmaOperationTimeout(() => instance.getMainComponentAsync(), "main_component_load")
+        : instance.mainComponent;
+
+    return {
+      instanceId: instance.id,
+      mainComponentId: mainComponent?.id ?? null,
+    };
+  })();
+
+  cache?.set(instance.id, promise);
+  return promise;
+}
+
+async function verifyPreservedTextLayerConnections(snapshot: TextLayerStateSnapshot): Promise<boolean> {
+  try {
+    return (
+      areStyleValuesEqual(cloneComponentPropertyReferences(snapshot.textNode), snapshot.componentPropertyReferences) &&
+      areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds) &&
+      areStyleValuesEqual(await getTextNodeParentInstanceLinks(snapshot.textNode), snapshot.parentInstanceLinks)
+    );
+  } catch (verificationError) {
+    console.error(`[Чистовик] Failed to verify text layer component connections for text node ${snapshot.textNode.id}`, verificationError);
+    return false;
+  }
 }
 
 function verifyRestoredOriginalTextState(textNode: TextNode, oldText: string, originalStyles: StyleSegment[]): boolean {
@@ -2397,14 +2528,13 @@ function verifyRestoredOriginalTextState(textNode: TextNode, oldText: string, or
   }
 }
 
-function verifyRestoredTextLayerSnapshot(snapshot: TextLayerStateSnapshot): boolean {
+async function verifyRestoredTextLayerSnapshot(snapshot: TextLayerStateSnapshot): Promise<boolean> {
   try {
     return (
       verifyRestoredOriginalTextState(snapshot.textNode, snapshot.text, snapshot.styles) &&
       snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY) === snapshot.developmentMarkerIndexesPluginData &&
       snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY) === snapshot.developmentMarkerTextPluginData &&
-      areStyleValuesEqual(cloneComponentPropertyReferences(snapshot.textNode), snapshot.componentPropertyReferences) &&
-      areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds)
+      (await verifyPreservedTextLayerConnections(snapshot))
     );
   } catch (verificationError) {
     console.error(`[Чистовик] Failed to verify original text layer snapshot for text node ${snapshot.textNode.id}`, verificationError);
@@ -2476,12 +2606,24 @@ function getStandalonePhoneCountryPrefixIds(textNodes: TextNode[]): Set<string> 
       return result;
     }
 
+    const phoneTailsByContainer = new Map<string | null, TextNodeLayoutInfo[]>();
+
+    for (const tail of phoneTails) {
+      const containerTails = phoneTailsByContainer.get(tail.containerId) ?? [];
+      containerTails.push(tail);
+      phoneTailsByContainer.set(tail.containerId, containerTails);
+    }
+
+    for (const containerTails of phoneTailsByContainer.values()) {
+      containerTails.sort((first, second) => first.box.x - second.box.x);
+    }
+
     for (const prefix of layoutInfos) {
       if (!isStandaloneRussianPhoneCountryPrefix(prefix.text)) {
         continue;
       }
 
-      if (phoneTails.some((tail) => tail.containerId === prefix.containerId && isRightAdjacentSameLineText(prefix.box, tail.box))) {
+      if (hasRightAdjacentPhoneTail(prefix, phoneTailsByContainer.get(prefix.containerId) ?? [])) {
         result.add(prefix.id);
       }
     }
@@ -2491,6 +2633,31 @@ function getStandalonePhoneCountryPrefixIds(textNodes: TextNode[]): Set<string> 
     console.error("[Чистовик] Failed to find standalone phone country prefixes", error);
     throw error;
   }
+}
+
+function hasRightAdjacentPhoneTail(prefix: TextNodeLayoutInfo, sortedTails: TextNodeLayoutInfo[]): boolean {
+  const minimumTailX = prefix.box.x + prefix.box.width;
+  const maximumTailX = minimumTailX + 16;
+  let low = 0;
+  let high = sortedTails.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+
+    if (sortedTails[middle].box.x < minimumTailX) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  for (let index = low; index < sortedTails.length && sortedTails[index].box.x <= maximumTailX; index += 1) {
+    if (isRightAdjacentSameLineText(prefix.box, sortedTails[index].box)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function getTextNodeLayoutInfos(textNodes: TextNode[]): TextNodeLayoutInfo[] {
@@ -2580,7 +2747,7 @@ function getFontLoadPromise(font: FontName, fontLoadCache: Map<string, Promise<v
     return cachedPromise;
   }
 
-  const loadPromise = figma.loadFontAsync(font).then(
+  const loadPromise = withFigmaOperationTimeout(() => figma.loadFontAsync(font), "font_load").then(
     () => {
       loadedFontKeys.add(key);
     },
@@ -2632,9 +2799,14 @@ function captureTextStyles(textNode: TextNode): StyleSegment[] {
   }
 }
 
-async function assertLinkedStylesAvailable(styles: StyleSegment[], cache: Map<string, Promise<void>>): Promise<void> {
+async function assertLinkedResourcesAvailable(
+  styles: StyleSegment[],
+  styleCache: Map<string, Promise<void>>,
+  variableCache: Map<string, Promise<void>>
+): Promise<void> {
   try {
     const linkedStyles = new Map<string, StyleType>();
+    const linkedVariableIds = new Set<string>();
 
     for (const style of styles) {
       if (style.textStyleId !== "") {
@@ -2644,26 +2816,73 @@ async function assertLinkedStylesAvailable(styles: StyleSegment[], cache: Map<st
       if (style.fillStyleId !== "") {
         linkedStyles.set(style.fillStyleId, "PAINT");
       }
+
+      collectVariableAliasIds(style.boundVariables, linkedVariableIds);
     }
 
     for (const [styleId, expectedType] of linkedStyles) {
       const cacheKey = `${expectedType}:${styleId}`;
-      let availabilityPromise = cache.get(cacheKey);
+      let availabilityPromise = styleCache.get(cacheKey);
 
       if (availabilityPromise === undefined) {
-        availabilityPromise = figma.getStyleByIdAsync(styleId).then((style) => {
-          if (style === null || style.type !== expectedType) {
-            throw new Error("Linked style is unavailable");
+        availabilityPromise = withFigmaOperationTimeout(() => figma.getStyleByIdAsync(styleId), "linked_style_load").then(
+          (style) => {
+            if (style === null || style.type !== expectedType) {
+              throw new Error("Linked style is unavailable");
+            }
+          }
+        );
+        styleCache.set(cacheKey, availabilityPromise);
+      }
+
+      await availabilityPromise;
+    }
+
+    for (const variableId of linkedVariableIds) {
+      let availabilityPromise = variableCache.get(variableId);
+
+      if (availabilityPromise === undefined) {
+        availabilityPromise = withFigmaOperationTimeout(
+          () => figma.variables.getVariableByIdAsync(variableId),
+          "linked_variable_load"
+        ).then((variable) => {
+          if (variable === null) {
+            throw new Error("Variable does not exist");
           }
         });
-        cache.set(cacheKey, availabilityPromise);
+        variableCache.set(variableId, availabilityPromise);
       }
 
       await availabilityPromise;
     }
   } catch (error) {
-    console.error("[Чистовик] Linked style is unavailable before text replacement", error);
+    console.error("[Чистовик] Linked style or variable is unavailable before text replacement", error);
     throw error;
+  }
+}
+
+function collectVariableAliasIds(value: unknown, result: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectVariableAliasIds(item, result);
+    }
+
+    return;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (record.type === "VARIABLE_ALIAS" && typeof record.id === "string") {
+    result.add(record.id);
+    return;
+  }
+
+  for (const nestedValue of Object.values(record)) {
+    collectVariableAliasIds(nestedValue, result);
   }
 }
 
@@ -2686,16 +2905,20 @@ function getPreservedRangeStyleId(
   try {
     const rangeStyleId = getRangeStyleId(start, end);
 
-    if (typeof rangeStyleId === "string" && rangeStyleId !== "") {
-      return rangeStyleId;
+    if (typeof rangeStyleId === "string") {
+      if (rangeStyleId !== "") {
+        return rangeStyleId;
+      }
+
+      if (segmentStyleId !== "") {
+        return segmentStyleId;
+      }
+
+      return nodeStyleId ?? "";
     }
 
     if (segmentStyleId !== "") {
       return segmentStyleId;
-    }
-
-    if (typeof rangeStyleId === "string" && nodeStyleId !== null) {
-      return nodeStyleId;
     }
 
     const characterStyleId = getCommonCharacterStyleId(textNode, start, end, getRangeStyleId);
@@ -2704,7 +2927,7 @@ function getPreservedRangeStyleId(
       return characterStyleId;
     }
 
-    return typeof rangeStyleId === "string" ? rangeStyleId : segmentStyleId;
+    return segmentStyleId;
   } catch (error) {
     console.error("[Чистовик] Failed to preserve range style id", error);
     throw error;
@@ -3671,14 +3894,16 @@ function applyPointTextEditsToString(input: string, edits: PointTextEdit[]): str
       previousEnd = edit.end;
     }
 
-    let result = input;
+    const resultParts: string[] = [];
+    let sourceCursor = 0;
 
-    for (let index = edits.length - 1; index >= 0; index -= 1) {
-      const edit = edits[index];
-      result = `${result.slice(0, edit.start)}${edit.insertText}${result.slice(edit.end)}`;
+    for (const edit of edits) {
+      resultParts.push(input.slice(sourceCursor, edit.start), edit.insertText);
+      sourceCursor = edit.end;
     }
 
-    return result;
+    resultParts.push(input.slice(sourceCursor));
+    return resultParts.join("");
   } catch (error) {
     console.error("[Чистовик] Failed to apply point text edits to string", error);
     throw error;
@@ -3726,7 +3951,6 @@ function coalesceDensePointTextEdits(oldText: string, edits: PointTextEdit[], st
 
     if (
       style !== groupStyle ||
-      candidateSpanLength > 4096 ||
       candidateAverageDistance > 64 ||
       edit.start < group[group.length - 1].end
     ) {
@@ -3746,32 +3970,28 @@ function coalesceDensePointTextEdits(oldText: string, edits: PointTextEdit[], st
 function mergePointTextEditGroup(oldText: string, group: PointTextEdit[]): PointTextEdit {
   const start = group[0].start;
   const end = group[group.length - 1].end;
-  const localEdits = group.map((edit) => ({
-    start: edit.start - start,
-    end: edit.end - start,
-    insertText: edit.insertText,
-  }));
+  const insertParts: string[] = [];
+  let sourceCursor = start;
+
+  for (const edit of group) {
+    insertParts.push(oldText.slice(sourceCursor, edit.start), edit.insertText);
+    sourceCursor = edit.end;
+  }
+
+  insertParts.push(oldText.slice(sourceCursor, end));
 
   return {
     start,
     end,
-    insertText: applyPointTextEditsToString(oldText.slice(start, end), localEdits),
+    insertText: insertParts.join(""),
   };
 }
 
 function assertPointTextEditsSafeForCurrentStage(oldText: string, edits: PointTextEdit[], styles: StyleSegment[]): void {
   try {
-    let mutationsCount = 0;
-
     for (const edit of edits) {
-      mutationsCount += getPointTextEditMutationCount(oldText, edit);
-
       if (edit.insertText === "") {
         continue;
-      }
-
-      if (edit.insertText.length > 4096) {
-        throw new Error("Point text replacement is too large for the safe stage");
       }
 
       const sourcePosition = getPointTextEditStyleSourcePosition(oldText, edit);
@@ -3781,52 +4001,38 @@ function assertPointTextEditsSafeForCurrentStage(oldText: string, edits: PointTe
         throw new Error("Point text edit has no safe style source");
       }
     }
-
-    if (mutationsCount > 2048) {
-      throw new Error("Point text edit plan requires too many safe write operations");
-    }
   } catch (error) {
     console.error("[Чистовик] Point text edits are not safe for the current stage", error);
     throw error;
   }
 }
 
-function getPointTextEditMutationCount(oldText: string, edit: PointTextEdit): number {
-  if (edit.insertText === "") {
-    return 1;
-  }
-
-  if (edit.start === edit.end) {
-    const leadingWhitespaceLength = getPointTextEditLeadingWhitespaceLength(edit.insertText);
-    return edit.start > 0 && edit.start < oldText.length && leadingWhitespaceLength > 0 && leadingWhitespaceLength < edit.insertText.length
-      ? 2
-      : 1;
-  }
-
-  const sourcePosition = getPointTextEditStyleSourcePosition(oldText, edit);
-  return edit.start < sourcePosition ? 3 : 2;
-}
-
 function buildPointTextEditStyleMap(oldText: string, styles: StyleSegment[], edits: PointTextEdit[]): number[] {
   try {
-    let styleMap = new Array<number>(oldText.length).fill(0);
+    const originalStyleMap = new Array<number>(oldText.length).fill(0);
 
     for (let styleIndex = 0; styleIndex < styles.length; styleIndex += 1) {
       const style = styles[styleIndex];
 
       for (let characterIndex = style.start; characterIndex < style.end; characterIndex += 1) {
-        styleMap[characterIndex] = styleIndex;
+        originalStyleMap[characterIndex] = styleIndex;
       }
     }
 
-    for (let editIndex = edits.length - 1; editIndex >= 0; editIndex -= 1) {
-      const edit = edits[editIndex];
+    const result: number[] = [];
+    let sourceCursor = 0;
+
+    for (const edit of edits) {
+      for (let characterIndex = sourceCursor; characterIndex < edit.start; characterIndex += 1) {
+        result.push(originalStyleMap[characterIndex] ?? 0);
+      }
+
       let insertedStyles: number[];
 
       if (edit.start === edit.end) {
         const leadingWhitespaceLength = getPointTextEditLeadingWhitespaceLength(edit.insertText);
-        const leftStyleIndex = edit.start > 0 ? styleMap[edit.start - 1] : undefined;
-        const rightStyleIndex = edit.start < oldText.length ? styleMap[edit.start] : undefined;
+        const leftStyleIndex = edit.start > 0 ? originalStyleMap[edit.start - 1] : undefined;
+        const rightStyleIndex = edit.start < oldText.length ? originalStyleMap[edit.start] : undefined;
         const defaultStyleIndex = rightStyleIndex ?? leftStyleIndex ?? 0;
 
         insertedStyles = new Array<number>(edit.insertText.length).fill(defaultStyleIndex);
@@ -3836,14 +4042,22 @@ function buildPointTextEditStyleMap(oldText: string, styles: StyleSegment[], edi
         }
       } else {
         const sourcePosition = getPointTextEditStyleSourcePosition(oldText, edit);
-        const sourceStyleIndex = styleMap[sourcePosition] ?? 0;
+        const sourceStyleIndex = originalStyleMap[sourcePosition] ?? 0;
         insertedStyles = new Array<number>(edit.insertText.length).fill(sourceStyleIndex);
       }
 
-      styleMap.splice(edit.start, edit.end - edit.start, ...insertedStyles);
+      for (const styleIndex of insertedStyles) {
+        result.push(styleIndex);
+      }
+
+      sourceCursor = edit.end;
     }
 
-    return styleMap;
+    for (let characterIndex = sourceCursor; characterIndex < originalStyleMap.length; characterIndex += 1) {
+      result.push(originalStyleMap[characterIndex] ?? 0);
+    }
+
+    return result;
   } catch (error) {
     console.error("[Чистовик] Failed to build point text edit style map", error);
     throw error;
@@ -3856,7 +4070,6 @@ function applyPointTextEditsToTextNode(textNode: TextNode, edits: PointTextEdit[
 
     for (let editIndex = edits.length - 1; editIndex >= 0; editIndex -= 1) {
       const edit = edits[editIndex];
-
       if (edit.insertText === "") {
         textNode.deleteCharacters(edit.start, edit.end);
         continue;
@@ -4159,6 +4372,14 @@ function getPointEditBoundary(segments: PointEditTextSegment[], segmentIndex: nu
 
 function buildPointEditDiffSteps(oldParts: string[], newParts: string[]): PointEditDiffStep[] | null {
   try {
+    if (oldParts.length + newParts.length > 4096) {
+      const localSteps = buildLocalPointEditDiffSteps(oldParts, newParts);
+
+      if (localSteps !== null) {
+        return localSteps;
+      }
+    }
+
     const steps: PointEditDiffStep[] = [];
     appendPointEditDiffSteps(oldParts, newParts, 0, oldParts.length, 0, newParts.length, steps);
     return steps;
@@ -4166,6 +4387,118 @@ function buildPointEditDiffSteps(oldParts: string[], newParts: string[]): PointE
     console.error("[Чистовик] Failed to build point edit diff", error);
     return null;
   }
+}
+
+function buildLocalPointEditDiffSteps(oldParts: string[], newParts: string[]): PointEditDiffStep[] | null {
+  const steps: PointEditDiffStep[] = [];
+  let oldIndex = 0;
+  let newIndex = 0;
+
+  while (oldIndex < oldParts.length || newIndex < newParts.length) {
+    if (oldIndex < oldParts.length && newIndex < newParts.length && oldParts[oldIndex] === newParts[newIndex]) {
+      steps.push({ type: "equal", text: oldParts[oldIndex] });
+      oldIndex += 1;
+      newIndex += 1;
+      continue;
+    }
+
+    if (oldIndex === oldParts.length) {
+      for (; newIndex < newParts.length; newIndex += 1) {
+        steps.push({ type: "insert", text: newParts[newIndex] });
+      }
+
+      break;
+    }
+
+    if (newIndex === newParts.length) {
+      for (; oldIndex < oldParts.length; oldIndex += 1) {
+        steps.push({ type: "delete", text: oldParts[oldIndex] });
+      }
+
+      break;
+    }
+
+    const alignment = findLocalPointEditAlignment(oldParts, newParts, oldIndex, newIndex);
+
+    if (alignment === null) {
+      if (oldParts.length - oldIndex <= 32 && newParts.length - newIndex <= 32) {
+        for (; oldIndex < oldParts.length; oldIndex += 1) {
+          steps.push({ type: "delete", text: oldParts[oldIndex] });
+        }
+
+        for (; newIndex < newParts.length; newIndex += 1) {
+          steps.push({ type: "insert", text: newParts[newIndex] });
+        }
+
+        break;
+      }
+
+      return null;
+    }
+
+    for (; oldIndex < alignment.oldIndex; oldIndex += 1) {
+      steps.push({ type: "delete", text: oldParts[oldIndex] });
+    }
+
+    for (; newIndex < alignment.newIndex; newIndex += 1) {
+      steps.push({ type: "insert", text: newParts[newIndex] });
+    }
+  }
+
+  return steps;
+}
+
+function findLocalPointEditAlignment(
+  oldParts: string[],
+  newParts: string[],
+  oldStart: number,
+  newStart: number
+): { oldIndex: number; newIndex: number } | null {
+  const lookahead = 32;
+  const maxOldOffset = Math.min(lookahead, oldParts.length - oldStart - 1);
+  const maxNewOffset = Math.min(lookahead, newParts.length - newStart - 1);
+
+  // The former implementation inspected the complete 33 × 33 square and
+  // then selected the smallest total distance. Inspecting diagonals from the
+  // nearest to the farthest returns the exact same answer and can stop as soon
+  // as that answer is found. Within one diagonal the old-text offset stays in
+  // the same ascending order as in the former nested loops.
+  for (let score = 1; score <= maxOldOffset + maxNewOffset; score += 1) {
+    const firstOldOffset = Math.max(0, score - maxNewOffset);
+    const lastOldOffset = Math.min(maxOldOffset, score);
+
+    for (let oldOffset = firstOldOffset; oldOffset <= lastOldOffset; oldOffset += 1) {
+      const newOffset = score - oldOffset;
+      const oldCandidate = oldStart + oldOffset;
+      const newCandidate = newStart + newOffset;
+
+      if (
+        oldParts[oldCandidate] === newParts[newCandidate] &&
+        hasStablePointEditAnchor(oldParts, newParts, oldCandidate, newCandidate)
+      ) {
+        return { oldIndex: oldCandidate, newIndex: newCandidate };
+      }
+    }
+  }
+
+  return null;
+}
+
+function hasStablePointEditAnchor(oldParts: string[], newParts: string[], oldStart: number, newStart: number): boolean {
+  const availableLength = Math.min(oldParts.length - oldStart, newParts.length - newStart);
+  const requiredLength = Math.min(4, availableLength);
+
+  if (requiredLength === 0) {
+    return false;
+  }
+
+  for (let offset = 0; offset < requiredLength; offset += 1) {
+    if (oldParts[oldStart + offset] !== newParts[newStart + offset]) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function appendPointEditDiffSteps(
@@ -4838,22 +5171,19 @@ function cleanupQuotesAndPunctuation(input: string, ruleAnalyticsCollector: Typo
       value.replace(/!{2,}/g, "!").replace(/\?{2,}/g, "?")
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_question_exclamation_order", text, (value) =>
-      value.replace(/[!?]{2,}/g, (sequence) => {
-        const hasQuestionMark = sequence.includes("?");
-        const hasExclamationMark = sequence.includes("!");
-
-        if (hasQuestionMark && hasExclamationMark) {
-          return "?!";
-        }
-
-        return hasQuestionMark ? "?" : "!";
-      })
+      value.replace(/(^|[^!?])!\?(?![!?])/g, "$1?!")
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "quote_context_script", text, (value) => formatQuotes(value, ruleAnalyticsCollector));
     text = applyTypographyRule(ruleAnalyticsCollector, "quote_question_exclamation", text, (value) =>
       value
         .replace(/([»“"'])([?!])/g, "$2$1")
         .replace(/([?!](?:[»“"']+))\./g, "$1")
+    );
+    text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_repeated_marks", text, (value) =>
+      value.replace(/!{2,}/g, "!").replace(/\?{2,}/g, "?")
+    );
+    text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_question_exclamation_order", text, (value) =>
+      value.replace(/(^|[^!?])!\?(?![!?])/g, "$1?!")
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "quote_punctuation_outside", text, (value) => value.replace(/([.,;:])([»“"'])/g, "$2$1"));
     return applyTypographyRule(ruleAnalyticsCollector, "space_before_punctuation", text, (value) => value.replace(/[ \t\u00A0]+([.,;:?!…])/g, "$1"));
@@ -4866,6 +5196,8 @@ function cleanupQuotesAndPunctuation(input: string, ruleAnalyticsCollector: Typo
 function formatQuotes(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null): string {
   try {
     const stack: QuoteState[] = [];
+    const lineScripts = input.split("\n").map(detectTopLevelQuoteScriptForLine);
+    let lineIndex = 0;
     let result = "";
 
     for (let index = 0; index < input.length; index += 1) {
@@ -4873,13 +5205,18 @@ function formatQuotes(input: string, ruleAnalyticsCollector: TypographyRuleAnaly
 
       if (!isQuoteChar(char) || isApostropheInsideWord(input, index)) {
         result += char;
+
+        if (char === "\n") {
+          lineIndex += 1;
+        }
+
         continue;
       }
 
       const opening = getQuoteRole(input, index, stack) === "opening";
 
       if (opening) {
-        const script = stack.length === 0 ? detectTopLevelQuoteScript(input, index) : stack[stack.length - 1].script;
+        const script = stack.length === 0 ? lineScripts[lineIndex] ?? "latin" : stack[stack.length - 1].script;
         const level = stack.length;
         const quote = getOpeningQuote(script, level);
         stack.push({ script, level });
@@ -4890,7 +5227,7 @@ function formatQuotes(input: string, ruleAnalyticsCollector: TypographyRuleAnaly
         }
       } else {
         const state = stack.pop() ?? {
-          script: detectTopLevelQuoteScript(input, index),
+          script: lineScripts[lineIndex] ?? "latin",
           level: 0,
         };
         const quote = getClosingQuote(state.script, state.level);
@@ -4986,9 +5323,8 @@ function isQuoteClosingContext(input: string, index: number): boolean {
   }
 }
 
-function detectTopLevelQuoteScript(input: string, index: number): QuoteScript {
+function detectTopLevelQuoteScriptForLine(line: string): QuoteScript {
   try {
-    const line = getLineAtIndex(input, index);
     const textOutsideQuotes = getTextOutsideQuotesForScriptDetection(line);
     const outsideScript = detectDominantQuoteScript(textOutsideQuotes);
 
@@ -4999,19 +5335,6 @@ function detectTopLevelQuoteScript(input: string, index: number): QuoteScript {
     return detectDominantQuoteScript(line) ?? "latin";
   } catch (error) {
     console.error("[Чистовик] Failed to detect top-level quote script", error);
-    throw error;
-  }
-}
-
-function getLineAtIndex(input: string, index: number): string {
-  try {
-    const lineStart = input.lastIndexOf("\n", index - 1) + 1;
-    const nextLineBreak = input.indexOf("\n", index);
-    const lineEnd = nextLineBreak === -1 ? input.length : nextLineBreak;
-
-    return input.slice(lineStart, lineEnd);
-  } catch (error) {
-    console.error("[Чистовик] Failed to get line at index", error);
     throw error;
   }
 }
@@ -6137,7 +6460,18 @@ function isCodeTokenNeighbor(char: string): boolean {
 
 function groupLongNumber(value: string): string {
   try {
-    return value.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+    if (value.length <= 3) {
+      return value;
+    }
+
+    const firstGroupLength = value.length % 3 || 3;
+    const groups = [value.slice(0, firstGroupLength)];
+
+    for (let index = firstGroupLength; index < value.length; index += 3) {
+      groups.push(value.slice(index, index + 3));
+    }
+
+    return groups.join(NBSP);
   } catch (error) {
     console.error("[Чистовик] Failed to group long number", error);
     throw error;
@@ -6700,6 +7034,14 @@ function normalizeMathExpressions(input: string, ruleAnalyticsCollector: Typogra
       const expression = parseMathExpression(input, index, ruleAnalyticsCollector);
 
       if (expression === null) {
+        const plainNumber = parseMathNumber(input, index, true);
+
+        if (plainNumber !== null && hasMathNumberBoundaryBefore(input, index)) {
+          result += input.slice(index, plainNumber.end);
+          index = plainNumber.end;
+          continue;
+        }
+
         result += input[index];
         index += 1;
         continue;
