@@ -106,17 +106,19 @@
         </div>
 
         <div class="comparison-card">
-          <div class="segmented-control" role="group" aria-label="Показать текст до или после обработки">
-            <button class="segment active" type="button" data-comparison="before" aria-pressed="true">До</button>
-            <button class="segment" type="button" data-comparison="after" aria-pressed="false">После</button>
+          <div class="comparison-grid">
+            <figure class="comparison-panel">
+              <div class="comparison-visual comparison-before"><p class="comparison-label">До обработки</p><p class="comparison-text">“Отправим <mark>смс</mark>, когда заказ будет готов...”</p></div>
+              <figcaption>Обычные кавычки и три точки.</figcaption>
+            </figure>
+            <figure class="comparison-panel">
+              <div class="comparison-visual comparison-after"><p class="comparison-label">После обработки</p><p class="comparison-text"><span class="changed-mark">«</span>Отправим <mark>смс</mark>, когда заказ будет готов<span class="changed-mark">…»</span></p></div>
+              <figcaption>Кавычки и многоточие исправлены, слово осталось прежним.</figcaption>
+            </figure>
           </div>
-          <div class="comparison-stage" aria-live="polite">
-            <p class="comparison-label" id="comparison-label">До обработки</p>
-            <p class="comparison-text" id="comparison-text">“Отправим <mark>смс</mark>, когда заказ будет готов...”</p>
-            <div class="comparison-notes">
-              <span><i class="legend-dot legend-stays"></i><b>смс</b> останется таким, как написал автор</span>
-              <span><i class="legend-dot legend-changes"></i>Кавычки и многоточие исправятся</span>
-            </div>
+          <div class="comparison-notes">
+            <span><i class="legend-dot legend-stays"></i><b>смс</b> осталось таким, как написал автор</span>
+            <span><i class="legend-dot legend-changes"></i>Типографские знаки изменились</span>
           </div>
           <p class="fine-print">В отдельных технических обозначениях регистр входит в правило. Например, <code>100 вт</code> станет <code>100 Вт</code>. Такие случаи перечислены во вкладке «Правила».</p>
         </div>
@@ -160,23 +162,43 @@
         </div>
 
         <div class="scope-card">
-          <div class="segmented-control scope-control" role="group" aria-label="Выбрать область обработки">
-            <button class="segment active" type="button" data-scope="layer" aria-pressed="true">Слой</button>
-            <button class="segment" type="button" data-scope="frame" aria-pressed="false">Фрейм</button>
-            <button class="segment" type="button" data-scope="page" aria-pressed="false">Страница</button>
-          </div>
-          <div class="scope-visual" data-scope-visual="layer">
-            <div class="scope-page">
-              <div class="scope-frame">
-                <span class="scope-text scope-text-one">Заголовок</span>
-                <span class="scope-text scope-text-two selected">Текст предложения</span>
-                <span class="scope-text scope-text-three">Подпись</span>
+          <div class="scope-examples">
+            <figure class="scope-example">
+              <div class="scope-visual" data-scope-visual="layer" aria-hidden="true">
+                <div class="scope-page">
+                  <div class="scope-frame">
+                    <span class="scope-text scope-text-one">Заголовок</span>
+                    <span class="scope-text scope-text-two">Текст предложения</span>
+                    <span class="scope-text scope-text-three">Подпись</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          <div class="scope-explanation" aria-live="polite">
-            <strong id="scope-title">Выбран текстовый слой</strong>
-            <span id="scope-description">Обрабатывается только он.</span>
+              <figcaption class="scope-explanation"><strong>Выбран слой.</strong> Обрабатывается только он.</figcaption>
+            </figure>
+            <figure class="scope-example">
+              <div class="scope-visual" data-scope-visual="frame" aria-hidden="true">
+                <div class="scope-page">
+                  <div class="scope-frame">
+                    <span class="scope-text scope-text-one">Заголовок</span>
+                    <span class="scope-text scope-text-two">Текст предложения</span>
+                    <span class="scope-text scope-text-three">Подпись</span>
+                  </div>
+                </div>
+              </div>
+              <figcaption class="scope-explanation"><strong>Выбран фрейм.</strong> Обрабатываются тексты внутри.</figcaption>
+            </figure>
+            <figure class="scope-example">
+              <div class="scope-visual" data-scope-visual="page" aria-hidden="true">
+                <div class="scope-page">
+                  <div class="scope-frame">
+                    <span class="scope-text scope-text-one">Заголовок</span>
+                    <span class="scope-text scope-text-two">Текст предложения</span>
+                    <span class="scope-text scope-text-three">Подпись</span>
+                  </div>
+                </div>
+              </div>
+              <figcaption class="scope-explanation"><strong>Ничего не выбрано.</strong> Обрабатывается текущая страница.</figcaption>
+            </figure>
           </div>
           <p class="fine-print">Если ничего не выбрано, Чистовик работает только с текущей страницей, а не со всем файлом. Скрытые и заблокированные слои по умолчанию пропускаются.</p>
         </div>
@@ -347,16 +369,30 @@
 
       <section class="section final-section" id="author">
         <div class="final-card">
-          <div>
-            <p class="eyebrow">Финальный штрих перед разработкой</p>
-            <h2>Меньше повторяющейся чистки. Больше времени на сам текст.</h2>
-            <p>Чистовик сделала Аня Акулова, редактор в финтехе. Проект готовится к закрытому тестированию, а за развитием можно следить уже сейчас.</p>
+          <div class="author-copy">
+            <p class="eyebrow">Автор Чистовика</p>
+            <h2><span>Я — Аня Акулова.</span> Редактор, который делает инструменты для редакторов.</h2>
+            <p>Работаю UX-редактором в финтехе, создаю собственные цифровые продукты и рассказываю, как пройти путь от рабочей проблемы до полезного инструмента.</p>
+            <p>Чистовик вырос из моей ежедневной практики: я хотела меньше времени тратить на повторяющиеся исправления и больше — на смысл, понятность и хороший пользовательский опыт.</p>
+            <div class="author-tags" aria-label="Профессиональные направления Ани Акуловой">
+              <span>UX-редактура</span>
+              <span>Финтех</span>
+              <span>Собственные продукты</span>
+            </div>
             <div class="hero-actions">
-              <a class="button button-light" href="https://www.figma.com/community/plugin/1638816840468168578/internal-beta?fuid=1222813849743128503" target="_blank" rel="noreferrer">Попробовать Чистовик в Figma <span aria-hidden="true">↗</span></a>
-              <a class="text-link light-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Телеграм-канал <span aria-hidden="true">↗</span></a>
+              <a class="button button-light" href="https://annaakulova.ru/" target="_blank" rel="noreferrer">Познакомиться со мной <span aria-hidden="true">↗</span></a>
+              <a class="text-link light-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Читать телеграм-канал <span aria-hidden="true">↗</span></a>
             </div>
           </div>
-          <img class="final-icon" src="./plugin-icon.svg" width="180" height="180" alt="Значок Чистовика: коралловая звёздочка на зелёном фоне">
+          <div class="author-portrait" aria-label="Аня Акулова, автор Чистовика">
+            <span class="author-star" aria-hidden="true">✱</span>
+            <div class="author-project">
+              <img src="./plugin-icon.svg" width="54" height="54" alt="">
+              <span>Мой проект</span>
+              <strong>Чистовик</strong>
+            </div>
+            <div class="author-name"><strong>Аня<br>Акулова</strong><span>UX-редактор и создатель цифровых продуктов</span></div>
+          </div>
         </div>
       </section>
     </main>
