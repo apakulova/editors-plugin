@@ -16,8 +16,8 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
 const ANALYTICS_SCHEMA_VERSION = 13;
-const ANALYTICS_PLUGIN_RELEASE = "2026-08-06";
-const PERFORMANCE_MEASUREMENT_VERSION = 6;
+const ANALYTICS_PLUGIN_RELEASE = "2026-08-07";
+const PERFORMANCE_MEASUREMENT_VERSION = 7;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
 const DEFAULT_TEXT_WRITE_STRATEGY = "point";
 const RULE_ANALYTICS_VERSION = 2;
@@ -28,10 +28,14 @@ const ANALYTICS_MAX_QUEUED_EVENTS = 100;
 const FINAL_NOTIFICATION_CLOSE_FALLBACK_MS = 6000;
 const FINAL_NOTIFICATION_TIMEOUT_MS = 4000;
 const FIGMA_OPERATION_TIMEOUT_MS = 15000;
+const FONT_LOADING_RUN_TIMEOUT_MS = 15000;
+const TEXT_LAYER_ROLLBACK_TIMEOUT_MS = 15000;
+const PROBLEM_LAYER_TEXT_PREVIEW_MAX_LENGTH = 320;
 const TEXT_LAYER_PREPARATION_MAX_ATTEMPTS = 3;
 const TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME = "TextLayerContentChangedError";
 const LETTERS = "A-Za-zА-Яа-яЁё";
 let unicodeMarkPattern;
+let problemLayerSelectionRequestId = 0;
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
 const STYLE_FIELDS = [
@@ -388,7 +392,6 @@ function createTextProcessErrorReport(result, source) {
     };
 }
 function showErrorReport(report) {
-    var _a;
     try {
         if (report.source === "quick_run") {
             showPluginUI();
@@ -397,12 +400,6 @@ function showErrorReport(report) {
             report,
             type: "show-error-report",
         });
-        const firstLayer = report.kind === "critical_failure"
-            ? (_a = report.layers.find((layer) => layer.kind === "critical_integrity")) !== null && _a !== void 0 ? _a : report.layers[0]
-            : report.layers[0];
-        if (firstLayer !== undefined) {
-            void selectProblemTextLayer(firstLayer.nodeId);
-        }
     }
     catch (error) {
         console.error("[Чистовик] Failed to show error report", error);
@@ -410,17 +407,39 @@ function showErrorReport(report) {
     }
 }
 async function selectProblemTextLayer(nodeId) {
+    const requestId = problemLayerSelectionRequestId + 1;
+    problemLayerSelectionRequestId = requestId;
     try {
-        const node = await figma.getNodeByIdAsync(nodeId);
-        if (node === null || node.type !== "TEXT" || node.removed) {
+        const node = await withFigmaOperationTimeout(() => figma.getNodeByIdAsync(nodeId), "problem_layer_lookup");
+        if (requestId !== problemLayerSelectionRequestId || node === null || node.type !== "TEXT" || node.removed) {
             return;
         }
-        figma.currentPage.selection = [node];
+        const page = getNodePage(node);
+        if (page === null) {
+            return;
+        }
+        if (page.id !== figma.currentPage.id) {
+            await withFigmaOperationTimeout(() => figma.setCurrentPageAsync(page), "problem_layer_page_switch");
+        }
+        if (requestId !== problemLayerSelectionRequestId || node.removed || figma.currentPage.id !== page.id) {
+            return;
+        }
+        page.selection = [node];
         figma.viewport.scrollAndZoomIntoView([node]);
     }
     catch (error) {
         console.error(`[Чистовик] Failed to select problem text layer ${nodeId}`, error);
     }
+}
+function getNodePage(node) {
+    let current = node;
+    while (current != null) {
+        if (current.type === "PAGE") {
+            return current;
+        }
+        current = "parent" in current ? current.parent : null;
+    }
+    return null;
 }
 async function closeQuickPluginAfterAnalyticsGrace() {
     try {
@@ -859,6 +878,27 @@ function withFigmaOperationTimeout(operation, operationName, timeoutMs = FIGMA_O
             reject(error);
         });
     });
+}
+function withFigmaOperationDeadline(operation, operationName, deadlineAt) {
+    const remainingMs = Math.floor(deadlineAt - Date.now());
+    if (remainingMs <= 0) {
+        const error = new Error(`Figma operation timed out: ${operationName}`);
+        error.name = "FigmaOperationTimeoutError";
+        return Promise.reject(error);
+    }
+    return withFigmaOperationTimeout(operation, operationName, remainingMs);
+}
+function assertOperationDeadline(deadlineAt, operationName) {
+    if (deadlineAt !== undefined && Date.now() >= deadlineAt) {
+        const error = new Error(`Figma operation timed out: ${operationName}`);
+        error.name = "FigmaOperationTimeoutError";
+        throw error;
+    }
+}
+function withBoundedFigmaOperation(operation, operationName, deadlineAt) {
+    return deadlineAt === undefined
+        ? withFigmaOperationTimeout(operation, operationName)
+        : withFigmaOperationDeadline(operation, operationName, deadlineAt);
 }
 async function trackAnalyticsEvent(event, properties = {}, capturedAt = new Date().toISOString(), eventId = createAnalyticsEventId()) {
     try {
@@ -1418,6 +1458,9 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         const ruleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
         const fontLoadCache = new Map();
         const loadedFontKeys = new Set();
+        const fontLoadingBudget = {
+            remainingMs: FONT_LOADING_RUN_TIMEOUT_MS,
+        };
         const ensureUndoCheckpoint = () => {
             if (!undoCheckpointCreated) {
                 figma.commitUndo();
@@ -1440,6 +1483,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             let currentLayerCountedAsChanged = false;
             let currentLayerRecordedTextChange = false;
             let currentLayerSnapshot = null;
+            let currentLayerMutationJournal = null;
             try {
                 if (isTextNodeRemoved(textNode)) {
                     console.warn("[Чистовик] Skipped removed text node");
@@ -1497,7 +1541,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         currentStage = "load_fonts";
                         await measureAsyncDuration((duration) => {
                             timings.fonts += duration;
-                        }, () => loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys));
+                        }, () => loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys, fontLoadingBudget));
                         assertTextNodeCharactersUnchanged(textNode, oldText);
                         currentStage = "read_styles";
                         const stylesAfterFontLoading = measureDuration((duration) => {
@@ -1541,10 +1585,12 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         ensureCurrentLayerSnapshot(styles);
                         ensureUndoCheckpoint();
                         currentLayerWasMutated = true;
+                        currentLayerMutationJournal = createPointTextMutationJournal(oldText);
                         measureDuration((duration) => {
                             timings.writeText += duration;
                         }, () => {
                             textNode.characters = newText;
+                            currentLayerMutationJournal.expectedText = textNode.characters;
                         });
                         currentStage = "restore_styles";
                         const { styleMap, verifyUniformLinkedStyle, wholeTextStyle } = styleComparison;
@@ -1579,9 +1625,10 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         ensureCurrentLayerSnapshot(styles);
                         ensureUndoCheckpoint();
                         currentLayerWasMutated = true;
+                        currentLayerMutationJournal = createPointTextMutationJournal(oldText);
                         measureDuration((duration) => {
                             timings.writeText += duration;
-                        }, () => applyPointTextEditsToTextNode(textNode, pointEdits));
+                        }, () => applyPointTextEditsToTextNode(textNode, pointEdits, currentLayerMutationJournal));
                         if (textNode.characters !== newText) {
                             throw new Error("Point text write did not produce the expected text");
                         }
@@ -1640,7 +1687,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     rollbackAttemptedLayersCount += 1;
                     const rollbackSucceeded = await measureAsyncDuration((duration) => {
                         timings.restoreStyles += duration;
-                    }, () => restoreTextLayerSnapshot(snapshotToRestore));
+                    }, () => restoreTextLayerSnapshot(snapshotToRestore, currentLayerMutationJournal));
                     if (currentLayerCountedAsChanged) {
                         changed = Math.max(0, changed - 1);
                     }
@@ -1765,11 +1812,28 @@ function createProblemLayerReportItem(textNode, kind, preferredText) {
 }
 function getProblemLayerCurrentText(textNode, fallbackText) {
     try {
-        return textNode.characters;
+        return createProblemLayerTextPreview(textNode.characters);
     }
     catch (_a) {
-        return fallbackText;
+        return createProblemLayerTextPreview(fallbackText);
     }
+}
+function createProblemLayerTextPreview(text) {
+    if (text.length <= PROBLEM_LAYER_TEXT_PREVIEW_MAX_LENGTH) {
+        return text;
+    }
+    // The error window shows only a short preview. Segmenting a million-character
+    // layer in full would waste memory even though the rest is never sent to UI.
+    const previewSource = text.slice(0, PROBLEM_LAYER_TEXT_PREVIEW_MAX_LENGTH + 64);
+    const segments = segmentTextForPointEdits(previewSource);
+    let previewEnd = 0;
+    for (const segment of segments) {
+        if (segment.end > PROBLEM_LAYER_TEXT_PREVIEW_MAX_LENGTH) {
+            break;
+        }
+        previewEnd = segment.end;
+    }
+    return previewEnd > 0 ? `${previewSource.slice(0, previewEnd)}…` : "…";
 }
 function getProblemLayerPath(textNode) {
     try {
@@ -1787,23 +1851,49 @@ function getProblemLayerPath(textNode) {
         return "";
     }
 }
-async function restoreTextLayerSnapshot(snapshot) {
+async function restoreTextLayerSnapshot(snapshot, mutationJournal = null, rollbackTimeoutMs = TEXT_LAYER_ROLLBACK_TIMEOUT_MS) {
     try {
-        snapshot.textNode.characters = snapshot.text;
-        snapshot.textNode.setPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, snapshot.developmentMarkerIndexesPluginData);
-        snapshot.textNode.setPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, snapshot.developmentMarkerTextPluginData);
+        const rollbackDeadlineAt = Date.now() + rollbackTimeoutMs;
+        if (verifyRestoredTextLayerSnapshot(snapshot)) {
+            return true;
+        }
+        if (snapshot.textNode.characters !== snapshot.text) {
+            if (mutationJournal === null ||
+                !mutationJournal.canInvert ||
+                snapshot.textNode.characters !== mutationJournal.expectedText) {
+                return false;
+            }
+            if (mutationJournal.inverseOperations.length > 0) {
+                applyInversePointTextMutations(snapshot.textNode, mutationJournal);
+            }
+            else {
+                const rollbackPlan = createPointTextEditPlan(snapshot.textNode.characters, snapshot.text);
+                if (!rollbackPlan.matches) {
+                    return false;
+                }
+                applyPointTextEditsToTextNode(snapshot.textNode, rollbackPlan.edits);
+            }
+            if (snapshot.textNode.characters !== snapshot.text) {
+                return false;
+            }
+        }
+        setPluginDataIfChanged(snapshot.textNode, DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, snapshot.developmentMarkerIndexesPluginData);
+        setPluginDataIfChanged(snapshot.textNode, DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, snapshot.developmentMarkerTextPluginData);
         for (const markerFill of snapshot.developmentMarkerFills) {
-            snapshot.textNode.setRangeFills(markerFill.index, markerFill.index + 1, markerFill.fills);
+            const currentFills = snapshot.textNode.getRangeFills(markerFill.index, markerFill.index + 1);
+            if (currentFills === figma.mixed || !areStyleValuesEqual(Array.from(currentFills), Array.from(markerFill.fills))) {
+                snapshot.textNode.setRangeFills(markerFill.index, markerFill.index + 1, markerFill.fills);
+            }
         }
         if (verifyRestoredTextLayerSnapshot(snapshot)) {
             return true;
         }
         const wholeTextStyle = getWholeTextStyle(snapshot.styles, snapshot.text);
         if (wholeTextStyle !== null) {
-            await restoreWholeTextStyle(snapshot.textNode, wholeTextStyle);
+            await restoreWholeTextStyle(snapshot.textNode, wholeTextStyle, true, rollbackDeadlineAt);
         }
         else {
-            await restoreTextStyles(snapshot.textNode, buildStyleMap(snapshot.text, snapshot.text, snapshot.styles), snapshot.styles);
+            await restoreTextStyles(snapshot.textNode, buildStyleMap(snapshot.text, snapshot.text, snapshot.styles), snapshot.styles, true, rollbackDeadlineAt);
         }
         return verifyRestoredTextLayerSnapshot(snapshot);
     }
@@ -1826,13 +1916,13 @@ function createTextLayerStateSnapshot(textNode, text, styles) {
 }
 function captureDevelopmentMarkerFills(textNode, text) {
     const result = [];
-    let index = text.indexOf(DEVELOPMENT_NBSP_MARKER);
-    while (index !== -1) {
-        const fills = textNode.getRangeFills(index, index + 1);
-        if (fills !== figma.mixed) {
-            result.push({ fills: Array.from(fills), index });
+    const fillSegments = textNode.getStyledTextSegments(["fills"]);
+    for (const segment of fillSegments) {
+        let index = text.indexOf(DEVELOPMENT_NBSP_MARKER, segment.start);
+        while (index !== -1 && index < segment.end) {
+            result.push({ fills: Array.from(segment.fills), index });
+            index = text.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
         }
-        index = text.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
     }
     return result;
 }
@@ -1947,7 +2037,7 @@ function isTextNodeRemoved(textNode) {
     }
 }
 function getStandalonePhoneCountryPrefixIds(textNodes) {
-    var _a, _b;
+    var _a;
     try {
         const result = new Set();
         const layoutInfos = getTextNodeLayoutInfos(textNodes);
@@ -1957,18 +2047,20 @@ function getStandalonePhoneCountryPrefixIds(textNodes) {
         }
         const phoneTailsByContainer = new Map();
         for (const tail of phoneTails) {
-            const containerTails = (_a = phoneTailsByContainer.get(tail.containerId)) !== null && _a !== void 0 ? _a : [];
-            containerTails.push(tail);
+            const containerTails = (_a = phoneTailsByContainer.get(tail.containerId)) !== null && _a !== void 0 ? _a : { byCenterY: [], byX: [] };
+            containerTails.byCenterY.push(tail);
+            containerTails.byX.push(tail);
             phoneTailsByContainer.set(tail.containerId, containerTails);
         }
         for (const containerTails of phoneTailsByContainer.values()) {
-            containerTails.sort((first, second) => first.box.x - second.box.x);
+            containerTails.byX.sort((first, second) => first.box.x - second.box.x);
+            containerTails.byCenterY.sort((first, second) => getRectCenterY(first.box) - getRectCenterY(second.box));
         }
         for (const prefix of layoutInfos) {
             if (!isStandaloneRussianPhoneCountryPrefix(prefix.text)) {
                 continue;
             }
-            if (hasRightAdjacentPhoneTail(prefix, (_b = phoneTailsByContainer.get(prefix.containerId)) !== null && _b !== void 0 ? _b : [])) {
+            if (hasRightAdjacentPhoneTail(prefix, phoneTailsByContainer.get(prefix.containerId))) {
                 result.add(prefix.id);
             }
         }
@@ -1979,26 +2071,68 @@ function getStandalonePhoneCountryPrefixIds(textNodes) {
         throw error;
     }
 }
-function hasRightAdjacentPhoneTail(prefix, sortedTails) {
+function hasRightAdjacentPhoneTail(prefix, tailIndex) {
+    if (tailIndex === undefined) {
+        return false;
+    }
     const minimumTailX = prefix.box.x + prefix.box.width;
     const maximumTailX = minimumTailX + 16;
+    const prefixCenterY = getRectCenterY(prefix.box);
+    const maximumCenterYDistance = Math.max(4, prefix.box.height / 2);
+    const minimumCenterY = prefixCenterY - maximumCenterYDistance;
+    const maximumCenterY = prefixCenterY + maximumCenterYDistance;
+    const xStart = findLayoutLowerBound(tailIndex.byX, minimumTailX, (tail) => tail.box.x);
+    const xEnd = findLayoutUpperBound(tailIndex.byX, maximumTailX, (tail) => tail.box.x);
+    const yStart = findLayoutLowerBound(tailIndex.byCenterY, minimumCenterY, (tail) => getRectCenterY(tail.box));
+    const yEnd = findLayoutUpperBound(tailIndex.byCenterY, maximumCenterY, (tail) => getRectCenterY(tail.box));
+    const xCandidatesCount = xEnd - xStart;
+    const yCandidatesCount = yEnd - yStart;
+    if (xCandidatesCount <= yCandidatesCount) {
+        for (let index = xStart; index < xEnd; index += 1) {
+            if (isRightAdjacentSameLineText(prefix.box, tailIndex.byX[index].box)) {
+                return true;
+            }
+        }
+    }
+    else {
+        for (let index = yStart; index < yEnd; index += 1) {
+            if (isRightAdjacentSameLineText(prefix.box, tailIndex.byCenterY[index].box)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+function findLayoutLowerBound(items, minimumValue, getValue) {
     let low = 0;
-    let high = sortedTails.length;
+    let high = items.length;
     while (low < high) {
         const middle = Math.floor((low + high) / 2);
-        if (sortedTails[middle].box.x < minimumTailX) {
+        if (getValue(items[middle]) < minimumValue) {
             low = middle + 1;
         }
         else {
             high = middle;
         }
     }
-    for (let index = low; index < sortedTails.length && sortedTails[index].box.x <= maximumTailX; index += 1) {
-        if (isRightAdjacentSameLineText(prefix.box, sortedTails[index].box)) {
-            return true;
+    return low;
+}
+function findLayoutUpperBound(items, maximumValue, getValue) {
+    let low = 0;
+    let high = items.length;
+    while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (getValue(items[middle]) <= maximumValue) {
+            low = middle + 1;
+        }
+        else {
+            high = middle;
         }
     }
-    return false;
+    return low;
+}
+function getRectCenterY(rect) {
+    return rect.y + rect.height / 2;
 }
 function getTextNodeLayoutInfos(textNodes) {
     var _a, _b;
@@ -2049,7 +2183,8 @@ function isRightAdjacentSameLineText(left, right) {
         throw error;
     }
 }
-async function loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys = new Set()) {
+async function loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys = new Set(), loadingBudget) {
+    var _a;
     try {
         const fonts = new Map();
         if (textNode.characters.length === 0) {
@@ -2058,25 +2193,55 @@ async function loadFontsForTextNode(textNode, fontLoadCache, loadedFontKeys = ne
         for (const font of textNode.getRangeAllFontNames(0, textNode.characters.length)) {
             fonts.set(`${font.family}\n${font.style}`, font);
         }
-        await Promise.all(Array.from(fonts.values(), (font) => getFontLoadPromise(font, fontLoadCache, loadedFontKeys)));
+        const cachedPromises = [];
+        const newFonts = [];
+        for (const [key, font] of fonts) {
+            const cachedPromise = fontLoadCache.get(key);
+            if (cachedPromise === undefined) {
+                newFonts.push(font);
+            }
+            else {
+                cachedPromises.push(cachedPromise);
+            }
+        }
+        // Cached failures must stop the layer before new requests are started.
+        // Cached successes return immediately and do not spend the waiting budget again.
+        await Promise.all(cachedPromises);
+        if (newFonts.length === 0) {
+            return;
+        }
+        const waitStartedAt = getMonotonicTimeMs();
+        const deadlineAt = loadingBudget === undefined
+            ? undefined
+            : Date.now() + Math.max(0, loadingBudget.remainingMs);
+        let firstError = null;
+        try {
+            const results = await Promise.all(newFonts.map((font) => getFontLoadPromise(font, fontLoadCache, loadedFontKeys, deadlineAt).then(() => null, (error) => error)));
+            firstError = (_a = results.find((result) => result !== null)) !== null && _a !== void 0 ? _a : null;
+        }
+        finally {
+            if (loadingBudget !== undefined) {
+                loadingBudget.remainingMs = Math.max(0, loadingBudget.remainingMs - Math.max(0, getMonotonicTimeMs() - waitStartedAt));
+            }
+        }
+        if (firstError !== null) {
+            throw firstError;
+        }
     }
     catch (error) {
         console.error(`[Чистовик] Failed to load fonts for text node ${textNode.id}`, error);
         throw error;
     }
 }
-function getFontLoadPromise(font, fontLoadCache, loadedFontKeys = new Set()) {
+function getFontLoadPromise(font, fontLoadCache, loadedFontKeys = new Set(), deadlineAt) {
     const key = `${font.family}\n${font.style}`;
     const cachedPromise = fontLoadCache.get(key);
     if (cachedPromise !== undefined) {
         return cachedPromise;
     }
-    const loadPromise = withFigmaOperationTimeout(() => figma.loadFontAsync(font), "font_load").then(() => {
+    const loadPromise = withBoundedFigmaOperation(() => figma.loadFontAsync(font), "font_load", deadlineAt).then(() => {
         loadedFontKeys.add(key);
     }, (error) => {
-        if (fontLoadCache.get(key) === loadPromise) {
-            fontLoadCache.delete(key);
-        }
         throw error;
     });
     fontLoadCache.set(key, loadPromise);
@@ -2250,15 +2415,15 @@ function hasBoundStyleVariables(style) {
         return true;
     }
 }
-async function restoreWholeTextStyle(textNode, style, skipUnchangedLinkedStyleIds = false) {
+async function restoreWholeTextStyle(textNode, style, skipUnchangedLinkedStyleIds = false, deadlineAt) {
     try {
         const rangeEnd = textNode.characters.length;
         if (!skipUnchangedLinkedStyleIds || textNode.getRangeTextStyleId(0, rangeEnd) !== style.textStyleId) {
-            await textNode.setTextStyleIdAsync(style.textStyleId);
+            await withBoundedFigmaOperation(() => textNode.setTextStyleIdAsync(style.textStyleId), "restore_whole_text_style", deadlineAt);
         }
         if (style.fillStyleId !== "" &&
             (!skipUnchangedLinkedStyleIds || textNode.getRangeFillStyleId(0, rangeEnd) !== style.fillStyleId)) {
-            await textNode.setFillStyleIdAsync(style.fillStyleId);
+            await withBoundedFigmaOperation(() => textNode.setFillStyleIdAsync(style.fillStyleId), "restore_whole_fill_style", deadlineAt);
         }
         if (hasTextDecoration(style)) {
             restoreTextDecoration(textNode, 0, textNode.characters.length, style);
@@ -2492,7 +2657,7 @@ function buildGreedyOldIndexMap(oldText, newText) {
         throw error;
     }
 }
-async function restoreTextStyles(textNode, styleMap, styles, skipUnchangedLinkedStyleIds = false) {
+async function restoreTextStyles(textNode, styleMap, styles, skipUnchangedLinkedStyleIds = false, deadlineAt) {
     var _a, _b;
     try {
         if (textNode.characters.length === 0 || styles.length === 0 || styleMap.length === 0) {
@@ -2506,7 +2671,7 @@ async function restoreTextStyles(textNode, styleMap, styles, skipUnchangedLinked
             if (nextStyleIndex === currentStyleIndex && index < styleMap.length) {
                 continue;
             }
-            await applyStyleSegment(textNode, start, index, styles[currentStyleIndex], variableCache, skipUnchangedLinkedStyleIds);
+            await applyStyleSegment(textNode, start, index, styles[currentStyleIndex], variableCache, skipUnchangedLinkedStyleIds, deadlineAt);
             start = index;
             currentStyleIndex = nextStyleIndex;
         }
@@ -2516,8 +2681,9 @@ async function restoreTextStyles(textNode, styleMap, styles, skipUnchangedLinked
         throw error;
     }
 }
-async function applyStyleSegment(textNode, start, end, style, variableCache, skipUnchangedLinkedStyleIds) {
+async function applyStyleSegment(textNode, start, end, style, variableCache, skipUnchangedLinkedStyleIds, deadlineAt) {
     try {
+        assertOperationDeadline(deadlineAt, "restore_style_segment");
         if (start >= end) {
             return;
         }
@@ -2530,8 +2696,8 @@ async function applyStyleSegment(textNode, start, end, style, variableCache, ski
         textNode.setRangeIndentation(start, end, style.indentation);
         textNode.setRangeParagraphIndent(start, end, style.paragraphIndent);
         textNode.setRangeParagraphSpacing(start, end, style.paragraphSpacing);
-        await restoreStyleIds(textNode, start, end, style, skipUnchangedLinkedStyleIds);
-        await restoreBoundVariables(textNode, start, end, style, variableCache);
+        await restoreStyleIds(textNode, start, end, style, skipUnchangedLinkedStyleIds, deadlineAt);
+        await restoreBoundVariables(textNode, start, end, style, variableCache, deadlineAt);
         restoreOverriddenStyleProperties(textNode, start, end, style);
     }
     catch (error) {
@@ -2568,15 +2734,15 @@ function restoreDetachedFillProperties(textNode, start, end, style) {
         throw error;
     }
 }
-async function restoreStyleIds(textNode, start, end, style, skipUnchangedLinkedStyleIds) {
+async function restoreStyleIds(textNode, start, end, style, skipUnchangedLinkedStyleIds, deadlineAt) {
     try {
         if (style.textStyleId !== "" &&
             (!skipUnchangedLinkedStyleIds || textNode.getRangeTextStyleId(start, end) !== style.textStyleId)) {
-            await textNode.setRangeTextStyleIdAsync(start, end, style.textStyleId);
+            await withBoundedFigmaOperation(() => textNode.setRangeTextStyleIdAsync(start, end, style.textStyleId), "restore_range_text_style", deadlineAt);
         }
         if (style.fillStyleId !== "" &&
             (!skipUnchangedLinkedStyleIds || textNode.getRangeFillStyleId(start, end) !== style.fillStyleId)) {
-            await textNode.setRangeFillStyleIdAsync(start, end, style.fillStyleId);
+            await withBoundedFigmaOperation(() => textNode.setRangeFillStyleIdAsync(start, end, style.fillStyleId), "restore_range_fill_style", deadlineAt);
         }
     }
     catch (error) {
@@ -2645,7 +2811,7 @@ function restoreHyperlink(textNode, start, end, style) {
         throw error;
     }
 }
-async function restoreBoundVariables(textNode, start, end, style, variableCache) {
+async function restoreBoundVariables(textNode, start, end, style, variableCache, deadlineAt) {
     try {
         if (style.boundVariables === undefined) {
             return;
@@ -2654,7 +2820,7 @@ async function restoreBoundVariables(textNode, start, end, style, variableCache)
         for (const [field, variableAlias] of entries) {
             let variablePromise = variableCache.get(variableAlias.id);
             if (variablePromise === undefined) {
-                variablePromise = figma.variables.getVariableByIdAsync(variableAlias.id);
+                variablePromise = withBoundedFigmaOperation(() => figma.variables.getVariableByIdAsync(variableAlias.id), "restore_bound_variable", deadlineAt);
                 variableCache.set(variableAlias.id, variablePromise);
             }
             const variable = await variablePromise;
@@ -2742,13 +2908,19 @@ function getExistingDevelopmentMarkerIndexes(textNode) {
     try {
         const indexes = new Set(getStoredDevelopmentMarkerIndexes(textNode));
         const text = textNode.characters;
-        let index = text.indexOf(DEVELOPMENT_NBSP_MARKER);
-        while (index !== -1) {
-            const fills = textNode.getRangeFills(index, index + 1);
-            if (fills !== figma.mixed && isDevelopmentMarkerFills(fills)) {
-                indexes.add(index);
+        if (!text.includes(DEVELOPMENT_NBSP_MARKER)) {
+            return Array.from(indexes).sort((first, second) => first - second);
+        }
+        const fillSegments = textNode.getStyledTextSegments(["fills"]);
+        for (const segment of fillSegments) {
+            if (!isDevelopmentMarkerFills(segment.fills)) {
+                continue;
             }
-            index = text.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
+            let index = text.indexOf(DEVELOPMENT_NBSP_MARKER, segment.start);
+            while (index !== -1 && index < segment.end) {
+                indexes.add(index);
+                index = text.indexOf(DEVELOPMENT_NBSP_MARKER, index + 1);
+            }
         }
         return Array.from(indexes).sort((first, second) => first - second);
     }
@@ -2994,7 +3166,6 @@ function applyPointTextEditsToString(input, edits) {
     }
 }
 function coalesceDensePointTextEdits(oldText, edits, styles) {
-    var _a;
     if (edits.length <= 256) {
         return edits;
     }
@@ -3011,7 +3182,7 @@ function coalesceDensePointTextEdits(oldText, edits, styles) {
     };
     for (const edit of edits) {
         const sourcePosition = edit.insertText === "" ? Math.min(edit.start, Math.max(0, oldText.length - 1)) : getPointTextEditStyleSourcePosition(oldText, edit);
-        const style = (_a = styles.find((candidate) => candidate.start <= sourcePosition && sourcePosition < candidate.end)) !== null && _a !== void 0 ? _a : null;
+        const style = findStyleSegmentAtPosition(styles, sourcePosition);
         if (style === null || edit.start < style.start || edit.end > style.end) {
             finishGroup();
             result.push(edit);
@@ -3022,12 +3193,11 @@ function coalesceDensePointTextEdits(oldText, edits, styles) {
             groupStyle = style;
             continue;
         }
-        const groupStart = group[0].start;
-        const candidateSpanLength = edit.end - groupStart;
-        const candidateAverageDistance = candidateSpanLength / (group.length + 1);
+        const previousEdit = group[group.length - 1];
+        const unchangedGapLength = edit.start - previousEdit.end;
         if (style !== groupStyle ||
-            candidateAverageDistance > 64 ||
-            edit.start < group[group.length - 1].end) {
+            unchangedGapLength > 64 ||
+            edit.start < previousEdit.end) {
             finishGroup();
             group = [edit];
             groupStyle = style;
@@ -3037,6 +3207,24 @@ function coalesceDensePointTextEdits(oldText, edits, styles) {
     }
     finishGroup();
     return result;
+}
+function findStyleSegmentAtPosition(styles, position) {
+    let low = 0;
+    let high = styles.length;
+    while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        const style = styles[middle];
+        if (position < style.start) {
+            high = middle;
+        }
+        else if (position >= style.end) {
+            low = middle + 1;
+        }
+        else {
+            return style;
+        }
+    }
+    return null;
 }
 function mergePointTextEditGroup(oldText, group) {
     const start = group[0].start;
@@ -3061,8 +3249,8 @@ function assertPointTextEditsSafeForCurrentStage(oldText, edits, styles) {
                 continue;
             }
             const sourcePosition = getPointTextEditStyleSourcePosition(oldText, edit);
-            const sourceStyle = styles.find((style) => style.start <= sourcePosition && sourcePosition < style.end);
-            if (sourceStyle === undefined) {
+            const sourceStyle = findStyleSegmentAtPosition(styles, sourcePosition);
+            if (sourceStyle === null) {
                 throw new Error("Point text edit has no safe style source");
             }
         }
@@ -3119,13 +3307,84 @@ function buildPointTextEditStyleMap(oldText, styles, edits) {
         throw error;
     }
 }
-function applyPointTextEditsToTextNode(textNode, edits) {
+function createPointTextMutationJournal(expectedText) {
+    return {
+        canInvert: true,
+        expectedText,
+        inverseOperations: [],
+    };
+}
+function recordPointMutationResult(textNode, journal, beforeText, expectedText, inverseOperation) {
+    const actualText = textNode.characters;
+    journal.expectedText = actualText;
+    if (actualText === expectedText) {
+        journal.inverseOperations.push(inverseOperation);
+    }
+    else if (actualText !== beforeText) {
+        journal.canInvert = false;
+    }
+}
+function insertPointTextWithJournal(textNode, start, text, useStyle, journal) {
+    const beforeText = textNode.characters;
+    const expectedText = `${beforeText.slice(0, start)}${text}${beforeText.slice(start)}`;
+    try {
+        textNode.insertCharacters(start, text, useStyle);
+    }
+    catch (error) {
+        recordPointMutationResult(textNode, journal, beforeText, expectedText, {
+            end: start + text.length,
+            start,
+            type: "delete",
+        });
+        throw error;
+    }
+    recordPointMutationResult(textNode, journal, beforeText, expectedText, {
+        end: start + text.length,
+        start,
+        type: "delete",
+    });
+}
+function deletePointTextWithJournal(textNode, start, end, journal) {
+    const beforeText = textNode.characters;
+    const deletedText = beforeText.slice(start, end);
+    const expectedText = `${beforeText.slice(0, start)}${beforeText.slice(end)}`;
+    const inverseOperation = {
+        start,
+        text: deletedText,
+        type: "insert",
+        useStyle: start < expectedText.length ? "AFTER" : "BEFORE",
+    };
+    try {
+        textNode.deleteCharacters(start, end);
+    }
+    catch (error) {
+        recordPointMutationResult(textNode, journal, beforeText, expectedText, inverseOperation);
+        throw error;
+    }
+    recordPointMutationResult(textNode, journal, beforeText, expectedText, inverseOperation);
+}
+function applyInversePointTextMutations(textNode, journal) {
+    var _a, _b, _c;
+    if (!journal.canInvert || textNode.characters !== journal.expectedText) {
+        throw new Error("Point text rollback cannot safely identify the plugin changes");
+    }
+    for (let operationIndex = journal.inverseOperations.length - 1; operationIndex >= 0; operationIndex -= 1) {
+        const operation = journal.inverseOperations[operationIndex];
+        if (operation.type === "delete") {
+            textNode.deleteCharacters(operation.start, (_a = operation.end) !== null && _a !== void 0 ? _a : operation.start);
+        }
+        else {
+            textNode.insertCharacters(operation.start, (_b = operation.text) !== null && _b !== void 0 ? _b : "", (_c = operation.useStyle) !== null && _c !== void 0 ? _c : "BEFORE");
+        }
+    }
+}
+function applyPointTextEditsToTextNode(textNode, edits, mutationJournal = createPointTextMutationJournal(textNode.characters)) {
     try {
         const originalText = textNode.characters;
         for (let editIndex = edits.length - 1; editIndex >= 0; editIndex -= 1) {
             const edit = edits[editIndex];
             if (edit.insertText === "") {
-                textNode.deleteCharacters(edit.start, edit.end);
+                deletePointTextWithJournal(textNode, edit.start, edit.end, mutationJournal);
                 continue;
             }
             if (edit.start === edit.end) {
@@ -3136,21 +3395,21 @@ function applyPointTextEditsToTextNode(textNode, edits) {
                     hasTextAfter &&
                     leadingWhitespaceLength > 0 &&
                     leadingWhitespaceLength < edit.insertText.length) {
-                    textNode.insertCharacters(edit.start, edit.insertText.slice(leadingWhitespaceLength), "AFTER");
-                    textNode.insertCharacters(edit.start, edit.insertText.slice(0, leadingWhitespaceLength), "BEFORE");
+                    insertPointTextWithJournal(textNode, edit.start, edit.insertText.slice(leadingWhitespaceLength), "AFTER", mutationJournal);
+                    insertPointTextWithJournal(textNode, edit.start, edit.insertText.slice(0, leadingWhitespaceLength), "BEFORE", mutationJournal);
                 }
                 else {
                     const whitespaceShouldUseLeftStyle = hasTextBefore && leadingWhitespaceLength === edit.insertText.length;
                     const useStyle = hasTextAfter && !whitespaceShouldUseLeftStyle ? "AFTER" : "BEFORE";
-                    textNode.insertCharacters(edit.start, edit.insertText, useStyle);
+                    insertPointTextWithJournal(textNode, edit.start, edit.insertText, useStyle, mutationJournal);
                 }
                 continue;
             }
             const sourcePosition = getPointTextEditStyleSourcePosition(originalText, edit);
-            textNode.insertCharacters(sourcePosition, edit.insertText, "AFTER");
-            textNode.deleteCharacters(sourcePosition + edit.insertText.length, edit.end + edit.insertText.length);
+            insertPointTextWithJournal(textNode, sourcePosition, edit.insertText, "AFTER", mutationJournal);
+            deletePointTextWithJournal(textNode, sourcePosition + edit.insertText.length, edit.end + edit.insertText.length, mutationJournal);
             if (edit.start < sourcePosition) {
-                textNode.deleteCharacters(edit.start, sourcePosition);
+                deletePointTextWithJournal(textNode, edit.start, sourcePosition, mutationJournal);
             }
         }
     }
@@ -3376,10 +3635,7 @@ function getPointEditBoundary(segments, segmentIndex, textLength) {
 function buildPointEditDiffSteps(oldParts, newParts) {
     try {
         if (oldParts.length + newParts.length > 4096) {
-            const localSteps = buildLocalPointEditDiffSteps(oldParts, newParts);
-            if (localSteps !== null) {
-                return localSteps;
-            }
+            return buildLocalPointEditDiffSteps(oldParts, newParts);
         }
         const steps = [];
         appendPointEditDiffSteps(oldParts, newParts, 0, oldParts.length, 0, newParts.length, steps);
