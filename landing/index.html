@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7f7f5">
+    <meta name="description" content="Чистовик — Figma-плагин, который приводит русскую типографику в порядок и бережно работает с существующим макетом.">
+    <title>Чистовик — типограф для Figma</title>
+    <link rel="icon" href="./plugin-icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Перейти к содержанию</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="#top" aria-label="Чистовик — в начало страницы">
+          <img src="./plugin-icon.svg" width="36" height="36" alt="">
+          <span>Чистовик</span>
+        </a>
+        <nav class="main-nav" aria-label="Основная навигация">
+          <a href="#principle">Как работает</a>
+          <a href="#layout">Бережно к макету</a>
+          <a href="#rules">Правила</a>
+          <a href="#author">Об авторе</a>
+        </nav>
+        <a class="button button-small" href="https://www.figma.com/community/plugin/1638816840468168578/internal-beta?fuid=1222813849743128503" target="_blank" rel="noreferrer">Попробовать в Figma</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero section" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-star">✱</span> Плагин для Figma</p>
+          <h1>Чистая типографика прямо в макете</h1>
+          <p class="hero-lead">Чистовик исправляет кавычки, тире, пробелы, числа и другие типографские мелочи. Можно обработать один текст, целый фрейм или текущую страницу.</p>
+          <p class="hero-note">Исправляет типографику, но не редактирует смысл и формулировки.</p>
+          <div class="hero-actions">
+            <a class="button" href="https://www.figma.com/community/plugin/1638816840468168578/internal-beta?fuid=1222813849743128503" target="_blank" rel="noreferrer">Попробовать Чистовик</a>
+            <a class="text-link" href="#demo">Посмотреть, как он работает ↓</a>
+          </div>
+        </div>
+
+        <figure class="figma-scene" aria-labelledby="hero-figure-caption">
+          <div class="figma-frame">
+            <div class="figma-topbar" aria-hidden="true">
+              <span class="figma-dot figma-dot-red"></span>
+              <span class="figma-dot figma-dot-yellow"></span>
+              <span class="figma-dot figma-dot-green"></span>
+              <span class="figma-file">Лендинг · Черновик</span>
+            </div>
+            <div class="figma-body">
+              <aside class="layers-panel" aria-hidden="true">
+                <span class="layers-title">Слои</span>
+                <span class="layer-row"><i></i> Обложка</span>
+                <span class="layer-row layer-row-active"><b>Т</b> Предложение</span>
+                <span class="layer-row"><i></i> Кнопка</span>
+              </aside>
+              <div class="canvas">
+                <div class="selected-text">
+                  <span class="selection-handle handle-one"></span>
+                  <span class="selection-handle handle-two"></span>
+                  <span class="selection-handle handle-three"></span>
+                  <span class="selection-handle handle-four"></span>
+                  <strong>«Предложение» — до 30 сентября…</strong>
+                  <span>Скидка 20% на первый заказ</span>
+                </div>
+
+                <div class="plugin-window" aria-hidden="true">
+                  <div class="plugin-titlebar">
+                    <img src="./plugin-icon.svg" width="18" height="18" alt="">
+                    <strong>Чистовик</strong>
+                    <span>×</span>
+                  </div>
+                  <div class="plugin-tabs">
+                    <span class="plugin-tab active">Типограф</span>
+                    <span class="plugin-tab">Правила</span>
+                    <span class="plugin-tab">О плагине</span>
+                  </div>
+                  <div class="plugin-content">
+                    <strong class="plugin-heading">Как обработать текст?</strong>
+                    <div class="mode-row mode-row-active">
+                      <span class="radio radio-active"></span>
+                      <span><b>Для красоты</b><small>Готовыми символами</small></span>
+                    </div>
+                    <div class="mode-row">
+                      <span class="radio"></span>
+                      <span><b>Для разработки</b><small>С <em>*</em> на месте пробелов</small></span>
+                    </div>
+                    <div class="plugin-button">Запустить типограф</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption id="hero-figure-caption">Чистовик работает с выбранным текстовым слоем прямо в Figma.</figcaption>
+        </figure>
+      </section>
+
+      <section class="section demo-section" id="demo">
+        <div class="section-heading centered-heading">
+          <p class="eyebrow">Один запуск вместо ручной чистки</p>
+          <h2>Меняет знаки, а не авторскую мысль</h2>
+          <p>Чистовик не проверяет орфографию, не подбирает формулировки и не решает за автора, как писать слова и названия.</p>
+        </div>
+
+        <div class="comparison-card">
+          <div class="segmented-control" role="group" aria-label="Показать текст до или после обработки">
+            <button class="segment active" type="button" data-comparison="before" aria-pressed="true">До</button>
+            <button class="segment" type="button" data-comparison="after" aria-pressed="false">После</button>
+          </div>
+          <div class="comparison-stage" aria-live="polite">
+            <p class="comparison-label" id="comparison-label">До обработки</p>
+            <p class="comparison-text" id="comparison-text">“Отправим <mark>смс</mark>, когда заказ будет готов...”</p>
+            <div class="comparison-notes">
+              <span><i class="legend-dot legend-stays"></i><b>смс</b> останется таким, как написал автор</span>
+              <span><i class="legend-dot legend-changes"></i>Кавычки и многоточие исправятся</span>
+            </div>
+          </div>
+          <p class="fine-print">В отдельных технических обозначениях регистр входит в правило. Например, <code>100 вт</code> станет <code>100 Вт</code>. Такие случаи перечислены во вкладке «Правила».</p>
+        </div>
+      </section>
+
+      <section class="section split-section" id="principle">
+        <div class="section-copy">
+          <p class="eyebrow">Без лишних исправлений</p>
+          <h2>Знает, что не нужно менять</h2>
+          <p>Не каждая черта — тире, а не каждая группа цифр — обычное число. Чистовик распознаёт форматы, для которых предусмотрена защита, и приводит в порядок текст вокруг них.</p>
+          <p>Версии, адреса, промокоды, окончания номеров карт и банковские счета остаются такими, какими были.</p>
+        </div>
+
+        <figure class="proof-card protected-card">
+          <div class="proof-surface">
+            <div class="proof-before">
+              <span>До</span>
+              <p>Версия <b>v2.0.1</b> - скидка 20 % по коду <b>SALE-2026</b>...</p>
+            </div>
+            <div class="proof-arrow" aria-hidden="true">↓</div>
+            <div class="proof-after">
+              <span>После</span>
+              <p>Версия <b>v2.0.1</b> — скидка 20% по коду <b>SALE-2026</b>…</p>
+            </div>
+            <div class="protected-pills" aria-label="Примеры защищённых форматов">
+              <span>mail@example.com <small>без изменений</small></span>
+              <span>192.168.0.1 <small>без изменений</small></span>
+              <span>••4444 <small>без изменений</small></span>
+              <span>40914810810010073985 <small>без изменений</small></span>
+            </div>
+          </div>
+          <figcaption>Окружающая типографика исправилась, защищённые значения сохранились.</figcaption>
+        </figure>
+      </section>
+
+      <section class="section scope-section" id="scope">
+        <div class="section-heading centered-heading">
+          <p class="eyebrow">Предсказуемая область работы</p>
+          <h2>Работает ровно там, где вы выбрали</h2>
+          <p>Область обработки зависит только от выделения в Figma.</p>
+        </div>
+
+        <div class="scope-card">
+          <div class="segmented-control scope-control" role="group" aria-label="Выбрать область обработки">
+            <button class="segment active" type="button" data-scope="layer" aria-pressed="true">Слой</button>
+            <button class="segment" type="button" data-scope="frame" aria-pressed="false">Фрейм</button>
+            <button class="segment" type="button" data-scope="page" aria-pressed="false">Страница</button>
+          </div>
+          <div class="scope-visual" data-scope-visual="layer">
+            <div class="scope-page">
+              <div class="scope-frame">
+                <span class="scope-text scope-text-one">Заголовок</span>
+                <span class="scope-text scope-text-two selected">Текст предложения</span>
+                <span class="scope-text scope-text-three">Подпись</span>
+              </div>
+            </div>
+          </div>
+          <div class="scope-explanation" aria-live="polite">
+            <strong id="scope-title">Выбран текстовый слой</strong>
+            <span id="scope-description">Обрабатывается только он.</span>
+          </div>
+          <p class="fine-print">Если ничего не выбрано, Чистовик работает только с текущей страницей, а не со всем файлом. Скрытые и заблокированные слои по умолчанию пропускаются.</p>
+        </div>
+      </section>
+
+      <section class="section split-section reverse-on-mobile" id="layout">
+        <figure class="proof-card layout-card">
+          <div class="layout-surface">
+            <div class="layout-toolbar" aria-hidden="true">
+              <span>Текст</span><span>Manrope</span><span>18</span><span>B</span><span class="toolbar-link">↗</span>
+            </div>
+            <div class="styled-layer">
+              <span class="selection-handle handle-one"></span>
+              <span class="selection-handle handle-two"></span>
+              <span class="selection-handle handle-three"></span>
+              <span class="selection-handle handle-four"></span>
+              <p><span class="teal-word">Скидка</span> <strong>2 000 ₽</strong> — до 30 сентября.</p>
+              <ul><li>Для новых клиентов</li></ul>
+              <a href="#layout" tabindex="-1">Условия акции</a>
+            </div>
+            <ul class="check-list" aria-label="Что проверяет Чистовик после обработки">
+              <li>Цвет и начертание</li>
+              <li>Ссылка и список</li>
+              <li>Переносы и отступы</li>
+              <li>Связь с компонентом</li>
+            </ul>
+          </div>
+          <figcaption>Один и тот же слой после точечных исправлений.</figcaption>
+        </figure>
+
+        <div class="section-copy">
+          <p class="eyebrow">Бережно к макету</p>
+          <h2>Тот же слой. Только чистая типографика</h2>
+          <p>Чистовик работает внутри существующего текстового слоя и не создаёт вместо него новый.</p>
+          <p>После исправлений плагин проверяет оформление и связи с компонентом. Если результат нельзя подтвердить, изменения в проблемном слое возвращаются.</p>
+          <div class="callout"><span aria-hidden="true">↵</span> Переносы строк сохраняются, абзацы не склеиваются.</div>
+        </div>
+      </section>
+
+      <section class="section live-work-section">
+        <div class="section-heading centered-heading">
+          <p class="eyebrow">Макет может меняться</p>
+          <h2>Не записывает поверх свежей работы</h2>
+          <p>Перед исправлением Чистовик ещё раз смотрит, что произошло со слоем.</p>
+        </div>
+        <div class="behavior-grid">
+          <article class="behavior-card">
+            <span class="behavior-number">01</span>
+            <h3>Текст изменился</h3>
+            <p>Плагин не перезаписывает новую версию и просит повторить запуск.</p>
+          </article>
+          <article class="behavior-card">
+            <span class="behavior-number">02</span>
+            <h3>Поменялось оформление</h3>
+            <p>Чистовик считывает его заново и продолжает с новым оформлением.</p>
+          </article>
+          <article class="behavior-card">
+            <span class="behavior-number">03</span>
+            <h3>Слой удалили</h3>
+            <p>Он пропускается, а обработка остальных слоёв продолжается.</p>
+          </article>
+          <article class="behavior-card behavior-card-accent">
+            <span class="behavior-number">04</span>
+            <h3>Результат под вопросом</h3>
+            <p>Изменения возвращаются. Если безопасность нельзя подтвердить, работа останавливается.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section split-section problem-section">
+        <div class="section-copy">
+          <p class="eyebrow">Понятный результат</p>
+          <h2>Показывает конкретный слой, а не просто ошибку</h2>
+          <p>Когда часть текста не удалось обработать, Чистовик собирает проблемные слои в отдельном окне.</p>
+          <p>Нажмите на строку — Figma выделит нужный слой и прокрутит макет к нему. Искать вручную по всей странице не придётся.</p>
+          <ol class="result-steps">
+            <li>Проблемный слой найден</li>
+            <li>Его состояние проверено</li>
+            <li>К нему можно перейти</li>
+          </ol>
+        </div>
+
+        <figure class="report-figure" aria-labelledby="report-caption">
+          <div class="report-window">
+            <div class="plugin-titlebar report-titlebar">
+              <img src="./plugin-icon.svg" width="18" height="18" alt="">
+              <strong>Чистовик</strong>
+              <span>×</span>
+            </div>
+            <div class="report-head">
+              <div class="warning-illustration" aria-hidden="true"><span>Т</span><i>!</i></div>
+              <div><h3>Не всё удалось обработать</h3><p>Эти слои нужно проверить вручную</p></div>
+            </div>
+            <div class="report-count"><span>2 слоя пропущены</span><small>· 10 успешно</small><b aria-hidden="true">‹ &nbsp; ›</b></div>
+            <button class="report-row selected" type="button" data-report-row>
+              <span class="text-icon">Т</span>
+              <span><strong>Стоимость обслуживания...</strong><small>pricing / card / caption</small></span>
+            </button>
+            <button class="report-row" type="button" data-report-row>
+              <span class="text-icon">Т</span>
+              <span><strong>Предложение действует...</strong><small>offer / footer / legal</small></span>
+            </button>
+          </div>
+          <figcaption id="report-caption">Выбранная строка ведёт к соответствующему текстовому слою в Figma.</figcaption>
+        </figure>
+      </section>
+
+      <section class="section split-section reverse-on-mobile rules-section" id="rules">
+        <figure class="rules-figure" aria-labelledby="rules-caption">
+          <div class="rules-window">
+            <div class="plugin-titlebar">
+              <img src="./plugin-icon.svg" width="18" height="18" alt="">
+              <strong>Чистовик</strong>
+              <span>×</span>
+            </div>
+            <div class="plugin-tabs rules-tabs">
+              <span class="plugin-tab">Типограф</span>
+              <span class="plugin-tab active">Правила</span>
+              <span class="plugin-tab">О плагине</span>
+            </div>
+            <div class="rules-list">
+              <details open>
+                <summary>Кавычки и пунктуация</summary>
+                <ul>
+                  <li>✦ В русском тексте — «ёлочки», внутри них — „лапки“</li>
+                  <li>✦ Три точки меняются на многоточие: <b>... → …</b></li>
+                </ul>
+              </details>
+              <details>
+                <summary>Тире и дефисы</summary>
+                <ul><li>✦ Длинное тире между словами: <b>слово — слово</b></li></ul>
+              </details>
+              <details>
+                <summary>Числа, даты и деньги</summary>
+                <ul><li>✦ Пробел перед валютой: <b>1 000 ₽</b></li></ul>
+              </details>
+              <details>
+                <summary>Неразрывные пробелы</summary>
+                <ul><li>✦ Короткие слова не остаются в конце строки</li></ul>
+              </details>
+            </div>
+          </div>
+          <figcaption id="rules-caption">Откройте группу, чтобы увидеть объяснение и пример.</figcaption>
+        </figure>
+
+        <div class="section-copy">
+          <p class="eyebrow">Справка внутри плагина</p>
+          <h2>Правила не нужно держать в голове</h2>
+          <p>Полный список находится внутри Чистовика: <strong>⭐ Продвинутые фичи → Правила</strong>.</p>
+          <p>Можно проверить поведение до запуска или разобраться в результате после. На сайте справочник не дублируется: актуальные правила всегда остаются рядом с типографом.</p>
+          <div class="path-line" aria-label="Путь к правилам"><span>Настройки</span><i>→</i><span>Правила</span><i>→</i><span>Нужная группа</span></div>
+        </div>
+      </section>
+
+      <section class="section developer-section">
+        <div class="developer-copy">
+          <p class="eyebrow">Два режима</p>
+          <h2>Для готового макета и передачи в разработку</h2>
+          <p>В обычном режиме Чистовик ставит настоящие неразрывные пробелы. В режиме для разработки показывает их заметными звёздочками.</p>
+          <p>Собственные отметки плагина не смешиваются с произвольными звёздочками в тексте.</p>
+        </div>
+        <div class="mode-comparison">
+          <div><span>Для красоты</span><strong>До 20&nbsp;сентября</strong><small>Настоящий неразрывный пробел</small></div>
+          <div><span>Для разработки</span><strong>До 20<em>*</em>сентября</strong><small>Место пробела видно сразу</small></div>
+          <div class="user-star"><span>Звёздочка автора</span><strong>Обязательное поле *</strong><small>Остаётся обычным символом</small></div>
+        </div>
+      </section>
+
+      <section class="section final-section" id="author">
+        <div class="final-card">
+          <div>
+            <p class="eyebrow">Финальный штрих перед разработкой</p>
+            <h2>Меньше повторяющейся чистки. Больше времени на сам текст.</h2>
+            <p>Чистовик сделала Аня Акулова, редактор в финтехе. Проект готовится к закрытому тестированию, а за развитием можно следить уже сейчас.</p>
+            <div class="hero-actions">
+              <a class="button button-light" href="https://www.figma.com/community/plugin/1638816840468168578/internal-beta?fuid=1222813849743128503" target="_blank" rel="noreferrer">Попробовать Чистовик в Figma <span aria-hidden="true">↗</span></a>
+              <a class="text-link light-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Телеграм-канал <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
+          <img class="final-icon" src="./plugin-icon.svg" width="180" height="180" alt="Значок Чистовика: коралловая звёздочка на зелёном фоне">
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>© 2026 Чистовик</span>
+      <div><a href="https://annaakulova.ru/" target="_blank" rel="noreferrer">annaakulova.ru ↗</a><a href="#top">Наверх ↑</a></div>
+    </footer>
+  </body>
+</html>
