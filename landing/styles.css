@@ -992,6 +992,7 @@ code {
   min-height: 0;
   overflow: hidden;
   padding: 0;
+  border: 1px solid var(--line);
   background: transparent;
 }
 
