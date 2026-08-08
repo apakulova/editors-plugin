@@ -892,7 +892,6 @@ code {
   place-items: center;
   overflow: hidden;
   overflow: hidden;
-  border: 1px solid var(--line);
   border-radius: 16px;
   background-color: var(--canvas);
   background-image: radial-gradient(#cfd4d1 0.75px, transparent 0.75px);
