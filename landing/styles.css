@@ -700,7 +700,7 @@ figcaption {
   display: flex;
   min-height: 320px;
   flex-direction: column;
-  padding: clamp(30px, 4vw, 50px);
+  padding: var(--surface-padding);
   border-radius: 18px;
 }
 
