@@ -10,7 +10,7 @@
   --brand-hover: #054a49;
   --brand-soft: #f0f4f3;
   --star: #ff4053;
-  --star-on-dark: #ff8a94;
+  --star-on-dark: #ff808c;
   --selection: #0d99ff;
   --warning: #f4c400;
   --shadow: 0 24px 80px rgba(20, 20, 20, 0.12);
@@ -1516,7 +1516,7 @@ code {
 
 .final-card {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(400px, 0.95fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
   gap: var(--layout-gap);
   overflow: hidden;
