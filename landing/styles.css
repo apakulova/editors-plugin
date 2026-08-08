@@ -988,6 +988,20 @@ code {
   place-items: center;
 }
 
+.safety-figure.safety-figure-image {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+}
+
+.safety-illustration {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
 .safety-layer-card {
   width: 100%;
   min-height: 382px;
