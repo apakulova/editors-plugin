@@ -699,7 +699,7 @@ figcaption {
 .comparison-visual {
   display: flex;
   flex-direction: column;
-  padding: var(--surface-padding) var(--surface-padding) var(--space-5);
+  padding: var(--surface-padding);
   border-radius: 18px;
 }
 
@@ -720,7 +720,7 @@ figcaption {
 
 .comparison-text {
   max-width: 540px;
-  margin: var(--surface-padding) 0 0;
+  margin: var(--space-4) 0 0;
   font-size: clamp(24px, 2.2vw, 32px);
   font-weight: 600;
   line-height: 1.25;
