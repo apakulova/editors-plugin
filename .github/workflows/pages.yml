@@ -25,16 +25,31 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Get repository files
+      - name: Get current landing
         uses: actions/checkout@v6
+        with:
+          ref: codex/chistovik-landing
+          path: current
+
+      - name: Get visual redesign
+        uses: actions/checkout@v6
+        with:
+          ref: codex/chistovik-landing-visual-redesign
+          path: redesign
+
+      - name: Prepare both landing versions
+        run: |
+          mkdir -p published/redesign
+          cp -R current/landing/. published/
+          cp -R redesign/landing/. published/redesign/
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload landing
+      - name: Upload landing versions
         uses: actions/upload-pages-artifact@v4
         with:
-          path: landing
+          path: published
 
       - name: Publish landing
         id: deployment
