@@ -1474,12 +1474,12 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin-top: var(--actions-gap);
 }
 
 .path-line span {
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--brand);
   border-radius: 999px;
   background: var(--brand-soft);
@@ -1490,6 +1490,10 @@ code {
 }
 
 .path-line i { color: var(--brand); font-size: var(--body-copy-size); font-style: normal; font-weight: 750; }
+
+@media (min-width: 1200px) {
+  .path-line { flex-wrap: nowrap; }
+}
 
 .developer-section {
   display: grid;
