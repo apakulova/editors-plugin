@@ -661,6 +661,10 @@ figcaption {
   padding: var(--surface-padding);
 }
 
+.comparison-card.edge-to-edge {
+  padding: 0;
+}
+
 .segmented-control {
   display: grid;
   width: fit-content;
