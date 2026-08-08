@@ -652,8 +652,7 @@ figcaption {
   margin-top: var(--copy-gap);
 }
 
-.comparison-card,
-.scope-card {
+.comparison-card {
   margin-top: var(--heading-content-gap);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -811,7 +810,6 @@ code {
 }
 
 .proof-surface,
-.scope-card,
 .developer-section {
   border: 1px solid var(--line);
   background: white;
@@ -885,25 +883,25 @@ code {
   font-weight: 750;
 }
 
-.scope-card {
-  padding: var(--surface-padding);
-}
-
 .scope-examples {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-5);
+  margin-top: var(--heading-content-gap);
 }
 
 .scope-example {
   min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
 }
 
 .scope-visual {
   display: grid;
   min-height: 0;
   place-items: center;
-  overflow: hidden;
   overflow: hidden;
   border-radius: 16px;
   background-color: var(--canvas);
@@ -955,15 +953,12 @@ code {
 }
 
 .scope-explanation {
-  padding-inline: 2px;
+  margin-top: var(--caption-gap);
+  padding: 0 var(--space-2) var(--space-1);
 }
 
 .scope-explanation strong {
   color: var(--ink);
-}
-
-.scope-card > .fine-print {
-  margin-top: var(--space-5);
 }
 
 .safety-heading {
@@ -1910,8 +1905,8 @@ code {
   .site-footer { width: min(100% - 32px, 1200px); }
   .header-inner .button { padding-inline: 12px; }
   .comparison-card,
-  .scope-card,
   .proof-surface { border-radius: 18px; }
+  .scope-example { border-radius: 18px; }
   .segmented-control { width: 100%; }
   .protected-pills > span { width: 100%; }
   .check-list { grid-template-columns: 1fr; }
