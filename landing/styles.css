@@ -1540,22 +1540,24 @@ code {
 
 .mode-comparison > div {
   display: flex;
-  min-height: 320px;
+  min-height: 240px;
   flex-direction: column;
-  padding: var(--feature-padding);
-  border: 1px solid rgba(6, 92, 91, 0.08);
+  padding: var(--surface-padding);
   border-radius: 18px;
   background: #eaf4f1;
 }
 
 .mode-comparison > div:last-child {
-  border-color: rgba(255, 64, 83, 0.14);
   background: #fff0f2;
 }
 
 .mode-comparison span {
+  display: inline-flex;
   align-self: flex-start;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
+  border: 1px solid rgba(6, 92, 91, 0.3);
   border-radius: 999px;
   color: var(--brand);
   background: rgba(6, 92, 91, 0.1);
@@ -1565,12 +1567,35 @@ code {
 }
 
 .mode-comparison > div:last-child span {
+  border-color: rgba(255, 64, 83, 0.34);
   color: #a91f34;
   background: rgba(255, 64, 83, 0.12);
 }
 
+.mode-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 13px;
+  font-style: normal;
+  place-items: center;
+}
+
+.mode-comparison > div:last-child .mode-icon {
+  width: auto;
+  height: auto;
+  flex-basis: auto;
+  border: 0;
+  border-radius: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+}
+
 .mode-comparison strong {
-  margin-top: clamp(48px, 6vw, 72px);
+  margin-top: var(--space-6);
   font-size: clamp(32px, 4.2vw, 52px);
   line-height: 1.12;
   letter-spacing: -0.035em;
