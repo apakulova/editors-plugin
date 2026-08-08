@@ -690,6 +690,19 @@ figcaption {
   color: var(--star);
 }
 
+.visible-space {
+  display: inline-block;
+  margin-inline: 0.04em;
+  font-size: 0.78em;
+  font-weight: 750;
+  line-height: 1;
+  vertical-align: -0.08em;
+}
+
+.no-break {
+  white-space: nowrap;
+}
+
 .comparison-arrow {
   position: absolute;
   z-index: 2;
