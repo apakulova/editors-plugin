@@ -1531,6 +1531,7 @@ code {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-5);
+  margin-top: var(--heading-content-gap);
 }
 
 .mode-comparison > div {
@@ -1538,7 +1539,8 @@ code {
   min-height: 240px;
   flex-direction: column;
   padding: var(--surface-padding);
-  border-radius: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   background: #eaf4f1;
 }
 
@@ -1906,7 +1908,8 @@ code {
   .header-inner .button { padding-inline: 12px; }
   .comparison-card,
   .proof-surface { border-radius: 18px; }
-  .scope-example { border-radius: 18px; }
+  .scope-example,
+  .mode-comparison > div { border-radius: 18px; }
   .segmented-control { width: 100%; }
   .protected-pills > span { width: 100%; }
   .check-list { grid-template-columns: 1fr; }
