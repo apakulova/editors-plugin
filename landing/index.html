@@ -7,7 +7,7 @@
     <meta name="description" content="Чистовик — Figma-плагин, который приводит русскую типографику в порядок и бережно работает с существующим макетом.">
     <title>Чистовик — типограф для Figma</title>
     <link rel="icon" href="./plugin-icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="./styles.css?v=20260808-24">
+    <link rel="stylesheet" href="./styles.css?v=20260808-25">
     <script src="./script.js" defer></script>
   </head>
   <body>
@@ -148,41 +148,10 @@
       </section>
 
       <section class="section split-section reverse-on-mobile rules-section" id="rules">
-        <figure class="rules-figure" aria-labelledby="rules-caption">
-          <div class="rules-window">
-            <div class="plugin-titlebar">
-              <img src="./plugin-icon.svg" width="18" height="18" alt="">
-              <strong>Чистовик</strong>
-              <span>×</span>
-            </div>
-            <div class="plugin-tabs rules-tabs">
-              <span class="plugin-tab">Типограф</span>
-              <span class="plugin-tab active">Правила</span>
-              <span class="plugin-tab">О плагине</span>
-            </div>
-            <div class="rules-list">
-              <details open>
-                <summary>Кавычки и пунктуация</summary>
-                <ul>
-                  <li>✦ В русском тексте — «ёлочки», внутри них — „лапки“</li>
-                  <li>✦ Три точки меняются на многоточие: <b>... → …</b></li>
-                </ul>
-              </details>
-              <details>
-                <summary>Тире и дефисы</summary>
-                <ul><li>✦ Длинное тире между словами: <b>слово — слово</b></li></ul>
-              </details>
-              <details>
-                <summary>Числа, даты и деньги</summary>
-                <ul><li>✦ Пробел перед валютой: <b>1 000 ₽</b></li></ul>
-              </details>
-              <details>
-                <summary>Неразрывные пробелы</summary>
-                <ul><li>✦ Короткие слова не остаются в конце строки</li></ul>
-              </details>
-            </div>
+        <figure class="rules-figure" aria-label="Вкладка «Правила» в плагине Чистовик">
+          <div class="rules-image-frame">
+            <img class="rules-image" src="./rules.png" width="848" height="970" alt="" loading="lazy" decoding="async">
           </div>
-          <figcaption id="rules-caption">Откройте группу, чтобы увидеть объяснение и пример.</figcaption>
         </figure>
 
         <div class="section-copy">

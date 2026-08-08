@@ -1289,6 +1289,24 @@ code {
   margin-inline: auto;
 }
 
+.rules-figure {
+  width: 100%;
+  margin: 0;
+}
+
+.rules-image-frame {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
+}
+
+.rules-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .report-window,
 .rules-window {
   width: 100%;
