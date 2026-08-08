@@ -161,11 +161,14 @@ summary {
 
 .hero {
   display: grid;
-  min-height: calc(100vh - 72px);
-  grid-template-columns: minmax(0, 0.88fr) minmax(560px, 1.12fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   align-items: center;
-  gap: clamp(48px, 7vw, 96px);
-  padding-block: 72px 88px;
+  column-gap: clamp(32px, 4vw, 64px);
+  padding-block: clamp(56px, 7vh, 76px) clamp(68px, 9vh, 96px);
+}
+
+.hero-copy {
+  grid-column: span 6;
 }
 
 .eyebrow {
@@ -235,9 +238,14 @@ h3 {
 
 .hero-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 22px;
   margin-top: 32px;
+}
+
+.hero-actions a {
+  white-space: nowrap;
 }
 
 .text-link {
@@ -252,13 +260,56 @@ figure {
 }
 
 .hero-visual {
+  display: grid;
+  grid-column: span 6;
   min-width: 0;
+  place-items: center;
+}
+
+.responsive-illustration {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 
 .hero-image {
-  display: block;
-  width: 100%;
-  height: auto;
+  width: auto;
+  max-height: min(620px, calc(100svh - 180px));
+}
+
+@supports not (height: 100svh) {
+  .hero-image {
+    max-height: min(620px, calc(100vh - 180px));
+  }
+}
+
+@media (min-width: 1041px) and (max-height: 820px) {
+  .hero {
+    padding-block: 44px 56px;
+  }
+
+  .hero h1 {
+    font-size: clamp(48px, 5vw, 68px);
+  }
+
+  .hero-lead {
+    margin-top: 22px;
+    font-size: 18px;
+  }
+
+  .hero-note {
+    margin-top: 16px;
+  }
+
+  .hero-actions {
+    margin-top: 24px;
+  }
+}
+
+.hero-visual,
+.hero-copy {
+  min-width: 0;
 }
 
 figcaption {
@@ -1404,9 +1455,10 @@ code {
 @media (max-width: 1040px) {
   .main-nav { display: none; }
   .header-inner .button { margin-left: auto; }
-  .hero { grid-template-columns: 1fr; min-height: auto; }
-  .hero-copy { max-width: 780px; }
-  .hero-visual { width: min(100%, 760px); margin-inline: auto; }
+  .hero { row-gap: 52px; }
+  .hero-copy { grid-column: 1 / -1; max-width: 780px; }
+  .hero-visual { grid-column: 1 / -1; width: min(100%, 760px); margin-inline: auto; }
+  .hero-image { max-height: min(560px, 68svh); }
   .behavior-grid { grid-template-columns: repeat(2, 1fr); }
   .behavior-number { margin-bottom: 38px; }
   .developer-section { grid-template-columns: 1fr; }
@@ -1420,7 +1472,7 @@ code {
   .header-inner { min-height: 64px; }
   .brand span { display: none; }
   .section { padding-block: 52px; }
-  .hero { padding-block: 54px 64px; gap: 44px; }
+  .hero { padding-block: 54px 64px; row-gap: 44px; column-gap: 0; }
   h1 { font-size: clamp(44px, 14vw, 64px); }
   h2 { font-size: clamp(32px, 10vw, 46px); }
   .hero-lead,
