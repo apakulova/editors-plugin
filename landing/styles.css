@@ -901,7 +901,7 @@ code {
 
 .scope-visual {
   display: grid;
-  min-height: 285px;
+  min-height: 0;
   place-items: center;
   overflow: hidden;
   overflow: hidden;
@@ -910,6 +910,12 @@ code {
   background-color: var(--canvas);
   background-image: radial-gradient(#cfd4d1 0.75px, transparent 0.75px);
   background-size: 16px 16px;
+}
+
+.scope-image {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .scope-page {
