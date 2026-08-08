@@ -1474,20 +1474,22 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   margin-top: var(--actions-gap);
 }
 
 .path-line span {
-  padding: 7px 10px;
-  border-radius: 7px;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--brand);
+  border-radius: 999px;
   background: var(--brand-soft);
   color: var(--brand);
-  font-size: var(--caption-text-size);
+  font-size: var(--body-copy-size);
   font-weight: 750;
+  line-height: 1.2;
 }
 
-.path-line i { color: var(--muted); font-style: normal; }
+.path-line i { color: var(--brand); font-size: var(--body-copy-size); font-style: normal; font-weight: 750; }
 
 .developer-section {
   display: grid;
