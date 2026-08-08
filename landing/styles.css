@@ -161,7 +161,7 @@ summary {
 .main-nav {
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: var(--space-4);
   margin-left: auto;
 }
 

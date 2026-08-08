@@ -7,7 +7,7 @@
     <meta name="description" content="Чистовик — Figma-плагин, который приводит русскую типографику в порядок и бережно работает с существующим макетом.">
     <title>Чистовик — типограф для Figma</title>
     <link rel="icon" href="./plugin-icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="./styles.css?v=20260808-13">
+    <link rel="stylesheet" href="./styles.css?v=20260808-14">
     <script src="./script.js" defer></script>
   </head>
   <body>
@@ -20,10 +20,13 @@
           <span>Чистовик</span>
         </a>
         <nav class="main-nav" aria-label="Основная навигация">
-          <a href="#principle">Как работает</a>
-          <a href="#layout">Бережно к макету</a>
+          <a href="#demo">Типографика</a>
+          <a href="#layout">Макет</a>
+          <a href="#scope">Область</a>
           <a href="#rules">Правила</a>
-          <a href="#author">Об авторе</a>
+          <a href="#modes">Режимы</a>
+          <a href="#problems">Проблемный&nbsp;слой</a>
+          <a href="#author">Об&nbsp;авторе</a>
         </nav>
         <a class="button button-small" href="https://www.figma.com/community/plugin/1638816840468168578/internal-beta?fuid=1222813849743128503" target="_blank" rel="noreferrer">Попробовать в Figma</a>
       </div>
@@ -68,34 +71,45 @@
         </div>
       </section>
 
-      <section class="section split-section" id="principle">
-        <div class="section-copy">
-          <p class="eyebrow">Без лишних исправлений</p>
-          <h2>Знает, что не нужно менять</h2>
-          <p>Не каждая черта — тире, а не каждая группа цифр — обычное число. Чистовик распознаёт форматы, для которых предусмотрена защита, и приводит в порядок текст вокруг них.</p>
-          <p>Версии, адреса, промокоды, окончания номеров карт и банковские счета остаются такими, какими были.</p>
+      <section class="section safety-section" id="layout">
+        <div class="section-heading centered-heading safety-heading">
+          <p class="eyebrow">Можно запускать без тревоги</p>
+          <h2>Не ломает макет</h2>
+          <p>Плагин меняет только текст внутри существующего слоя — и бережно останавливается, если что-то пошло не так.</p>
         </div>
 
-        <figure class="proof-card protected-card">
-          <div class="proof-surface">
-            <div class="proof-before">
-              <span>До</span>
-              <p>Версия <b>v2.0.1</b> - скидка 20 % по коду <b>SALE-2026</b>...</p>
+        <div class="safety-grid">
+          <figure class="safety-figure" aria-label="Текстовый слой в Figma с сохранённым оформлением">
+            <div class="safety-layer-card">
+              <div class="safety-toolbar" aria-hidden="true">
+                <span>Т</span><i></i><i></i><i></i>
+              </div>
+              <div class="safety-selected-layer">
+                <span class="selection-handle handle-one"></span>
+                <span class="selection-handle handle-two"></span>
+                <span class="selection-handle handle-three"></span>
+                <span class="selection-handle handle-four"></span>
+                <small>Текстовый слой</small>
+                <strong>Скидка 2 000 ₽ — до конца недели</strong>
+              </div>
+              <div class="safety-style-tags" aria-label="Сохранённые свойства текста">
+                <span>Inter</span><span>24</span><span>Semibold</span>
+              </div>
             </div>
-            <div class="proof-arrow" aria-hidden="true">↓</div>
-            <div class="proof-after">
-              <span>После</span>
-              <p>Версия <b>v2.0.1</b> — скидка 20% по коду <b>SALE-2026</b>…</p>
-            </div>
-            <div class="protected-pills" aria-label="Примеры защищённых форматов">
-              <span>mail@example.com <small>без изменений</small></span>
-              <span>192.168.0.1 <small>без изменений</small></span>
-              <span>••4444 <small>без изменений</small></span>
-              <span>40914810810010073985 <small>без изменений</small></span>
-            </div>
-          </div>
-          <figcaption>Окружающая типографика исправилась, защищённые значения сохранились.</figcaption>
-        </figure>
+            <div class="safety-toast"><span aria-hidden="true">✓</span> Слой и стили сохранены</div>
+          </figure>
+
+          <ol class="safety-points">
+            <li>
+              <span class="safety-number">01</span>
+              <div><h3>Сохраняет слой и оформление</h3><p>Шрифт, размер, цвет, ссылки и другие свойства остаются на месте.</p></div>
+            </li>
+            <li>
+              <span class="safety-number">02</span>
+              <div><h3>Не перезаписывает свежие изменения</h3><p>Если текст изменился во время обработки, Чистовик не запишет результат поверх новой версии.</p></div>
+            </li>
+          </ol>
+        </div>
       </section>
 
       <section class="section scope-section" id="scope">
@@ -148,51 +162,6 @@
         </div>
       </section>
 
-      <section class="section safety-section" id="layout">
-        <div class="section-heading centered-heading safety-heading">
-          <p class="eyebrow">Можно запускать без тревоги</p>
-          <h2>Не ломает макет</h2>
-          <p>Плагин меняет только текст внутри существующего слоя — и бережно останавливается, если что-то пошло не так.</p>
-        </div>
-
-        <div class="safety-grid">
-          <figure class="safety-figure" aria-label="Текстовый слой в Figma с сохранённым оформлением">
-            <div class="safety-layer-card">
-              <div class="safety-toolbar" aria-hidden="true">
-                <span>Т</span><i></i><i></i><i></i>
-              </div>
-              <div class="safety-selected-layer">
-                <span class="selection-handle handle-one"></span>
-                <span class="selection-handle handle-two"></span>
-                <span class="selection-handle handle-three"></span>
-                <span class="selection-handle handle-four"></span>
-                <small>Текстовый слой</small>
-                <strong>Скидка 2 000 ₽ — до конца недели</strong>
-              </div>
-              <div class="safety-style-tags" aria-label="Сохранённые свойства текста">
-                <span>Inter</span><span>24</span><span>Semibold</span>
-              </div>
-            </div>
-            <div class="safety-toast"><span aria-hidden="true">✓</span> Слой и стили сохранены</div>
-          </figure>
-
-          <ol class="safety-points">
-            <li>
-              <span class="safety-number">01</span>
-              <div><h3>Сохраняет слой и оформление</h3><p>Шрифт, размер, цвет, ссылки и другие свойства остаются на месте.</p></div>
-            </li>
-            <li>
-              <span class="safety-number">02</span>
-              <div><h3>Не перезаписывает свежие изменения</h3><p>Если текст изменился во время обработки, Чистовик не запишет результат поверх новой версии.</p></div>
-            </li>
-            <li>
-              <span class="safety-number">03</span>
-              <div><h3>Показывает проблемный слой</h3><p>Если слой не удалось обработать, плагин сразу ведёт к нему и объясняет, что случилось.</p></div>
-            </li>
-          </ol>
-        </div>
-      </section>
-
       <section class="section split-section reverse-on-mobile rules-section" id="rules">
         <figure class="rules-figure" aria-labelledby="rules-caption">
           <div class="rules-window">
@@ -240,7 +209,7 @@
         </div>
       </section>
 
-      <section class="section developer-wrap">
+      <section class="section developer-wrap" id="modes">
         <div class="developer-section">
           <div class="developer-copy">
             <p class="eyebrow">Два режима</p>
@@ -254,6 +223,44 @@
             <div class="user-star"><span>Звёздочка автора</span><strong>Обязательное поле *</strong><small>Остаётся обычным символом</small></div>
           </div>
         </div>
+      </section>
+
+      <section class="section split-section problem-section" id="problems">
+        <div class="section-copy">
+          <p class="eyebrow">Понятный результат</p>
+          <h2>Показывает конкретный слой, а&nbsp;не&nbsp;просто ошибку</h2>
+          <p>Когда часть текста не&nbsp;удалось обработать, Чистовик собирает проблемные слои в&nbsp;отдельном окне.</p>
+          <p>Нажмите на&nbsp;строку&nbsp;— Figma выделит нужный слой и&nbsp;прокрутит макет к&nbsp;нему. Искать вручную по&nbsp;всей странице не&nbsp;придётся.</p>
+          <ol class="result-steps">
+            <li>Проблемный слой найден</li>
+            <li>Его состояние проверено</li>
+            <li>К&nbsp;нему можно перейти</li>
+          </ol>
+        </div>
+
+        <figure class="report-figure" aria-labelledby="report-caption">
+          <div class="report-window">
+            <div class="plugin-titlebar report-titlebar">
+              <img src="./plugin-icon.svg" width="18" height="18" alt="">
+              <strong>Чистовик</strong>
+              <span>×</span>
+            </div>
+            <div class="report-head">
+              <div class="warning-illustration" aria-hidden="true"><span>Т</span><i>!</i></div>
+              <div><h3>Не всё удалось обработать</h3><p>Эти слои нужно проверить вручную</p></div>
+            </div>
+            <div class="report-count"><span>2 слоя пропущены</span><small>· 10 успешно</small><b aria-hidden="true">‹ &nbsp; ›</b></div>
+            <button class="report-row selected" type="button" data-report-row>
+              <span class="text-icon">Т</span>
+              <span><strong>Стоимость обслуживания...</strong><small>pricing / card / caption</small></span>
+            </button>
+            <button class="report-row" type="button" data-report-row>
+              <span class="text-icon">Т</span>
+              <span><strong>Предложение действует...</strong><small>offer / footer / legal</small></span>
+            </button>
+          </div>
+          <figcaption id="report-caption">Выбранная строка ведёт к&nbsp;соответствующему текстовому слою в&nbsp;Figma.</figcaption>
+        </figure>
       </section>
 
       <section class="section final-section" id="author">
