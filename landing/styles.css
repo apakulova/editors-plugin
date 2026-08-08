@@ -1648,6 +1648,20 @@ code {
   }
 }
 
+@media (min-width: 1041px) {
+  .author-steps li { align-items: start; }
+
+  .author-steps li > div {
+    position: absolute;
+    right: 0;
+    left: calc(var(--author-node-size) + var(--space-5));
+  }
+
+  .author-steps li:first-child > div { top: 0; }
+  .author-steps li:nth-child(2) > div { top: 50%; transform: translateY(-50%); }
+  .author-steps li:last-child > div { bottom: 0; }
+}
+
 .site-footer {
   display: flex;
   min-height: 110px;
