@@ -1541,21 +1541,38 @@ code {
 .light-link { color: white; }
 
 .author-steps {
+  --author-node-size: 68px;
+  --author-path-offset: var(--space-8);
   position: relative;
   display: grid;
   gap: var(--list-gap);
+  isolation: isolate;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.author-steps::before {
+.author-steps li:not(:last-child)::after {
   position: absolute;
-  top: 54px;
-  bottom: 54px;
-  left: 34px;
-  border-left: 2px dashed rgba(255, 255, 255, 0.58);
+  z-index: -1;
+  top: calc(50% + var(--space-5));
+  width: var(--author-path-offset);
+  height: calc(var(--list-gap) + var(--space-5));
+  border-color: rgba(255, 255, 255, 0.58);
+  border-style: dashed;
   content: "";
+}
+
+.author-steps li:nth-child(1)::after {
+  left: calc(var(--author-node-size) / 2);
+  border-width: 0 0 2px 2px;
+  border-bottom-left-radius: var(--space-6);
+}
+
+.author-steps li:nth-child(2)::after {
+  left: calc(var(--author-node-size) / 2 - var(--author-path-offset));
+  border-width: 0 2px 2px 0;
+  border-bottom-right-radius: var(--space-6);
 }
 
 .author-steps li {
@@ -1563,15 +1580,19 @@ code {
   z-index: 1;
   display: grid;
   min-height: 84px;
-  grid-template-columns: 68px minmax(0, 1fr);
+  grid-template-columns: var(--author-node-size) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-5);
 }
 
+.author-steps li:nth-child(2) {
+  margin-left: var(--author-path-offset);
+}
+
 .author-step-number {
   display: grid;
-  width: 68px;
-  height: 68px;
+  width: var(--author-node-size);
+  height: var(--author-node-size);
   border-radius: 17px;
   color: var(--star);
   background: white;
@@ -1675,9 +1696,9 @@ code {
   .behavior-card { min-height: auto; }
   .behavior-number { margin-bottom: 30px; }
   .mode-comparison > div { grid-template-columns: 1fr; gap: 4px; }
-  .author-steps::before { top: 46px; bottom: 46px; left: 28px; }
-  .author-steps li { min-height: 72px; grid-template-columns: 56px minmax(0, 1fr); gap: 16px; }
-  .author-step-number { width: 56px; height: 56px; border-radius: 14px; font-size: 28px; }
+  .author-steps { --author-node-size: 56px; --author-path-offset: var(--space-6); }
+  .author-steps li { min-height: 72px; gap: 16px; }
+  .author-step-number { border-radius: 14px; font-size: 28px; }
   .site-footer { align-items: flex-start; flex-direction: column; justify-content: center; gap: var(--space-3); padding-block: var(--space-5); }
   .site-footer div { flex-wrap: wrap; gap: 14px 22px; }
 }
