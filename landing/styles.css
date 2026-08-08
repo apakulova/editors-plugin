@@ -251,6 +251,16 @@ figure {
   margin: 0;
 }
 
+.hero-visual {
+  min-width: 0;
+}
+
+.hero-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 figcaption {
   margin-top: 12px;
   padding: 0 2px;
@@ -1396,7 +1406,7 @@ code {
   .header-inner .button { margin-left: auto; }
   .hero { grid-template-columns: 1fr; min-height: auto; }
   .hero-copy { max-width: 780px; }
-  .figma-scene { width: min(100%, 760px); margin-inline: auto; }
+  .hero-visual { width: min(100%, 760px); margin-inline: auto; }
   .behavior-grid { grid-template-columns: repeat(2, 1fr); }
   .behavior-number { margin-bottom: 38px; }
   .developer-section { grid-template-columns: 1fr; }
