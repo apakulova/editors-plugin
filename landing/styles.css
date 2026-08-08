@@ -50,7 +50,7 @@
   --space-6: 32px;
   --space-7: 48px;
   --space-8: 64px;
-  --section-space: 88px;
+  --section-space: 60px;
   --hero-space-start: 64px;
   --hero-space-end: 88px;
   --eyebrow-heading-gap: 16px;
@@ -1753,7 +1753,7 @@ code {
   :root {
     --heading-2-size: clamp(32px, 10vw, 46px);
     --body-copy-size: 17px;
-    --section-space: 64px;
+    --section-space: 60px;
     --hero-space-start: 48px;
     --hero-space-end: 64px;
     --heading-content-gap: 40px;
