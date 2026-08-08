@@ -648,6 +648,10 @@ figcaption {
   margin: var(--heading-copy-gap) auto 0;
 }
 
+.centered-heading > p:not(.eyebrow) + p:not(.eyebrow) {
+  margin-top: var(--copy-gap);
+}
+
 .comparison-card,
 .scope-card {
   margin-top: var(--heading-content-gap);
@@ -1510,27 +1514,37 @@ code {
 
 .mode-comparison {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
 }
 
 .mode-comparison > div {
-  display: grid;
-  grid-template-columns: 112px minmax(140px, 1fr) minmax(135px, 0.9fr);
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  border-radius: 12px;
+  display: flex;
+  min-height: 220px;
+  flex-direction: column;
+  padding: var(--surface-padding);
+  border-radius: 18px;
   background: var(--brand-soft);
 }
 
-.mode-comparison span,
-.mode-comparison small {
+.mode-comparison span {
   color: var(--muted);
-  font-size: var(--mock-text-size);
+  font-size: var(--small-text-size);
+  font-weight: 700;
 }
 
 .mode-comparison strong {
-  font-size: 18px;
+  margin-top: var(--space-6);
+  font-size: clamp(24px, 2.2vw, 32px);
+  line-height: 1.25;
+}
+
+.mode-comparison small {
+  margin-top: auto;
+  padding-top: var(--space-4);
+  color: var(--muted);
+  font-size: var(--supporting-text-size);
+  line-height: var(--supporting-text-line-height);
 }
 
 .mode-comparison em {
@@ -1539,7 +1553,23 @@ code {
 }
 
 .mode-comparison .user-star {
+  display: grid;
+  min-height: auto;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(180px, 1fr) minmax(170px, 1fr);
+  align-items: center;
+  gap: var(--space-4);
   background: #f2f2f0;
+}
+
+.mode-comparison .user-star strong,
+.mode-comparison .user-star small {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.mode-comparison .user-star strong {
+  font-size: 18px;
 }
 
 .final-section {
@@ -1777,7 +1807,9 @@ code {
   .behavior-grid { grid-template-columns: 1fr; }
   .behavior-card { min-height: auto; }
   .behavior-number { margin-bottom: 30px; }
-  .mode-comparison > div { grid-template-columns: 1fr; gap: 4px; }
+  .mode-comparison { grid-template-columns: 1fr; }
+  .mode-comparison > div { min-height: auto; }
+  .mode-comparison .user-star { grid-column: auto; grid-template-columns: 1fr; gap: 4px; }
   .author-steps { --author-node-size: 56px; --author-path-offset: var(--space-7); --author-step-height: 80px; }
   .author-steps li { gap: 16px; }
   .author-step-number { border-radius: 14px; font-size: 28px; }
