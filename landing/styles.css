@@ -884,8 +884,6 @@ code {
 }
 
 .scope-card {
-  max-width: 1080px;
-  margin-inline: auto;
   padding: var(--surface-padding);
 }
 
