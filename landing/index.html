@@ -55,21 +55,22 @@
 
         <div class="comparison-card">
           <div class="comparison-grid">
-            <figure class="comparison-panel">
-              <div class="comparison-visual comparison-before"><p class="comparison-label">До обработки</p><p class="comparison-text">“Отправим <mark>смс</mark>, когда заказ будет готов...”</p></div>
-              <figcaption>Обычные кавычки и три точки.</figcaption>
-            </figure>
-            <figure class="comparison-panel">
-              <div class="comparison-visual comparison-after"><p class="comparison-label">После обработки</p><p class="comparison-text"><span class="changed-mark">«</span>Отправим <mark>смс</mark>, когда заказ будет готов<span class="changed-mark">…»</span></p></div>
-              <figcaption>Кавычки и многоточие исправлены, слово осталось прежним.</figcaption>
-            </figure>
+            <div class="comparison-visual comparison-before">
+              <p class="comparison-label">До обработки</p>
+              <p class="comparison-text">“Отправим смс, когда заказ будет готов...”</p>
+            </div>
+            <span class="comparison-arrow" aria-hidden="true">→</span>
+            <div class="comparison-visual comparison-after">
+              <p class="comparison-label">После обработки</p>
+              <p class="comparison-text"><span class="changed-mark">«</span>Отправим смс, когда заказ будет готов<span class="changed-mark">…»</span></p>
+            </div>
           </div>
-          <div class="comparison-notes">
-            <span><i class="legend-dot legend-stays"></i><b>смс</b> осталось таким, как написал автор</span>
-            <span><i class="legend-dot legend-changes"></i>Типографские знаки изменились</span>
-          </div>
-          <p class="fine-print">В отдельных технических обозначениях регистр входит в правило. Например, <code>100 вт</code> станет <code>100 Вт</code>. Такие случаи перечислены во вкладке «Правила».</p>
         </div>
+        <div class="comparison-notes">
+          <span><i class="legend-dot legend-stays"></i><b>смс</b> осталось таким, как написал автор</span>
+          <span><i class="legend-dot legend-changes"></i>Типографские знаки изменились</span>
+        </div>
+        <p class="fine-print">В отдельных технических обозначениях регистр входит в правило. Например, <code>100 вт</code> станет <code>100 Вт</code>. Такие случаи перечислены во вкладке «Правила».</p>
       </section>
 
       <section class="section split-section" id="principle">
