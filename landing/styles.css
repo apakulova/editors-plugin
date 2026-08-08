@@ -1307,6 +1307,19 @@ code {
   height: auto;
 }
 
+.problem-image-frame {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
+}
+
+.problem-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .report-window,
 .rules-window {
   width: 100%;
