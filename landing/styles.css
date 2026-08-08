@@ -1552,26 +1552,6 @@ code {
   font-style: normal;
 }
 
-.mode-comparison .user-star {
-  display: grid;
-  min-height: auto;
-  grid-column: 1 / -1;
-  grid-template-columns: minmax(120px, 0.7fr) minmax(180px, 1fr) minmax(170px, 1fr);
-  align-items: center;
-  gap: var(--space-4);
-  background: #f2f2f0;
-}
-
-.mode-comparison .user-star strong,
-.mode-comparison .user-star small {
-  margin-top: 0;
-  padding-top: 0;
-}
-
-.mode-comparison .user-star strong {
-  font-size: 18px;
-}
-
 .final-section {
   padding-block: var(--section-space);
 }
@@ -1809,7 +1789,6 @@ code {
   .behavior-number { margin-bottom: 30px; }
   .mode-comparison { grid-template-columns: 1fr; }
   .mode-comparison > div { min-height: auto; }
-  .mode-comparison .user-star { grid-column: auto; grid-template-columns: 1fr; gap: 4px; }
   .author-steps { --author-node-size: 56px; --author-path-offset: var(--space-7); --author-step-height: 80px; }
   .author-steps li { gap: 16px; }
   .author-step-number { border-radius: 14px; font-size: 28px; }
