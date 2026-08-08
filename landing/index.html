@@ -7,7 +7,7 @@
     <meta name="description" content="Чистовик — Figma-плагин, который приводит русскую типографику в порядок и бережно работает с существующим макетом.">
     <title>Чистовик — типограф для Figma</title>
     <link rel="icon" href="./plugin-icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="./styles.css?v=20260808-3">
+    <link rel="stylesheet" href="./styles.css?v=20260808-4">
     <script src="./script.js" defer></script>
   </head>
   <body>
@@ -48,29 +48,24 @@
 
       <section class="section demo-section" id="demo">
         <div class="section-heading centered-heading">
-          <p class="eyebrow">Один запуск вместо ручной чистки</p>
-          <h2>Меняет знаки, а не авторскую мысль</h2>
-          <p>Чистовик не проверяет орфографию, не подбирает формулировки и не решает за автора, как писать слова и названия.</p>
+          <p class="eyebrow">Без лишних исправлений</p>
+          <h2>Заботится о типографике, но не вмешивается в текст</h2>
+          <p>Плагин не решает за вас, как писать слова и названия&nbsp;— с&nbsp;ним вы&nbsp;не&nbsp;увидите в&nbsp;макете СМС вместо смс и&nbsp;другие внезапные правки</p>
         </div>
 
         <div class="comparison-card">
           <div class="comparison-grid">
             <div class="comparison-visual comparison-before">
-              <p class="comparison-label">До обработки</p>
-              <p class="comparison-text">“Отправим смс, когда заказ будет готов...”</p>
+              <p class="comparison-label">Было</p>
+              <p class="comparison-text">Включите песню группы<br>"Король и Шут" на<br>полную громкость - соседи оценят!!</p>
             </div>
             <span class="comparison-arrow" aria-hidden="true">→</span>
             <div class="comparison-visual comparison-after">
-              <p class="comparison-label">После обработки</p>
-              <p class="comparison-text"><span class="changed-mark">«</span>Отправим смс, когда заказ будет готов<span class="changed-mark">…»</span></p>
+              <p class="comparison-label">Стало</p>
+              <p class="comparison-text">Включите песню группы<br><span class="changed-mark">«</span>Король и Шут<span class="changed-mark">»</span><br>на полную громкость <span class="changed-mark">—</span> соседи оценят<span class="changed-mark">!</span></p>
             </div>
           </div>
         </div>
-        <div class="comparison-notes">
-          <span><i class="legend-dot legend-stays"></i><b>смс</b> осталось таким, как написал автор</span>
-          <span><i class="legend-dot legend-changes"></i>Типографские знаки изменились</span>
-        </div>
-        <p class="fine-print">В отдельных технических обозначениях регистр входит в правило. Например, <code>100 вт</code> станет <code>100 Вт</code>. Такие случаи перечислены во вкладке «Правила».</p>
       </section>
 
       <section class="section split-section" id="principle">

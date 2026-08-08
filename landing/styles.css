@@ -649,7 +649,7 @@ figcaption {
 
 .comparison-visual {
   display: flex;
-  min-height: clamp(330px, 34vw, 430px);
+  min-height: 320px;
   flex-direction: column;
   padding: clamp(30px, 4vw, 50px);
   border-radius: 18px;
@@ -666,19 +666,17 @@ figcaption {
 .comparison-label {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .comparison-text {
   max-width: 540px;
   margin: auto 0;
-  font-size: clamp(34px, 4.2vw, 58px);
-  font-weight: 750;
-  line-height: 1.06;
-  letter-spacing: -0.05em;
+  font-size: clamp(24px, 2.2vw, 32px);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
 }
 
 .comparison-text mark {
@@ -711,30 +709,6 @@ figcaption {
   place-items: center;
   transform: translate(-50%, -50%);
 }
-
-.comparison-notes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px 32px;
-  margin: 24px 0 20px;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.comparison-notes span {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.legend-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-}
-
-.legend-stays { background: var(--brand); }
-.legend-changes { background: var(--star); }
 
 .fine-print {
   margin: 0;
@@ -1499,7 +1473,6 @@ code {
   .comparison-grid { grid-template-columns: 1fr; row-gap: 28px; }
   .comparison-visual { min-height: 300px; }
   .comparison-arrow { transform: translate(-50%, -50%) rotate(90deg); }
-  .comparison-notes { flex-direction: column; }
   .split-section { grid-template-columns: 1fr; gap: 42px; }
   .reverse-on-mobile .section-copy { order: -1; }
   .scope-section,
