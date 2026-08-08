@@ -62,8 +62,8 @@
   --list-gap: 24px;
   --caption-gap: 12px;
   --actions-gap: 32px;
-  --surface-padding: clamp(24px, 4vw, 40px);
-  --feature-padding: clamp(32px, 5vw, 64px);
+  --surface-padding: clamp(20px, 3vw, 32px);
+  --feature-padding: clamp(28px, 4vw, 48px);
 }
 
 * {
@@ -1713,8 +1713,8 @@ code {
     --layout-gap: 40px;
     --stack-gap: 40px;
     --list-gap: 16px;
-    --surface-padding: 24px;
-    --feature-padding: 32px 24px;
+    --surface-padding: 20px;
+    --feature-padding: 24px 20px;
   }
 
   body { font-size: 16px; }
