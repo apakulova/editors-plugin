@@ -745,6 +745,11 @@ figcaption {
   color: var(--star);
 }
 
+.inline-path {
+  color: var(--brand);
+  font-weight: 750;
+}
+
 .visible-space {
   display: inline-block;
   margin-inline: 0.04em;
