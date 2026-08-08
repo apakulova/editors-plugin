@@ -698,7 +698,6 @@ figcaption {
 
 .comparison-visual {
   display: flex;
-  min-height: 320px;
   flex-direction: column;
   padding: var(--surface-padding);
   border-radius: 18px;
@@ -721,7 +720,7 @@ figcaption {
 
 .comparison-text {
   max-width: 540px;
-  margin: auto 0;
+  margin: var(--space-5) 0 0;
   font-size: clamp(24px, 2.2vw, 32px);
   font-weight: 600;
   line-height: 1.25;
@@ -1731,7 +1730,6 @@ code {
   .selected-text { top: 58px; left: 24px; width: 330px; max-width: calc(100% - 48px); }
   .plugin-window { right: 16px; bottom: 18px; width: min(306px, calc(100% - 32px)); }
   .comparison-grid { grid-template-columns: 1fr; row-gap: 28px; }
-  .comparison-visual { min-height: 300px; }
   .comparison-arrow { transform: translate(-50%, -50%) rotate(90deg); }
   .split-section { grid-template-columns: 1fr; gap: var(--stack-gap); }
   .reverse-on-mobile .section-copy { order: -1; }
