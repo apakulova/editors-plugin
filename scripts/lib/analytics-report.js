@@ -6,7 +6,7 @@ const DEFAULT_POSTHOG_DASHBOARD_URL = "https://eu.posthog.com/project/184090/das
 const DEFAULT_POSTHOG_PERFORMANCE_DASHBOARD_URL = "https://eu.posthog.com/project/184090/dashboard/854930";
 const POSTHOG_UNEXPECTED_RESPONSE_REASON = "PostHog вернул неожиданный формат данных.";
 const MIN_WEEKLY_PERFORMANCE_RUNS = 10;
-const PERFORMANCE_MEASUREMENT_VERSION = 7;
+const PERFORMANCE_MEASUREMENT_VERSION = 8;
 const POINT_EDITING_PHASE = "implementation";
 const POINT_EDITING_RELEASE = "2026-08-05";
 const POINT_EDITING_RELEASE_DAY = { day: 5, month: 8, year: 2026 };
@@ -65,6 +65,7 @@ const ERROR_CATEGORY_LABELS = {
 const PERFORMANCE_TIMING_COLUMNS = [
   { key: "collectTextMs", label: "поиск текстовых слоёв", property: "timing_collect_text_ms" },
   { key: "typographyMs", label: "применение правил типографики", property: "timing_typography_ms" },
+  { key: "numberContextMs", label: "проверка числового контекста", property: "timing_number_context_ms" },
   { key: "fontsMs", label: "загрузка шрифтов", property: "timing_fonts_ms" },
   { key: "readStylesMs", label: "чтение оформления", property: "timing_read_styles_ms" },
   { key: "compareTextMs", label: "сравнение текста", property: "timing_compare_text_ms" },

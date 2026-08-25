@@ -474,7 +474,7 @@ async function run() {
       assert.strictEqual(summary.medianDurationMs, 420);
       assert.strictEqual(summary.pointEditingReadiness.successfulRuns, 7);
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
-      assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '7'")));
+      assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '8'")));
       assert(calls[0] && JSON.parse(calls[0].options.body).query.query.includes("coalesce(nullIf(toString(properties.run_id), ''), toString(uuid))"));
       assert(calls.slice(3, 5).every((call) => JSON.parse(call.options.body).query.query.includes("GROUP BY run_id")));
       assert(JSON.parse(calls[5].options.body).query.query.includes("startsWith(toString(properties.plugin_release), '2026-08-05')"));
@@ -520,8 +520,8 @@ async function run() {
 
   await withMockedFetch(
     [
-      { results: [[164, 420, 1800, 12400, 10, 20, 310, 0, 0, 0, 74, 0, 6]] },
-      { results: [[150, 338.71, 1600, 9000, 8, 18, 250, 0, 0, 0, 55, 0, 5]] },
+      { results: [[164, 420, 1800, 12400, 10, 20, 15, 310, 0, 0, 0, 74, 0, 6]] },
+      { results: [[150, 338.71, 1600, 9000, 8, 18, 12, 250, 0, 0, 0, 55, 0, 5]] },
     ],
     async (calls) => {
       const summary = await fetchWeeklyPerformanceSummary(weeklyRange, env);
@@ -530,7 +530,7 @@ async function run() {
       assert.strictEqual(summary.fontsMs, 310);
       assert.strictEqual(summary.baseline.averageDurationMs, 338.71);
       assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
-      assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("= '7'")));
+      assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("= '8'")));
     }
   );
 
@@ -554,8 +554,8 @@ async function run() {
   await withTelegramEnvironment(async () => {
     await withMockedFetch(
       [
-        { results: [[164, 420, 1800, 12400, 10, 20, 310, 0, 0, 0, 74, 0, 6]] },
-        { results: [[150, 338.71, 1600, 9000, 8, 18, 250, 0, 0, 0, 55, 0, 5]] },
+        { results: [[164, 420, 1800, 12400, 10, 20, 15, 310, 0, 0, 0, 74, 0, 6]] },
+        { results: [[150, 338.71, 1600, 9000, 8, 18, 12, 250, 0, 0, 0, 55, 0, 5]] },
         { ok: true },
       ],
       async (calls) => {

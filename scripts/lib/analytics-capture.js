@@ -64,6 +64,7 @@ const TIMING_PROPERTIES = [
   "timing_compare_text_ms",
   "timing_development_markers_ms",
   "timing_fonts_ms",
+  "timing_number_context_ms",
   "timing_other_ms",
   "timing_point_edit_planning_ms",
   "timing_read_styles_ms",

@@ -82,8 +82,9 @@ module.exports = {
     {
       title: "Числа, даты и&nbsp;деньги",
       points: [
-        "Разряды в&nbsp;длинных числах: <span class=\"rule-example\">1000000 <span class=\"rule-arrow\">→</span> 1&nbsp;000&nbsp;000</span>",
-        "Десятичная запятая в&nbsp;числах: <span class=\"rule-example\">10.5 <span class=\"rule-arrow\">→</span> 10,5</span>",
+        "Разряды в&nbsp;длинных числах с&nbsp;валютой, процентом, единицей измерения или сокращением: <span class=\"rule-example\">10000&nbsp;₽ <span class=\"rule-arrow\">→</span> 10&nbsp;000&nbsp;₽, 10000&nbsp;кг <span class=\"rule-arrow\">→</span> 10&nbsp;000&nbsp;кг</span>",
+        "Десятичная запятая в&nbsp;числах с&nbsp;валютой, процентом, единицей измерения или сокращением: <span class=\"rule-example\">10.5&nbsp;кг <span class=\"rule-arrow\">→</span> 10,5&nbsp;кг</span>",
+        "Знак валюты стоит после числа: <span class=\"rule-example\">&#36;123 <span class=\"rule-arrow\">→</span> 123&nbsp;&#36;, ₽ 50&nbsp;тыс. <span class=\"rule-arrow\">→</span> 50&nbsp;тыс.&nbsp;₽</span>",
         "Точка в&nbsp;нумерации заголовков и&nbsp;документов: <span class=\"rule-example\">Раздел 1.1, §&nbsp;2.2, ст.&nbsp;35.1, п.&nbsp;2.1</span>",
         "Английская запись числа: <span class=\"rule-example\">62,226,338.00&nbsp;₽ <span class=\"rule-arrow\">→</span> 62&nbsp;226&nbsp;338,00&nbsp;₽</span>",
         "Неразрывный пробел перед валютой или единицей измерения: <span class=\"rule-example\">5&nbsp;кг, 1&nbsp;000&nbsp;₽</span>",

@@ -69,6 +69,7 @@ const source = compiledSource.replace(
     "globalThis.getExistingDevelopmentMarkerIndexes = getExistingDevelopmentMarkerIndexes;",
     "globalThis.captureDevelopmentMarkerFills = captureDevelopmentMarkerFills;",
     "globalThis.getStandalonePhoneCountryPrefixIds = getStandalonePhoneCountryPrefixIds;",
+    "globalThis.buildNumberLayerContexts = buildNumberLayerContexts;",
     "globalThis.createProblemLayerTextPreview = createProblemLayerTextPreview;",
     "globalThis.selectProblemTextLayer = selectProblemTextLayer;",
     "globalThis.measureDuration = measureDuration;",
@@ -146,6 +147,7 @@ const getFontLoadPromise = context.globalThis.getFontLoadPromise;
 const getExistingDevelopmentMarkerIndexes = context.globalThis.getExistingDevelopmentMarkerIndexes;
 const captureDevelopmentMarkerFills = context.globalThis.captureDevelopmentMarkerFills;
 const getStandalonePhoneCountryPrefixIds = context.globalThis.getStandalonePhoneCountryPrefixIds;
+const buildNumberLayerContexts = context.globalThis.buildNumberLayerContexts;
 const createProblemLayerTextPreview = context.globalThis.createProblemLayerTextPreview;
 const selectProblemTextLayer = context.globalThis.selectProblemTextLayer;
 const measureDuration = context.globalThis.measureDuration;
@@ -245,7 +247,7 @@ const shadowRunAnalyticsProperties = getRunAnalyticsProperties({
     source: "quick_run",
     startedAt: 0,
   });
-assert.strictEqual(shadowRunAnalyticsProperties.performance_measurement_version, 7);
+assert.strictEqual(shadowRunAnalyticsProperties.performance_measurement_version, 8);
 assert.strictEqual(shadowRunAnalyticsProperties.point_editing_phase, "point_safe");
 
 assert.deepStrictEqual(
@@ -274,7 +276,7 @@ assert(ruleAnalyticsSummary.changedCodes.includes("math_multiplication"));
 assert(ruleAnalyticsSummary.changedCodes.includes("number_group_digits"));
 assert(ruleAnalyticsSummary.changedCodes.includes("abbr_dotted"));
 assert(ruleAnalyticsSummary.changedCodes.includes("nbsp_short_cyrillic_words"));
-assert.strictEqual(ruleAnalyticsProperties.rule_analytics_version, 2);
+assert.strictEqual(ruleAnalyticsProperties.rule_analytics_version, 3);
 assert.strictEqual(ruleAnalyticsSummary.measuredCodesCount, 77);
 assert.strictEqual(Object.keys(ruleAnalyticsSummary.metrics).length, 77);
 assert.strictEqual(typeof ruleAnalyticsProperties.rule_metrics_json, "string");
@@ -381,6 +383,7 @@ assert.deepStrictEqual(
         compareText: 5,
         developmentMarkers: 6,
         fonts: 2,
+        numberContext: 9,
         pointEditPlanning: 8,
         readStyles: 3,
         restoreStyles: 7,
@@ -393,6 +396,7 @@ assert.deepStrictEqual(
     timing_compare_text_ms: 5,
     timing_development_markers_ms: 6,
     timing_fonts_ms: 2,
+    timing_number_context_ms: 9,
     timing_point_edit_planning_ms: 8,
     timing_read_styles_ms: 3,
     timing_restore_styles_ms: 7,
@@ -658,6 +662,28 @@ function runPointTextEditCalculationTests() {
     [1, 1, 1]
   );
 
+  const currencyMoveSource = "$123";
+  const currencyMoveTarget = `123${NBSP}$`;
+  const currencyMoveEdits = calculatePointTextEdits(currencyMoveSource, currencyMoveTarget);
+  const currencyMoveStyleMap = buildPointTextEditStyleMap(currencyMoveSource, [
+    { start: 0, end: 1 },
+    { start: 1, end: currencyMoveSource.length },
+  ], currencyMoveEdits);
+
+  assert.strictEqual(applyPointTextEditsToString(currencyMoveSource, currencyMoveEdits), currencyMoveTarget);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(currencyMoveStyleMap)), [1, 1, 1, 1, 0]);
+
+  const repeatedCurrencySource = "₽10000—₽20000";
+  const repeatedCurrencyTarget = `10${NBSP}000${NBSP}— 20${NBSP}000${NBSP}₽`;
+  const repeatedCurrencyStyleMap = buildPointTextEditStyleMap(repeatedCurrencySource, [
+    { start: 0, end: 1 },
+    { start: 1, end: 7 },
+    { start: 7, end: 8 },
+    { start: 8, end: repeatedCurrencySource.length },
+  ], calculatePointTextEdits(repeatedCurrencySource, repeatedCurrencyTarget));
+
+  assert.strictEqual(repeatedCurrencyStyleMap[repeatedCurrencyTarget.lastIndexOf("₽")], 2);
+
   const insertionSource = "Первый второй";
   const insertionTarget = `Первый${NBSP}и второй`;
   const insertionEdits = calculatePointTextEdits(insertionSource, insertionTarget);
@@ -875,7 +901,7 @@ expectClean("Что?? Да!! Правда!?", "Что? Да! Правда?!");
 expectClean("!?!!", "!?!");
 expectClean("?!?", "?!?");
 expectClean("?!?!", "?!?!");
-expectClean("5 1000 - 1000", `5 1${NBSP}000${NBSP}${EM_DASH} 1${NBSP}000`);
+expectClean("5 1000 - 1000", "5 1000 - 1000");
 
 for (let length = 1; length <= 10; length += 1) {
   for (let mask = 0; mask < 2 ** length; mask += 1) {
@@ -939,9 +965,9 @@ expectClean("в X-XI веках", `в${NBSP}X${EM_DASH}XI веках`);
 expectClean("главы I-III", `главы I${EM_DASH}III`);
 expectClean("разделы IV-VI", `разделы IV${EM_DASH}VI`);
 expectClean("кв. I-II", `кв. I${EM_DASH}II`);
-expectClean("2 000-4 000", `2${NBSP}000${NBSP}— 4${NBSP}000`);
-expectClean("2 000–4 000", `2${NBSP}000${NBSP}— 4${NBSP}000`);
-expectClean("2 000—4 000", `2${NBSP}000${NBSP}— 4${NBSP}000`);
+expectClean("2 000-4 000", `2 000${NBSP}— 4 000`);
+expectClean("2 000–4 000", `2 000${NBSP}— 4 000`);
+expectClean("2 000—4 000", `2 000${NBSP}— 4 000`);
 expectClean("02.02.2012-05.05.2013", `02.02.2012${NBSP}— 05.05.2013`);
 expectClean("02.02.2012 – 05.05.2013", `02.02.2012${NBSP}— 05.05.2013`);
 expectClean("02.02.2012—05.05.2013", `02.02.2012${NBSP}— 05.05.2013`);
@@ -1024,9 +1050,9 @@ expectClean("Пароль: ****-1234.", "Пароль: ****-1234.");
 expectClean("Пароль: ****−1*234.", "Пароль: ****−1*234.");
 expectClean("Пароль: ****-1*234.", "Пароль: ****-1*234.");
 expectClean("••4444", "••4444");
-expectClean("••44444", `••44${NBSP}444`);
+expectClean("••44444", "••44444");
 expectClean("**4444", "**4444");
-expectClean("**44444", `**44${NBSP}444`);
+expectClean("**44444", "**44444");
 expectClean("****4444", "****4444");
 expectClean("карта****4444", "карта****4444");
 expectClean("карта ****4444", "карта ****4444");
@@ -1043,7 +1069,7 @@ expectClean("1234–5678–9012–3456", "1234–5678–9012–3456");
 expectClean("1234—5678—9012—3456", "1234—5678—9012—3456");
 expectClean("40914810810010073985", "40914810810010073985");
 expectClean("4070 2810 0000 0012 3456", "4070 2810 0000 0012 3456");
-expectClean("812345678901234 клиентов", `812${NBSP}345${NBSP}678${NBSP}901${NBSP}234${NBSP}клиентов`);
+expectClean("812345678901234 клиентов", `812345678901234${NBSP}клиентов`);
 expectClean("+ 7", "+ 7");
 expectClean("9777001020", `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
 expectClean("977 700 10 20", `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
@@ -1112,13 +1138,13 @@ expectClean("AB-123", "AB-123");
 expectClean("Серия АА-123456", "Серия АА-123456");
 expectClean("+7 (900) 123-45-67", `+7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67`);
 expectClean("Встреча 15 завтра.", `Встреча 15${NBSP}завтра.`);
-expectClean("По 2000 человек", `По${NBSP}2${NBSP}000${NBSP}человек`);
-expectClean("В базе 10000 клиентов.", `В${NBSP}базе 10${NBSP}000${NBSP}клиентов.`);
-expectClean("Продано 1234567 билетов", `Продано 1${NBSP}234${NBSP}567${NBSP}билетов`);
-expectClean("812345678901234 клиентов", `812${NBSP}345${NBSP}678${NBSP}901${NBSP}234${NBSP}клиентов`);
-expectClean("по 10000 человек", `по${NBSP}10${NBSP}000${NBSP}человек`);
-expectClean("д. 10000 корпус", `д.${NBSP}10${NBSP}000 корпус`);
-expectClean("г. 10000 жителей", `г.${NBSP}10${NBSP}000 жителей`);
+expectClean("По 2000 человек", `По${NBSP}2000${NBSP}человек`);
+expectClean("В базе 10000 клиентов.", `В${NBSP}базе 10000${NBSP}клиентов.`);
+expectClean("Продано 1234567 билетов", `Продано 1234567${NBSP}билетов`);
+expectClean("812345678901234 клиентов", `812345678901234${NBSP}клиентов`);
+expectClean("по 10000 человек", `по${NBSP}10000${NBSP}человек`);
+expectClean("д. 10000 корпус", `д.${NBSP}10000 корпус`);
+expectClean("г. 10000 жителей", `г.${NBSP}10000 жителей`);
 expectClean("в д. 5 живёт", `в${NBSP}д.${NBSP}5 живёт`);
 expectClean("№ 10000 заявок", `№${NBSP}10000 заявок`);
 expectClean("§ 10000 пунктов", `§${NBSP}10000 пунктов`);
@@ -1140,6 +1166,58 @@ expectClean("Дом № 5 стоит рядом.", `Дом №${NBSP}5 стои�
 expectClean("См. § 100 000.", `См. §${NBSP}100 000.`);
 expectClean("© 2025 по 2026 год идёт тест.", `©${NBSP}2025 по${NBSP}2026 год идёт тест.`);
 expectClean("©2025", `©${NBSP}2025`);
+expectClean("10000", "10000");
+expectClean("10000 ₽", `10${NBSP}000${NBSP}₽`);
+expectClean("₽10000", `10${NBSP}000${NBSP}₽`);
+expectClean("$123", `123${NBSP}$`);
+expectClean("€ 123", `123${NBSP}€`);
+for (const currencySymbol of ["£", "¥", "₸", "₾", "₴", "₺", "֏", "₪", "₹", "₩", "₫", "฿", "₱"]) {
+  expectClean(`${currencySymbol}123`, `123${NBSP}${currencySymbol}`);
+}
+expectClean("₽ 50 тыс.", `50${NBSP}тыс.${NBSP}₽`);
+expectClean("$50 миллионов", `50${NBSP}миллионов${NBSP}$`);
+expectClean("$50 товаров", `50${NBSP}$ товаров`);
+expectClean("$123USD", "$123USD");
+expectClean("Цена ($123).", `Цена (123${NBSP}$).`);
+expectClean("RUB 10000", `RUB 10${NBSP}000`);
+expectClean("рублей 10000", `рублей 10${NBSP}000`);
+expectClean("10000%", `10${NBSP}000%`);
+expectClean("10000 кг", `10${NBSP}000${NBSP}кг`);
+expectClean("10000 руб", `10${NBSP}000${NBSP}руб.`);
+expectClean("10000 DPI", `10${NBSP}000${NBSP}dpi`);
+expectClean("10000 клиентов", `10000${NBSP}клиентов`);
+expectClean("код 12345 кг", `код 12${NBSP}345${NBSP}кг`);
+expectClean("ID 12345 ₽", `ID 12345${NBSP}₽`);
+expectClean("8841475834769921 ₽", `8${NBSP}841${NBSP}475${NBSP}834${NBSP}769${NBSP}921${NBSP}₽`);
+expectClean("8841 4758 3476 9921 ₽", `8841 4758 3476 9921${NBSP}₽`);
+expectClean("00001000 ₽", `00${NBSP}001${NBSP}000${NBSP}₽`);
+expectClean("+79001234567 ₽", `+79${NBSP}001${NBSP}234${NBSP}567${NBSP}₽`);
+expectClean("+7 (900) 123-45-67 ₽", `+7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67${NBSP}₽`);
+expectClean("Телефон: +79001234567 ₽", `Телефон: +7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67${NBSP}₽`);
+expectClean("+79001234567 кг", `+7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67${NBSP}кг`);
+expectClean("338.00", "338.00");
+expectClean("338.00 ₽", `338,00${NBSP}₽`);
+expectClean("$338.00", `338,00${NBSP}$`);
+expectClean("$+10000", `+10${NBSP}000${NBSP}$`);
+expectClean("₽+79001234567", `+79${NBSP}001${NBSP}234${NBSP}567${NBSP}₽`);
+expectClean("₽+7 (900) 123-45-67", `+7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67${NBSP}₽`);
+expectClean("RUB-10000", "RUB-10000");
+expectClean("RUB10000", "RUB10000");
+expectClean("10000RUB", "10000RUB");
+expectClean("338.00 кг", `338,00${NBSP}кг`);
+expectClean("338.00%", "338,00%");
+expectClean("338.00 тыс.", `338,00${NBSP}тыс.`);
+expectClean("12,345", "12,345");
+expectClean("12,345 ₽", `12,345${NBSP}₽`);
+expectClean("1,234,567", "1,234,567");
+expectClean("1,234,567 ₽", `1${NBSP}234${NBSP}567${NBSP}₽`);
+expectClean("12,345.00 ₽", `12${NBSP}345,00${NBSP}₽`);
+expectClean("₽10000—$20000", `10${NBSP}000${NBSP}₽${NBSP}— 20${NBSP}000${NBSP}$`);
+expectClean("₽10000—₽20000", `10${NBSP}000${NBSP}— 20${NBSP}000${NBSP}₽`);
+expectClean("10000—20000 кг", `10${NBSP}000${NBSP}— 20${NBSP}000${NBSP}кг`);
+expectClean("10000, 20000 и 30000 ₽", `10${NBSP}000, 20${NBSP}000${NBSP}и${NBSP}30${NBSP}000${NBSP}₽`);
+expectClean("10000 + 20000 = 30000", `10${NBSP}000${NBSP}+${NBSP}20${NBSP}000${NBSP}=${NBSP}30${NBSP}000`);
+expectClean("10000 + 20000", `10000${NBSP}+${NBSP}20000`);
 expectClean("Подписка 5000 ₽/мес. Следующий платёж завтра.", `Подписка 5${NBSP}000${NBSP}₽/мес. Следующий платёж завтра.`);
 expectClean("Подписка 5000 ₽/мес.", `Подписка 5${NBSP}000${NBSP}₽/мес`);
 expectClean("Вес 1.5 кг. Доставим завтра.", `Вес 1,5${NBSP}кг. Доставим завтра.`);
@@ -1222,7 +1300,7 @@ expectClean("Доход 100 млн и 5 млрд.", `Доход 100${NBSP}млн
 expectClean("Выручка 10 млн.\nНужно увеличить на 5%", `Выручка 10${NBSP}млн\nНужно увеличить на${NBSP}5%`);
 expectClean("Выручка 10 млн. Нужно увеличить на 5%", `Выручка 10${NBSP}млн. Нужно увеличить на${NBSP}5%`);
 expectDevelopmentIdempotent(`Цена 2${NBSP}000,35${NBSP}₽.`, "Цена 2*000,35*₽.");
-expectDevelopmentIdempotent("В базе 10000 клиентов.", "В*базе 10*000*клиентов.");
+expectDevelopmentIdempotent("В базе 10000 клиентов.", "В*базе 10000*клиентов.");
 expectDevelopmentIdempotent("далеко ли холодно ли стало", "далеко*ли холодно*ли стало");
 expectDevelopmentIdempotent("знал б ты, всё ж можно ль иначе", "знал*б ты, всё*ж можно*ль иначе");
 expectDevelopmentIdempotent("Это же не баг, а фича ли?", "Это*же не*баг, а*фича*ли?");
@@ -1249,8 +1327,8 @@ expectDevelopmentIdempotent("2*2,", `2*${MULTIPLY}*2,`);
 expectDevelopmentStableWithoutMarkers("Цена 1*000*₽.");
 expectDevelopmentStableWithoutMarkers(`Позвоните: +7*900*123${NB_HYPHEN}45${NB_HYPHEN}67.`);
 expectDevelopmentStableWithoutMarkers(`Или так: 8*900*123${NB_HYPHEN}45${NB_HYPHEN}67.`);
-expectDevelopmentStableWithoutMarkers("Цена не*телефон: 79*001*234*567*₽.");
-expectDevelopmentStableWithoutMarkers("Длинное число: 812*345*678*901*234.");
+expectDevelopmentStableWithoutMarkers("Цена: 79*001*234*567*₽.");
+expectDevelopmentStableWithoutMarkers("Длинное число: 812*345*678*901*234.", "Длинное число: 812 345 678 901 234.");
 expectDevelopmentStableWithoutMarkers("№*12 345 изменился.", "№*12 345 изменился.");
 expectDevelopmentIdempotent("Номер заказа № 79001234567.", "Номер заказа №*79001234567.");
 expectDevelopmentStableWithoutMarkers("Номер заказа №*79001234567.", "Номер заказа №*79001234567.");
@@ -1289,7 +1367,7 @@ const maskedCardBulletsRecolor = cleanTypographyWithMetadata("карта••44
 assert.strictEqual(development.text, "2*\u00D7*2*=*4");
 assert.deepStrictEqual(Array.from(development.developmentMarkerIndexes), [1, 3, 5, 7]);
 assert.strictEqual(developmentToBeauty.text, `2${NBSP}${MULTIPLY}${NBSP}2${NBSP}=${NBSP}4`);
-assert.strictEqual(textDevelopmentToBeauty.text, `В${NBSP}базе 10${NBSP}000${NBSP}клиентов.`);
+assert.strictEqual(textDevelopmentToBeauty.text, `В${NBSP}базе 10000${NBSP}клиентов.`);
 assert.strictEqual(developmentWithoutMarkers.text, "Формула: 2*×*2*=*4.");
 assert.strictEqual(existingAsteriskRecolored.text, "в*дом");
 assert.deepStrictEqual(Array.from(existingAsteriskRecolored.developmentMarkerIndexes), [1]);
@@ -2132,12 +2210,48 @@ function runPhoneLayoutPerformanceTests() {
   assert(durationMs < 1500, `Phone layout lookup took ${durationMs} ms for repeated horizontal positions`);
 }
 
+function runNumberLayerContextPerformanceTests() {
+  const numberNodes = [];
+
+  for (let index = 0; index < 5000; index += 1) {
+    const amount = createProcessTextNodeMock(
+      `number-context-performance-amount-${index}`,
+      "10000",
+      { height: 20, width: 60, x: 0, y: index * 24 },
+      null
+    );
+    const currency = createProcessTextNodeMock(
+      `number-context-performance-currency-${index}`,
+      "₽",
+      { height: 20, width: 12, x: 70, y: index * 24 },
+      null
+    );
+    connectHorizontalAutoLayoutParent(`number-context-performance-parent-${index}`, [amount, currency]);
+    numberNodes.push(amount);
+  }
+
+  const startedAt = Date.now();
+  const contexts = buildNumberLayerContexts(numberNodes);
+  const durationMs = Date.now() - startedAt;
+
+  assert.strictEqual(contexts.size, numberNodes.length);
+  assert(durationMs < 1500, `Number context lookup took ${durationMs} ms for ${numberNodes.length} layers`);
+}
+
 function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId = "shared-container") {
   const font = { family: "Inter", style: "Regular" };
 
   const node = {
     absoluteBoundingBox,
     characters,
+    layoutPositioning: "AUTO",
+    locked: false,
+    maxLines: null,
+    rotation: 0,
+    textAutoResize: "WIDTH_AND_HEIGHT",
+    textTruncation: "DISABLED",
+    type: "TEXT",
+    visible: true,
     fillStyleId: "",
     getPluginData: () => "",
     getRangeAllFontNames: () => [font],
@@ -2187,6 +2301,25 @@ function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId
   };
 
   return node;
+}
+
+function connectHorizontalAutoLayoutParent(id, nodes) {
+  const parent = {
+    children: nodes,
+    id,
+    layoutMode: "HORIZONTAL",
+    layoutWrap: "NO_WRAP",
+    locked: false,
+    parent: null,
+    type: "FRAME",
+    visible: true,
+  };
+
+  for (const node of nodes) {
+    node.parent = parent;
+  }
+
+  return parent;
 }
 
 function configureFigmaUndoForNodes(nodes, restoreOnUndo = true) {
@@ -2516,6 +2649,7 @@ async function runStandalonePhoneCountryPrefixContextTests() {
 
   const prefix = createProcessTextNodeMock("phone-prefix", "+ 7", { height: 20, width: 20, x: 0, y: 0 });
   const tail = createProcessTextNodeMock("phone-tail", "977 700-10-20", { height: 20, width: 110, x: 26, y: 0 });
+  connectHorizontalAutoLayoutParent("phone-auto-layout", [prefix, tail]);
   const result = await processTextNodes([prefix, tail], 0, 0, beautyOptions);
 
   assertTextProcessCounts(result, {
@@ -2572,6 +2706,106 @@ async function runStandalonePhoneCountryPrefixContextTests() {
   });
   assert.strictEqual(unrelatedPrefix.characters, "+ 7");
   assert.strictEqual(unrelatedTail.characters, `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
+}
+
+async function runEvidenceBasedNumberLayerContextTests() {
+  context.figma.loadFontAsync = async () => {};
+
+  const amount = createProcessTextNodeMock("context-amount", "10000", { height: 20, width: 70, x: 0, y: 0 });
+  const currency = createProcessTextNodeMock("context-currency", "₽", { height: 20, width: 12, x: 80, y: 0 });
+  currency.locked = true;
+  connectHorizontalAutoLayoutParent("context-currency-parent", [amount, currency]);
+  const amountResult = await processTextNodes([amount], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(amountResult, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(amount.characters, `10${NBSP}000`);
+  assert.strictEqual(currency.characters, "₽");
+
+  const leadingCurrency = createProcessTextNodeMock("leading-context-currency", "$", { height: 20, width: 12, x: 0, y: 20 });
+  const leadingAmount = createProcessTextNodeMock("leading-context-amount", "10000", { height: 20, width: 70, x: 20, y: 20 });
+  leadingCurrency.locked = true;
+  connectHorizontalAutoLayoutParent("leading-context-parent", [leadingCurrency, leadingAmount]);
+  const leadingAmountResult = await processTextNodes([leadingAmount], 0, 0, beautyOptions);
+
+  assert.strictEqual(leadingAmountResult.changed, 1);
+  assert.strictEqual(leadingCurrency.characters, "$");
+  assert.strictEqual(leadingAmount.characters, `10${NBSP}000`);
+
+  const decimal = createProcessTextNodeMock("context-decimal", "338.00", { height: 20, width: 70, x: 0, y: 30 });
+  const unit = createProcessTextNodeMock("context-unit", "кг", { height: 20, width: 20, x: 80, y: 30 });
+  connectHorizontalAutoLayoutParent("context-unit-parent", [decimal, unit]);
+  const decimalResult = await processTextNodes([decimal], 0, 0, beautyOptions);
+
+  assert.strictEqual(decimalResult.failed, 0);
+  assert.strictEqual(decimal.characters, "338,00");
+
+  const manualAmount = createProcessTextNodeMock("manual-amount", "10000", { height: 20, width: 70, x: 0, y: 60 });
+  const manualCurrency = createProcessTextNodeMock("manual-currency", "₽", { height: 20, width: 12, x: 80, y: 60 });
+  const manualParent = connectHorizontalAutoLayoutParent("manual-parent", [manualAmount, manualCurrency]);
+  manualParent.layoutMode = "NONE";
+  const manualResult = await processTextNodes([manualAmount], 0, 0, beautyOptions);
+
+  assert.strictEqual(manualResult.changed, 0);
+  assert.strictEqual(manualAmount.characters, "10000");
+
+  const blockedAmount = createProcessTextNodeMock("blocked-context-amount", "10000", { height: 20, width: 70, x: 0, y: 75 });
+  const blockingIcon = {
+    id: "blocked-context-icon",
+    layoutPositioning: "AUTO",
+    locked: false,
+    parent: null,
+    rotation: 0,
+    type: "RECTANGLE",
+    visible: true,
+  };
+  const blockedCurrency = createProcessTextNodeMock("blocked-context-currency", "₽", { height: 20, width: 12, x: 90, y: 75 });
+  connectHorizontalAutoLayoutParent("blocked-context-parent", [blockedAmount, blockingIcon, blockedCurrency]);
+  const blockedResult = await processTextNodes([blockedAmount], 0, 0, beautyOptions);
+
+  assert.strictEqual(blockedResult.changed, 0);
+  assert.strictEqual(blockedAmount.characters, "10000");
+
+  const firstAmount = createProcessTextNodeMock("ambiguous-first", "10000", { height: 20, width: 70, x: 0, y: 90 });
+  const sharedCurrency = createProcessTextNodeMock("ambiguous-currency", "₽", { height: 20, width: 12, x: 80, y: 90 });
+  const secondAmount = createProcessTextNodeMock("ambiguous-second", "20000", { height: 20, width: 70, x: 100, y: 90 });
+  connectHorizontalAutoLayoutParent("ambiguous-parent", [firstAmount, sharedCurrency, secondAmount]);
+  const ambiguousResult = await processTextNodes([firstAmount, secondAmount], 0, 0, beautyOptions);
+
+  assert.strictEqual(ambiguousResult.changed, 0);
+  assert.strictEqual(firstAmount.characters, "10000");
+  assert.strictEqual(secondAmount.characters, "20000");
+
+  const protectedLabel = createProcessTextNodeMock("protected-label", "ID", { height: 20, width: 20, x: 0, y: 120 });
+  const protectedNumber = createProcessTextNodeMock("protected-number", "12345", { height: 20, width: 60, x: 30, y: 120 });
+  connectHorizontalAutoLayoutParent("protected-parent", [protectedLabel, protectedNumber]);
+  const protectedResult = await processTextNodes([protectedNumber], 0, 0, beautyOptions);
+
+  assert.strictEqual(protectedResult.changed, 0);
+  assert.strictEqual(protectedNumber.characters, "12345");
+
+  const changingAmount = createProcessTextNodeMock("changing-context-amount", "10000", { height: 20, width: 70, x: 0, y: 150 });
+  const changingMarker = createProcessTextNodeMock("changing-context-marker", "₽", { height: 20, width: 20, x: 80, y: 150 });
+  connectHorizontalAutoLayoutParent("changing-context-parent", [changingAmount, changingMarker]);
+  let markerChanged = false;
+  context.figma.loadFontAsync = async () => {
+    if (!markerChanged) {
+      markerChanged = true;
+      changingMarker.characters = "клиенты";
+    }
+  };
+  const changingResult = await processTextNodes([changingAmount], 0, 0, beautyOptions);
+  context.figma.loadFontAsync = async () => {};
+
+  assert.strictEqual(changingResult.failed, 0);
+  assert.strictEqual(changingResult.changed, 0);
+  assert.strictEqual(changingResult.processed, 1);
+  assert.strictEqual(changingAmount.characters, "10000");
 }
 
 async function runRuleAnalyticsFinalTextTests() {
@@ -4559,6 +4793,7 @@ runDevelopmentMarkerPluginDataTests();
 runDevelopmentMarkerScanTests();
 runProblemLayerPreviewTests();
 runPhoneLayoutPerformanceTests();
+runNumberLayerContextPerformanceTests();
 runParentStateCacheTests();
 runAdjacentPunctuationStylePreservationTests();
 
@@ -4574,6 +4809,7 @@ runStyleRestorationTests()
   .then(runDetectedRollbackDamageTests)
   .then(runUnavailableLinkedStylePreflightTests)
   .then(runStandalonePhoneCountryPrefixContextTests)
+  .then(runEvidenceBasedNumberLayerContextTests)
   .then(runRuleAnalyticsFinalTextTests)
   .then(runProcessingFailureAnalyticsTests)
   .then(runStyleRestorationRollbackTests)

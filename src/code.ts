@@ -16,10 +16,10 @@ const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
 const ANALYTICS_SCHEMA_VERSION = 13;
 const ANALYTICS_PLUGIN_RELEASE = "2026-08-07";
-const PERFORMANCE_MEASUREMENT_VERSION = 7;
+const PERFORMANCE_MEASUREMENT_VERSION = 8;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
 const DEFAULT_TEXT_WRITE_STRATEGY: TextWriteStrategy = "point";
-const RULE_ANALYTICS_VERSION = 2;
+const RULE_ANALYTICS_VERSION = 3;
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
@@ -37,6 +37,57 @@ let unicodeMarkPattern: RegExp | null | undefined;
 let problemLayerSelectionRequestId = 0;
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
 const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
+const QUANTITY_CURRENCY_SYMBOLS = "₽$€£¥₸₾₴₺֏₪₹₩₫฿₱";
+const QUANTITY_SCALE_PATTERN = "тыс\\.?|млн|млрд|трлн|тысяча|тысячи|тысяч|миллион|миллиона|миллионов|миллиард|миллиарда|миллиардов|триллион|триллиона|триллионов|квадриллион|квадриллиона|квадриллионов|квинтиллион|квинтиллиона|квинтиллионов|секстиллион|секстиллиона|секстиллионов|септиллион|септиллиона|септиллионов|октиллион|октиллиона|октиллионов|нониллион|нониллиона|нониллионов|дециллион|дециллиона|дециллионов";
+const QUANTITY_HORIZONTAL_SPACE_PATTERN = "[ \\t\\u00A0\\u2009\\u202F]";
+const QUANTITY_NUMBER_TOKEN_PATTERN = "[+−-]?\\d+(?:[ \\t\\u00A0\\u2009\\u202F]\\d{3})*(?:,\\d+)?";
+const LEADING_CURRENCY_VALUE_PATTERN = new RegExp(
+  `(^|[^${LETTERS}\\d${QUANTITY_CURRENCY_SYMBOLS}])([${QUANTITY_CURRENCY_SYMBOLS}])${QUANTITY_HORIZONTAL_SPACE_PATTERN}*((?:\\+7|8)${QUANTITY_HORIZONTAL_SPACE_PATTERN}+\\d{3}${QUANTITY_HORIZONTAL_SPACE_PATTERN}+\\d{3}${NB_HYPHEN}\\d{2}${NB_HYPHEN}\\d{2}|(?:[+${MINUS}-]${QUANTITY_HORIZONTAL_SPACE_PATTERN}*)?\\d+(?:${QUANTITY_HORIZONTAL_SPACE_PATTERN}+\\d+)*(?:[,.]\\d+)?)(${QUANTITY_HORIZONTAL_SPACE_PATTERN}+(?:${QUANTITY_SCALE_PATTERN})(?=$|[^${LETTERS}]))?(?=$|[^${LETTERS}\\d])`,
+  "gi"
+);
+const LEADING_CURRENCY_RANGE_PATTERN = new RegExp(
+  `([${QUANTITY_CURRENCY_SYMBOLS}])[ \\t\\u00A0\\u2009\\u202F]*(${QUANTITY_NUMBER_TOKEN_PATTERN})[ \\t\\u00A0\\u2009\\u202F]*(?:—|–|-|−)[ \\t\\u00A0\\u2009\\u202F]*([${QUANTITY_CURRENCY_SYMBOLS}])[ \\t\\u00A0\\u2009\\u202F]*(${QUANTITY_NUMBER_TOKEN_PATTERN})`,
+  "g"
+);
+const QUANTITY_CURRENCY_CODES = new Set([
+  "RUB", "RUR", "USD", "EUR", "GBP", "CHF", "CNY", "JPY", "KZT", "BYN", "UAH", "AMD", "GEL", "TRY", "AED", "SAR", "QAR", "ILS", "INR", "KRW", "THB", "VND", "IDR", "MYR", "SGD", "HKD", "AUD", "NZD", "CAD", "NOK", "SEK", "DKK", "PLN", "CZK", "HUF", "RSD", "BGN", "MDL", "AZN", "KGS", "TJS", "TMT", "UZS", "MNT", "BRL", "MXN", "ARS", "CLP", "COP", "ZAR", "EGP",
+]);
+const QUANTITY_CURRENCY_WORDS = new Set([
+  ..."рубль рубля рублей копейка копейки копеек доллар доллара долларов цент цента центов евро евроцент евроцента евроцентов фунт фунта фунтов пенс пенса пенсов юань юаня юаней цзяо иена иены иен тенге гривна гривны гривен лари тетри драм драма драмов лума лумы лум лира лиры лир куруш куруша курушей франк франка франков злотый злотых грош гроша грошей крона кроны крон эре рупия рупии рупий пайс пайса пайсов пайсы шекель шекеля шекелей агора агоры агор дирхам дирхама дирхамов филс филса филсов риал риала риалов халала бат бата батов сатанг сатанга сатангов вона воны вон донг донга донгов песо реал реала реалов руб руб. коп коп. долл долл.".split(" "),
+  "белорусский рубль", "белорусских рубля", "белорусских рублей",
+]);
+const QUANTITY_MULTIWORD_FORMS = new Set([
+  "п. п.", "процентный пункт", "процентных пункта", "процентных пунктов", "процентного пункта",
+  "квадратный миллиметр", "квадратных миллиметра", "квадратных миллиметров", "квадратный сантиметр", "квадратных сантиметра", "квадратных сантиметров", "квадратный метр", "квадратных метра", "квадратных метров", "квадратный километр", "квадратных километра", "квадратных километров",
+  "кубический миллиметр", "кубических миллиметра", "кубических миллиметров", "кубический сантиметр", "кубических сантиметра", "кубических сантиметров", "кубический метр", "кубических метра", "кубических метров", "кубический километр", "кубических километра", "кубических километров",
+  "градус Цельсия", "градуса Цельсия", "градусов Цельсия", "градус Фаренгейта", "градуса Фаренгейта", "градусов Фаренгейта", "мм рт. ст.", "миллиметр ртутного столба", "миллиметра ртутного столба", "миллиметров ртутного столба",
+  "кв. мм", "кв. см", "кв. м", "кв. км", "куб. мм", "куб. см", "куб. м", "куб. км", "руб./кв. м",
+]);
+const QUANTITY_MARKER_FORMS = new Set(
+  (
+    "тыс тыс. млн млрд трлн % ‰ процент процента процентов промилле п.п. пп. " +
+    "нм мкм мм см дм м км мм² см² дм² м² км² мм³ см³ дм³ м³ км³ мкл мл сл дл л " +
+    "мкг мг г кг ц т мс с сек сек. мин мин. ч сут сут. нед нед. мес мес. Гц кГц МГц ГГц " +
+    "° °C °С °F K мВ В кВ мА А кА мВт Вт кВт МВт ГВт Вт·ч кВт·ч МВт·ч Ом кОм МОм Дж кДж МДж кал ккал " +
+    "Н кН МН Н·м кН·м Па кПа МПа бар мбар атм атм. бит байт КБ МБ ГБ ТБ Кбит Мбит Гбит пикс пикс. px dpi ppi lpi " +
+    "лм лк кд дБ моль ммоль моль/л ммоль/л об/мин об./мин. рад шт шт. ед ед. чел чел. экз экз. компл компл. упак упак. наб наб. пар пар. поз поз. мест мест. " +
+    "км/ч м/с кг/м³ руб./мес. руб./кв. м ₽/мес. ₽/м² Кбит/с Мбит/с Гбит/с шт./упак. чел./ч кв. мм кв. см кв. м кв. км куб. мм куб. см куб. м куб. км"
+  ).split(" ")
+);
+QUANTITY_MARKER_FORMS.delete("кв.");
+QUANTITY_MARKER_FORMS.delete("куб.");
+QUANTITY_MARKER_FORMS.delete("руб./кв.");
+const QUANTITY_FULL_WORD_FORMS = new Set(
+  (
+    "тысяча тысячи тысяч миллион миллиона миллионов миллиард миллиарда миллиардов триллион триллиона триллионов квадриллион квадриллиона квадриллионов квинтиллион квинтиллиона квинтиллионов секстиллион секстиллиона секстиллионов септиллион септиллиона септиллионов октиллион октиллиона октиллионов нониллион нониллиона нониллионов дециллион дециллиона дециллионов " +
+    "нанометр нанометра нанометров микрометр микрометра микрометров миллиметр миллиметра миллиметров сантиметр сантиметра сантиметров дециметр дециметра дециметров метр метра метров километр километра километров микролитр микролитра микролитров миллилитр миллилитра миллилитров сантилитр сантилитра сантилитров децилитр децилитра децилитров литр литра литров " +
+    "микрограмм микрограмма микрограммов миллиграмм миллиграмма миллиграммов грамм грамма граммов килограмм килограмма килограммов центнер центнера центнеров тонна тонны тонн миллисекунда миллисекунды миллисекунд секунда секунды секунд минута минуты минут час часа часов сутки суток неделя недели недель месяц месяца месяцев герц герца килогерц килогерца мегагерц мегагерца гигагерц гигагерца " +
+    "градус градуса градусов кельвин кельвина кельвинов вольт вольта милливольт милливольта киловольт киловольта ампер ампера миллиампер миллиампера килоампер килоампера ватт ватта милливатт милливатта киловатт киловатта мегаватт мегаватта гигаватт гигаватта ом ома омов килоом килоома килоомов мегаом мегаома мегаомов джоуль джоуля джоулей килоджоуль килоджоуля килоджоулей мегаджоуль мегаджоуля мегаджоулей калория калории калорий килокалория килокалории килокалорий ньютон ньютона ньютонов килоньютон килоньютона килоньютонов меганьютон меганьютона меганьютонов паскаль паскаля паскалей килопаскаль килопаскаля килопаскалей мегапаскаль мегапаскаля мегапаскалей атмосфера атмосферы атмосфер пиксель пикселя пикселей люмен люмена люменов люкс люкса люксов кандела канделы кандел децибел децибела децибелов радиан радиана радианов"
+  ).split(" ")
+);
+const QUANTITY_PROTECTIVE_LABELS = [
+  "ID транзакции", "номер счёта", "лицевой счёт", "номер карты", "номер заказа", "номер заявки", "номер договора", "номер чека", "ID", "UID", "UUID", "№", "§", "#", "артикул", "SKU", "ISBN", "IMEI", "IBAN", "номер", "серия", "р/с", "к/с", "ИНН", "КПП", "БИК", "СНИЛС", "ОГРН", "ОГРНИП", "телефон",
+].sort((first, second) => second.length - first.length);
 type PreservedStyleField =
   | "boundVariables"
   | "fillStyleId"
@@ -395,6 +446,7 @@ interface TextCollectionResult {
 
 interface TextProcessTimings {
   typography: number;
+  numberContext: number;
   pointEditPlanning: number;
   fonts: number;
   readStyles: number;
@@ -1096,6 +1148,7 @@ function getTextProcessTimingAnalyticsProperties(timings: TextProcessTimings): A
     timing_compare_text_ms: timings.compareText,
     timing_development_markers_ms: timings.developmentMarkers,
     timing_fonts_ms: timings.fonts,
+    timing_number_context_ms: timings.numberContext,
     timing_point_edit_planning_ms: timings.pointEditPlanning,
     timing_read_styles_ms: timings.readStyles,
     timing_restore_styles_ms: timings.restoreStyles,
@@ -1131,6 +1184,7 @@ function getOtherAnalyticsDuration(context: AnalyticsRunContext, collectTextDura
   const measuredDuration =
     collectTextDuration +
     timings.typography +
+    timings.numberContext +
     timings.pointEditPlanning +
     timings.fonts +
     timings.readStyles +
@@ -2120,6 +2174,366 @@ function hasLockedProperty(node: BaseNode): node is BaseNode & { locked: boolean
   }
 }
 
+function isSupportedNumberContextParent(parent: BaseNode | null): parent is BaseNode & ChildrenMixin & AutoLayoutMixin {
+  try {
+    return (
+      parent !== null &&
+      "children" in parent &&
+      "layoutMode" in parent &&
+      parent.layoutMode === "HORIZONTAL" &&
+      "layoutWrap" in parent &&
+      parent.layoutWrap === "NO_WRAP"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isSupportedNumberContextTextNode(node: TextNode): boolean {
+  try {
+    return (
+      !isTextNodeRemoved(node) &&
+      node.textAutoResize === "WIDTH_AND_HEIGHT" &&
+      node.maxLines === null &&
+      !/[\n\r]/.test(node.characters) &&
+      node.layoutPositioning === "AUTO" &&
+      node.rotation === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isPureNumberContextCandidate(input: string): boolean {
+  try {
+    const trimmed = input.trim();
+
+    return /(\d{4}|\d+\.\d+)/.test(trimmed) && /^[+−\-()\d.,'’ʼ \t\u00A0\u2009\u202F—–:;]+$/.test(trimmed);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check number context candidate", error);
+    throw error;
+  }
+}
+
+function isExactProtectiveContextLabel(input: string): boolean {
+  try {
+    const normalized = input.trim().replace(/:$/, "").trim().toLowerCase();
+    return QUANTITY_PROTECTIVE_LABELS.some((label) => label.toLowerCase() === normalized);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check protective context label", error);
+    throw error;
+  }
+}
+
+function getExactContextMarker(input: string): QuantityEvidence | null {
+  try {
+    const normalized = normalizeQuantityMarkerForLookup(input.replace(/:$/, "").trim());
+    const kind = getQuantityMarkerKind(normalized);
+    return kind === null ? null : { kind, marker: normalized };
+  } catch (error) {
+    console.error("[Чистовик] Failed to classify context marker", error);
+    throw error;
+  }
+}
+
+function isAllowedNumberContextSeparator(input: string): boolean {
+  try {
+    return /^(?::|—|–)$/.test(input.trim());
+  } catch (error) {
+    console.error("[Чистовик] Failed to check number context separator", error);
+    throw error;
+  }
+}
+
+function getContextNodeState(node: SceneNode, hiddenCache: Map<string, boolean>, lockedCache: Map<string, boolean>): unknown {
+  try {
+    const textNode = node.type === "TEXT" ? node : null;
+    return {
+      id: node.id,
+      type: node.type,
+      hidden: isHiddenForProcessing(node, hiddenCache),
+      locked: isLockedForProcessing(node, lockedCache),
+      layoutPositioning: "layoutPositioning" in node ? node.layoutPositioning : null,
+      rotation: "rotation" in node ? node.rotation : null,
+      textAutoResize: textNode?.textAutoResize ?? null,
+      textTruncation: textNode !== null && "textTruncation" in textNode ? textNode.textTruncation : null,
+      maxLines: textNode !== null && "maxLines" in textNode ? textNode.maxLines : null,
+      minWidth: "minWidth" in node ? node.minWidth : null,
+      maxWidth: "maxWidth" in node ? node.maxWidth : null,
+      layoutSizingHorizontal: "layoutSizingHorizontal" in node ? node.layoutSizingHorizontal : null,
+    };
+  } catch (error) {
+    console.error("[Чистовик] Failed to read number context node state", error);
+    throw error;
+  }
+}
+
+function getNumberContextParentSnapshotKey(parent: BaseNode & ChildrenMixin & AutoLayoutMixin): string {
+  try {
+    const hiddenCache = new Map<string, boolean>();
+    const lockedCache = new Map<string, boolean>();
+    return JSON.stringify({
+      id: parent.id,
+      layoutMode: parent.layoutMode,
+      layoutWrap: parent.layoutWrap,
+      children: parent.children.map((child) => getContextNodeState(child, hiddenCache, lockedCache)),
+    });
+  } catch (error) {
+    console.error("[Чистовик] Failed to capture number context parent", error);
+    throw error;
+  }
+}
+
+function getVisibleNumberContextChildren(parent: BaseNode & ChildrenMixin & AutoLayoutMixin): SceneNode[] {
+  try {
+    const hiddenCache = new Map<string, boolean>();
+    return parent.children.filter((child) => !isHiddenForProcessing(child, hiddenCache));
+  } catch (error) {
+    console.error("[Чистовик] Failed to collect visible number context children", error);
+    throw error;
+  }
+}
+
+function getNumberNeighborIndex(children: SceneNode[], index: number, direction: -1 | 1): number | null {
+  try {
+    const adjacent = index + direction;
+
+    if (adjacent < 0 || adjacent >= children.length) {
+      return null;
+    }
+
+    if (children[adjacent].type === "TEXT" && isSupportedNumberContextTextNode(children[adjacent]) && isAllowedNumberContextSeparator(children[adjacent].characters)) {
+      const beyondSeparator = adjacent + direction;
+      return beyondSeparator >= 0 && beyondSeparator < children.length ? beyondSeparator : null;
+    }
+
+    return adjacent;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find number context neighbor", error);
+    throw error;
+  }
+}
+
+function markerHasUniqueNumberNeighbor(children: SceneNode[], markerIndex: number): boolean {
+  try {
+    let candidateCount = 0;
+
+    for (const direction of [-1, 1] as const) {
+      const neighborIndex = getNumberNeighborIndex(children, markerIndex, direction);
+
+      if (
+        neighborIndex !== null &&
+        children[neighborIndex].type === "TEXT" &&
+        isSupportedNumberContextTextNode(children[neighborIndex]) &&
+        isPureNumberContextCandidate(children[neighborIndex].characters)
+      ) {
+        candidateCount += 1;
+      }
+    }
+
+    return candidateCount === 1;
+  } catch (error) {
+    console.error("[Чистовик] Failed to check unique marker neighbor", error);
+    throw error;
+  }
+}
+
+function buildNumberLayerContextForNode(
+  textNode: TextNode,
+  parentSnapshotCache: Map<string, string> | null = null,
+  visibleChildrenCache: Map<string, SceneNode[]> | null = null,
+  childIndexCache: Map<string, Map<string, number>> | null = null
+): NumberLayerContext | null {
+  try {
+    const parent = textNode.parent;
+
+    if (!isSupportedNumberContextParent(parent) || !isSupportedNumberContextTextNode(textNode)) {
+      return null;
+    }
+
+    let children = visibleChildrenCache?.get(parent.id);
+
+    if (children === undefined) {
+      children = getVisibleNumberContextChildren(parent);
+      visibleChildrenCache?.set(parent.id, children);
+    }
+
+    let indexes = childIndexCache?.get(parent.id);
+
+    if (indexes === undefined) {
+      indexes = new Map(children.map((child, childIndex) => [child.id, childIndex]));
+      childIndexCache?.set(parent.id, indexes);
+    }
+
+    const index = indexes.get(textNode.id) ?? -1;
+
+    if (index === -1) {
+      return null;
+    }
+
+    let parentSnapshotKey = parentSnapshotCache?.get(parent.id);
+
+    if (parentSnapshotKey === undefined) {
+      parentSnapshotKey = getNumberContextParentSnapshotKey(parent);
+      parentSnapshotCache?.set(parent.id, parentSnapshotKey);
+    }
+
+    const localParticipants = children.slice(Math.max(0, index - 2), Math.min(children.length, index + 3)).map((child) => {
+      if (child.type !== "TEXT") {
+        return { id: child.id, text: `<${child.type}>` };
+      }
+
+      const text = child.characters;
+
+      if (child.id === textNode.id || getExactContextMarker(text) !== null || isExactProtectiveContextLabel(text) || isAllowedNumberContextSeparator(text)) {
+        return { id: child.id, text };
+      }
+
+      return { id: child.id, text: isPureNumberContextCandidate(text) ? "<number>" : text };
+    });
+    const snapshotKey = JSON.stringify({ localParticipants, parent: parentSnapshotKey });
+    const context: NumberLayerContext = {
+      evidenceAfter: null,
+      evidenceBefore: null,
+      protectedAsPhoneByNeighbor: false,
+      protectedByNeighbor: false,
+      standalonePhonePrefix: false,
+      snapshotKey,
+    };
+    const trimmedText = textNode.characters.trim();
+    const rightIndex = getNumberNeighborIndex(children, index, 1);
+
+    if (
+      isStandaloneRussianPhoneCountryPrefix(trimmedText) &&
+      rightIndex !== null &&
+      children[rightIndex].type === "TEXT" &&
+      isSupportedNumberContextTextNode(children[rightIndex]) &&
+      isRussianPhoneTailToken(children[rightIndex].characters)
+    ) {
+      context.standalonePhonePrefix = true;
+      return context;
+    }
+
+    if (!isPureNumberContextCandidate(trimmedText)) {
+      return context;
+    }
+
+    const candidates: Array<{ direction: -1 | 1; index: number; evidence: QuantityEvidence | null; protected: boolean }> = [];
+
+    for (const direction of [-1, 1] as const) {
+      const neighborIndex = getNumberNeighborIndex(children, index, direction);
+
+      if (neighborIndex === null) {
+        continue;
+      }
+
+      const neighbor = children[neighborIndex];
+
+      if (neighbor.type !== "TEXT" || !isSupportedNumberContextTextNode(neighbor)) {
+        continue;
+      }
+
+      const neighborText = neighbor.characters;
+      const evidence = getExactContextMarker(neighborText);
+      const protectedLabel = direction === -1 && isExactProtectiveContextLabel(neighborText);
+
+      if (protectedLabel || evidence !== null) {
+        candidates.push({ direction, index: neighborIndex, evidence, protected: protectedLabel });
+      }
+    }
+
+    const validCandidates = candidates.filter((candidate) => candidate.protected || markerHasUniqueNumberNeighbor(children, candidate.index));
+
+    if (validCandidates.length !== 1) {
+      return context;
+    }
+
+    const candidate = validCandidates[0];
+
+    if (candidate.protected) {
+      const protectiveNode = children[candidate.index];
+      context.protectedAsPhoneByNeighbor =
+        protectiveNode.type === "TEXT" &&
+        protectiveNode.characters.trim().replace(/:$/, "").trim().toLowerCase() === "телефон";
+      context.protectedByNeighbor = true;
+      return context;
+    }
+
+    if (candidate.evidence === null) {
+      return context;
+    }
+
+    if (candidate.direction === -1) {
+      const normalizedMarker = normalizeQuantityMarkerForLookup(candidate.evidence.marker);
+
+      if (candidate.evidence.kind !== "currency" && normalizedMarker.length === 1) {
+        return context;
+      }
+
+      context.evidenceBefore = candidate.evidence;
+    } else {
+      context.evidenceAfter = candidate.evidence;
+    }
+
+    return context;
+  } catch (error) {
+    console.error("[Чистовик] Failed to build number layer context", error);
+    return null;
+  }
+}
+
+function buildNumberLayerContexts(textNodes: TextNode[]): Map<string, NumberLayerContext> {
+  try {
+    const contexts = new Map<string, NumberLayerContext>();
+    const parentSnapshotCache = new Map<string, string>();
+    const visibleChildrenCache = new Map<string, SceneNode[]>();
+    const childIndexCache = new Map<string, Map<string, number>>();
+
+    for (const textNode of textNodes) {
+      try {
+        if (isTextNodeRemoved(textNode) || !/\d{4}|\d+\.\d+|^\s*\+\s*7\s*$/.test(textNode.characters)) {
+          continue;
+        }
+
+        const context = buildNumberLayerContextForNode(textNode, parentSnapshotCache, visibleChildrenCache, childIndexCache);
+
+        if (context !== null) {
+          contexts.set(textNode.id, context);
+        }
+      } catch (error) {
+        if (!isTextNodeRemoved(textNode)) {
+          throw error;
+        }
+      }
+    }
+
+    return contexts;
+  } catch (error) {
+    console.error("[Чистовик] Failed to build number layer contexts", error);
+    throw error;
+  }
+}
+
+function assertNumberLayerContextUnchanged(
+  textNode: TextNode,
+  initialContext: NumberLayerContext | null,
+  parentSnapshotCache: Map<string, string> | null = null,
+  visibleChildrenCache: Map<string, SceneNode[]> | null = null,
+  childIndexCache: Map<string, Map<string, number>> | null = null
+): void {
+  if (initialContext === null) {
+    return;
+  }
+
+  const currentContext = buildNumberLayerContextForNode(textNode, parentSnapshotCache, visibleChildrenCache, childIndexCache);
+
+  if (currentContext === null || currentContext.snapshotKey !== initialContext.snapshotKey) {
+    const error = new Error("Number layer context changed while the typograph was preparing the write");
+    error.name = TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME;
+    throw error;
+  }
+}
+
 async function processTextNodes(
   textNodes: TextNode[],
   skippedLocked: number,
@@ -2165,27 +2579,31 @@ async function processTextNodes(
         undoCheckpointCreated = true;
       }
     };
-    const standalonePhoneCountryPrefixIds =
-      textNodes.length < 2
-        ? new Set<string>()
-        : measureDuration(
-            (duration) => {
-              timings.typography += duration;
-            },
-            () => getStandalonePhoneCountryPrefixIds(textNodes)
-          );
-    for (let textNodeIndex = 0; textNodeIndex < textNodes.length; textNodeIndex += 1) {
-      const textNode = textNodes[textNodeIndex];
+    const numberLayerContexts = measureDuration(
+      (duration) => {
+        timings.numberContext += duration;
+      },
+      () => buildNumberLayerContexts(textNodes)
+    );
+    const processingTextNodes = textNodes.slice();
+    const deferredNumberContextNodeIds = new Set<string>();
+    const finalNumberContextParentSnapshotCache = new Map<string, string>();
+    const finalNumberContextVisibleChildrenCache = new Map<string, SceneNode[]>();
+    const finalNumberContextChildIndexCache = new Map<string, Map<string, number>>();
+    for (let textNodeIndex = 0; textNodeIndex < processingTextNodes.length; textNodeIndex += 1) {
+      const textNode = processingTextNodes[textNodeIndex];
       const textLayerStartedAt = getMonotonicTimeMs();
       let currentStage: AnalyticsErrorStage = "unknown";
       let countedAsProcessed = false;
       let originalTextForRuleAnalytics: string | null = null;
       let shouldStopProcessing = false;
+      let deferredForNumberContextRetry = false;
       let currentLayerWasMutated = false;
       let currentLayerCountedAsChanged = false;
       let currentLayerRecordedTextChange = false;
       let currentLayerSnapshot: TextLayerStateSnapshot | null = null;
       let currentLayerMutationJournal: PointTextMutationJournal | null = null;
+      let numberLayerContext: NumberLayerContext | null = null;
 
       try {
         if (isTextNodeRemoved(textNode)) {
@@ -2194,6 +2612,19 @@ async function processTextNodes(
         }
 
         const oldText = textNode.characters;
+        if (deferredNumberContextNodeIds.has(textNode.id)) {
+          const parentId = textNode.parent?.id;
+
+          if (parentId !== undefined) {
+            finalNumberContextParentSnapshotCache.delete(parentId);
+            finalNumberContextVisibleChildrenCache.delete(parentId);
+            finalNumberContextChildIndexCache.delete(parentId);
+          }
+
+          numberLayerContext = buildNumberLayerContextForNode(textNode);
+        } else {
+          numberLayerContext = numberLayerContexts.get(textNode.id) ?? null;
+        }
         const ensureCurrentLayerSnapshot = (knownStyles?: StyleSegment[]): TextLayerStateSnapshot => {
           if (currentLayerSnapshot === null) {
             currentLayerSnapshot = createTextLayerStateSnapshot(
@@ -2230,8 +2661,8 @@ async function processTextNodes(
             timings.typography += duration;
           },
           () => {
-            const inputText = standalonePhoneCountryPrefixIds.has(textNode.id) ? normalizeStandaloneRussianPhoneCountryPrefix(oldText) : oldText;
-            return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector);
+            const inputText = numberLayerContext?.standalonePhonePrefix === true ? normalizeStandaloneRussianPhoneCountryPrefix(oldText) : oldText;
+            return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext);
           }
         );
         const newText = cleanResult.text;
@@ -2276,6 +2707,7 @@ async function processTextNodes(
             );
 
             assertTextNodeCharactersUnchanged(textNode, oldText);
+            assertNumberLayerContextUnchanged(textNode, numberLayerContext, finalNumberContextParentSnapshotCache, finalNumberContextVisibleChildrenCache, finalNumberContextChildIndexCache);
             currentStage = "read_styles";
             const stylesAfterFontLoading = measureDuration(
               (duration) => {
@@ -2336,6 +2768,7 @@ async function processTextNodes(
 
             currentStage = "write_text";
             assertTextNodeCharactersUnchanged(textNode, oldText);
+            assertNumberLayerContextUnchanged(textNode, numberLayerContext, finalNumberContextParentSnapshotCache, finalNumberContextVisibleChildrenCache, finalNumberContextChildIndexCache);
             ensureCurrentLayerSnapshot(styles);
             ensureUndoCheckpoint();
             currentLayerWasMutated = true;
@@ -2389,6 +2822,7 @@ async function processTextNodes(
 
             currentStage = "write_text";
             assertTextNodeCharactersUnchanged(textNode, oldText);
+            assertNumberLayerContextUnchanged(textNode, numberLayerContext, finalNumberContextParentSnapshotCache, finalNumberContextVisibleChildrenCache, finalNumberContextChildIndexCache);
             ensureCurrentLayerSnapshot(styles);
             ensureUndoCheckpoint();
             currentLayerWasMutated = true;
@@ -2503,8 +2937,34 @@ async function processTextNodes(
 
         const diagnostic = createAnalyticsErrorDiagnostic(caughtError, rollbackFailed ? "rollback_styles" : currentStage);
         const safelySkippedMissingTextNode = !currentLayerWasMutated && isTextNodeRemoved(textNode);
+        let currentTextStillMatches = false;
 
-        if (safelySkippedMissingTextNode) {
+        try {
+          currentTextStillMatches = originalTextForRuleAnalytics !== null && textNode.characters === originalTextForRuleAnalytics;
+        } catch {
+          currentTextStillMatches = false;
+        }
+
+        if (
+          !rollbackFailed &&
+          !currentLayerWasMutated &&
+          numberLayerContext !== null &&
+          diagnostic.name === TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME &&
+          currentTextStillMatches &&
+          !deferredNumberContextNodeIds.has(textNode.id)
+        ) {
+          deferredNumberContextNodeIds.add(textNode.id);
+          processingTextNodes.push(textNode);
+          deferredForNumberContextRetry = true;
+
+          if (countedAsProcessed) {
+            processed = Math.max(0, processed - 1);
+            charactersProcessedTotal = Math.max(0, charactersProcessedTotal - (originalTextForRuleAnalytics?.length ?? 0));
+            finishTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, false);
+            countedAsProcessed = false;
+          }
+
+        } else if (safelySkippedMissingTextNode) {
           if (countedAsProcessed) {
             processed = Math.max(0, processed - 1);
             charactersProcessedTotal = Math.max(0, charactersProcessedTotal - (originalTextForRuleAnalytics?.length ?? 0));
@@ -2540,7 +3000,7 @@ async function processTextNodes(
           failureDiagnostic ??= diagnostic;
         }
 
-        if (!safelySkippedMissingTextNode) {
+        if (!safelySkippedMissingTextNode && !deferredForNumberContextRetry) {
           console.error(`[Чистовик] Failed to process text node ${textNode.id}`, caughtError);
         }
       } finally {
@@ -2876,6 +3336,7 @@ function verifyDevelopmentMarkerFills(snapshot: TextLayerStateSnapshot): boolean
 function createEmptyTextProcessTimings(): TextProcessTimings {
   return {
     typography: 0,
+    numberContext: 0,
     pointEditPlanning: 0,
     fonts: 0,
     readStyles: 0,
@@ -3716,7 +4177,7 @@ function buildOldIndexMap(oldText: string, newText: string): number[] {
       newIndex += 1;
     }
 
-    return result;
+    return preserveCurrencySymbolStyleSources(oldText, newText, result);
   } catch (error) {
     console.error("[Чистовик] Failed to build old index map", error);
     throw error;
@@ -3739,9 +4200,48 @@ function buildGreedyOldIndexMap(oldText: string, newText: string): number[] {
       }
     }
 
-    return result;
+    return preserveCurrencySymbolStyleSources(oldText, newText, result);
   } catch (error) {
     console.error("[Чистовик] Failed to build greedy old index map", error);
+    throw error;
+  }
+}
+
+function preserveCurrencySymbolStyleSources(oldText: string, newText: string, oldIndexMap: number[]): number[] {
+  try {
+    for (const currency of QUANTITY_CURRENCY_SYMBOLS) {
+      const oldPositions: number[] = [];
+      const newPositions: number[] = [];
+
+      for (let index = 0; index < oldText.length; index += 1) {
+        if (oldText[index] === currency) {
+          oldPositions.push(index);
+        }
+      }
+
+      for (let index = 0; index < newText.length; index += 1) {
+        if (newText[index] === currency) {
+          newPositions.push(index);
+        }
+      }
+
+      if (newPositions.length === 1 && oldPositions.length > 1) {
+        oldIndexMap[newPositions[0]] = oldPositions[oldPositions.length - 1];
+        continue;
+      }
+
+      if (oldPositions.length !== newPositions.length) {
+        continue;
+      }
+
+      for (let index = 0; index < newPositions.length; index += 1) {
+        oldIndexMap[newPositions[index]] = oldPositions[index];
+      }
+    }
+
+    return oldIndexMap;
+  } catch (error) {
+    console.error("[Чистовик] Failed to preserve currency symbol style sources", error);
     throw error;
   }
 }
@@ -4560,6 +5060,19 @@ function buildPointTextEditStyleMap(oldText: string, styles: StyleSegment[], edi
 
     for (let characterIndex = sourceCursor; characterIndex < originalStyleMap.length; characterIndex += 1) {
       result.push(originalStyleMap[characterIndex] ?? 0);
+    }
+
+    const newText = applyPointTextEditsToString(oldText, edits);
+    const currencyStyleSources = preserveCurrencySymbolStyleSources(
+      oldText,
+      newText,
+      new Array<number>(newText.length).fill(0)
+    );
+
+    for (let index = 0; index < newText.length; index += 1) {
+      if (QUANTITY_CURRENCY_SYMBOLS.includes(newText[index])) {
+        result[index] = originalStyleMap[currencyStyleSources[index]] ?? result[index] ?? 0;
+      }
     }
 
     return result;
@@ -5399,7 +5912,8 @@ function cleanTypographyWithMetadata(
   input: string,
   options: PluginRunOptions = getDefaultRunOptions(),
   existingDevelopmentMarkerIndexes: number[] = [],
-  ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null
+  ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null,
+  numberLayerContext: NumberLayerContext | null = null
 ): TypographyCleanResult {
   try {
     const normalizedInput = normalizeInputNonBreakingSpaces(input);
@@ -5407,7 +5921,7 @@ function cleanTypographyWithMetadata(
     const markerIndexes = getDevelopmentMarkerIndexesForRun(normalizedInput, options, existingDevelopmentMarkerIndexes, asteriskSpaceCandidateIndexes);
     const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, [...markerIndexes, ...asteriskSpaceCandidateIndexes]);
     const beautyInput = restoreStableDevelopmentPatternMarkers(inputWithKnownMarkers);
-    const beautyText = cleanTypographyForBeauty(beautyInput, ruleAnalyticsCollector);
+    const beautyText = cleanTypographyForBeauty(beautyInput, ruleAnalyticsCollector, numberLayerContext);
 
     if (options.mode !== "development") {
       return {
@@ -5692,7 +6206,7 @@ function createDevelopmentTypographyResult(beautyText: string): TypographyCleanR
   }
 }
 
-function cleanTypographyForBeauty(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null): string {
+function cleanTypographyForBeauty(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null, numberLayerContext: NumberLayerContext | null = null): string {
   try {
     let text = input;
 
@@ -5700,8 +6214,9 @@ function cleanTypographyForBeauty(input: string, ruleAnalyticsCollector: Typogra
     text = cleanupQuotesAndPunctuation(text, ruleAnalyticsCollector);
     text = normalizeMathAndSymbols(text, ruleAnalyticsCollector);
     text = cleanupDashesAndHyphens(text, ruleAnalyticsCollector);
-    text = formatPhoneNumbers(text, ruleAnalyticsCollector);
-    text = formatNumbersAndMoney(text, ruleAnalyticsCollector);
+    text = formatNumbersAndMoney(text, ruleAnalyticsCollector, numberLayerContext);
+    text = formatPhoneNumbers(text, ruleAnalyticsCollector, numberLayerContext);
+    text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, moveLeadingCurrencySymbolsAfterQuantity);
     text = normalizeEditorialRanges(text, ruleAnalyticsCollector);
     text = normalizeAbbreviations(text, ruleAnalyticsCollector);
     text = applyNonBreakingSpaces(text, ruleAnalyticsCollector);
@@ -6331,7 +6846,7 @@ function hasProtectedRomanRangeTokenLetters(token: string): boolean {
   }
 }
 
-function formatPhoneNumbers(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null): string {
+function formatPhoneNumbers(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null, numberLayerContext: NumberLayerContext | null = null): string {
   try {
     let text = applyTypographyRule(ruleAnalyticsCollector, "phone_ru_format", input, (value) =>
       value.replace(/^([ \t\u00A0]*)(9\d{2})[ \t\u00A0.\-–—‑]*(\d{3})[ \t\u00A0.\-–—‑]*(\d{2})[ \t\u00A0.\-–—‑]*(\d{2})([ \t\u00A0]*)$/, (match: string, prefix: string, operator: string, first: string, second: string, third: string, suffix: string) => {
@@ -6344,22 +6859,25 @@ function formatPhoneNumbers(input: string, ruleAnalyticsCollector: TypographyRul
         return replacement;
       })
     );
-    const phoneCandidate = /(^|[^\d])((?:\+[ \t\u00A0]*)?[78](?:[ \t\u00A0().\-–—‑]*\d){10})(?![ \t\u00A0().\-–—‑]*\d)(?![ \t\u00A0]*[₽$€])/g;
+    const phoneCandidate = /(^|[^\d])((?:\+[ \t\u00A0]*)?[78](?:[ \t\u00A0().\-–—‑]*\d){10})(?![ \t\u00A0().\-–—‑]*\d)/g;
 
     text = applyTypographyRule(ruleAnalyticsCollector, "phone_ru_format", text, (value) =>
       value.replace(phoneCandidate, (match, prefix: string, candidate: string, offset: number, fullText: string) => {
         try {
           const candidateStart = offset + prefix.length;
+          const candidateEnd = candidateStart + candidate.length;
+          const currencyBefore = (getQuantityEvidenceBefore(fullText, candidateStart) ?? numberLayerContext?.evidenceBefore)?.kind === "currency";
+          const explicitlyFormattedPhone = /[()\-–—‑]/.test(candidate) || /^\+?[78][ \t\u00A0]+\d{3}[ \t\u00A0]+\d{3}[ \t\u00A0]+\d{2}[ \t\u00A0]+\d{2}$/.test(candidate.trim());
+          const explicitPhoneMeaning = explicitlyFormattedPhone || hasTelephoneQuantityLabel(fullText, candidateStart) || numberLayerContext?.protectedAsPhoneByNeighbor === true;
 
-          if (previousNonSpaceSkippingDevelopmentMarker(fullText, candidateStart) === "№" || isInsideProtectedNumericIdentifier(fullText, candidateStart, candidateStart + candidate.length)) {
+          if (previousNonSpaceSkippingDevelopmentMarker(fullText, candidateStart) === "№" || isInsideProtectedNumericIdentifier(fullText, candidateStart, candidateStart + candidate.length) || (currencyBefore && !explicitPhoneMeaning)) {
             recordTypographyRuleObservation(ruleAnalyticsCollector, "phone_protected_contexts");
             return match;
           }
 
-          const candidateEnd = candidateStart + candidate.length;
-          const next = nextNonSpace(fullText, candidateEnd);
+          const currencyAfter = (getQuantityEvidenceAfter(fullText, candidateEnd) ?? numberLayerContext?.evidenceAfter)?.kind === "currency";
 
-          if (next === "₽" || next === "$" || next === "€") {
+          if (currencyAfter && !explicitPhoneMeaning) {
             recordTypographyRuleObservation(ruleAnalyticsCollector, "phone_protected_contexts");
             return match;
           }
@@ -6397,16 +6915,478 @@ function formatPhoneNumbers(input: string, ruleAnalyticsCollector: TypographyRul
   }
 }
 
-function formatNumbersAndMoney(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null): string {
+function moveLeadingCurrencySymbolsAfterQuantity(input: string): string {
+  try {
+    return input.replace(LEADING_CURRENCY_VALUE_PATTERN, (_match: string, prefix: string, currency: string, value: string, scale: string | undefined) =>
+      `${prefix}${value}${scale ?? ""}${NBSP}${currency}`
+    );
+  } catch (error) {
+    console.error("[Чистовик] Failed to move leading currency symbol", error);
+    throw error;
+  }
+}
+
+type QuantityEvidenceKind = "currency" | "quantity";
+
+interface QuantityEvidence {
+  kind: QuantityEvidenceKind;
+  marker: string;
+}
+
+interface NumberLayerContext {
+  evidenceAfter: QuantityEvidence | null;
+  evidenceBefore: QuantityEvidence | null;
+  protectedAsPhoneByNeighbor: boolean;
+  protectedByNeighbor: boolean;
+  standalonePhonePrefix: boolean;
+  snapshotKey: string;
+}
+
+function normalizeQuantityMarkerForLookup(input: string): string {
+  try {
+    return input.replace(/[ \t\u00A0\u2009\u202F*]+/g, " ").trim().replace(/ё/g, "е");
+  } catch (error) {
+    console.error("[Чистовик] Failed to normalize quantity marker", error);
+    throw error;
+  }
+}
+
+function getQuantityMarkerKind(marker: string): QuantityEvidenceKind | null {
+  try {
+    const normalized = normalizeQuantityMarkerForLookup(marker);
+
+    if (normalized.length === 1 && QUANTITY_CURRENCY_SYMBOLS.includes(normalized)) {
+      return "currency";
+    }
+
+    if (QUANTITY_CURRENCY_CODES.has(normalized)) {
+      return "currency";
+    }
+
+    const lower = normalized.toLowerCase();
+
+    if (QUANTITY_CURRENCY_WORDS.has(lower)) {
+      return "currency";
+    }
+
+    if (QUANTITY_MULTIWORD_FORMS.has(normalized) || QUANTITY_MULTIWORD_FORMS.has(lower) || QUANTITY_MARKER_FORMS.has(normalized) || QUANTITY_MARKER_FORMS.has(lower) || QUANTITY_FULL_WORD_FORMS.has(lower)) {
+      return "quantity";
+    }
+
+    if (normalized.endsWith(".") && lower !== "г.") {
+      return getQuantityMarkerKind(normalized.slice(0, -1));
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to classify quantity marker", error);
+    throw error;
+  }
+}
+
+function getMarkerPrefixes(input: string): string[] {
+  try {
+    const trimmed = input.replace(/^[ \t\u00A0\u2009\u202F*]+/, "");
+
+    if (trimmed.length === 0) {
+      return [];
+    }
+
+    if (QUANTITY_CURRENCY_SYMBOLS.includes(trimmed[0])) {
+      return [trimmed[0]];
+    }
+
+    const candidate = /^[^,;()\[\]{}\n\r!?]+/.exec(trimmed)?.[0]?.trim() ?? "";
+
+    if (candidate.length === 0) {
+      return [];
+    }
+
+    const parts = candidate.split(/[ \t\u00A0\u2009\u202F]+/).slice(0, 4);
+    const prefixes: string[] = [];
+
+    for (let count = parts.length; count >= 1; count -= 1) {
+      prefixes.push(parts.slice(0, count).join(" "));
+    }
+
+    return prefixes;
+  } catch (error) {
+    console.error("[Чистовик] Failed to get quantity marker prefixes", error);
+    throw error;
+  }
+}
+
+function getMarkerSuffixes(input: string): string[] {
+  try {
+    const trimmed = input.replace(/[ \t\u00A0\u2009\u202F*]+$/, "");
+
+    if (trimmed.length === 0) {
+      return [];
+    }
+
+    const last = trimmed[trimmed.length - 1];
+
+    if (QUANTITY_CURRENCY_SYMBOLS.includes(last)) {
+      return [last];
+    }
+
+    const candidate = /[^,;()\[\]{}\n\r!?]+$/.exec(trimmed)?.[0]?.trim() ?? "";
+
+    if (candidate.length === 0) {
+      return [];
+    }
+
+    const parts = candidate.split(/[ \t\u00A0\u2009\u202F]+/);
+    const suffixes: string[] = [];
+
+    for (let count = Math.min(parts.length, 4); count >= 1; count -= 1) {
+      suffixes.push(parts.slice(parts.length - count).join(" "));
+    }
+
+    return suffixes;
+  } catch (error) {
+    console.error("[Чистовик] Failed to get quantity marker suffixes", error);
+    throw error;
+  }
+}
+
+function getQuantityEvidenceAfter(fullText: string, end: number): QuantityEvidence | null {
+  try {
+    const after = fullText.slice(end, Math.min(fullText.length, end + 96));
+
+    for (const marker of getMarkerPrefixes(after)) {
+      const kind = getQuantityMarkerKind(marker);
+
+      if (kind === null) {
+        continue;
+      }
+
+      const normalized = normalizeQuantityMarkerForLookup(marker);
+      const remainder = after.replace(/^[ \t\u00A0\u2009\u202F*]+/, "").slice(marker.length);
+
+      if (kind === "currency" && normalized.length > 1 && !/^[ \t\u00A0\u2009\u202F*]/.test(after)) {
+        return null;
+      }
+
+      if (normalized === "с" && /^[ \t\u00A0\u2009\u202F]+[A-Za-zА-Яа-яЁё]/.test(remainder)) {
+        return null;
+      }
+
+      if (normalized === "г" && /^\./.test(remainder)) {
+        return null;
+      }
+
+      return { kind, marker };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find quantity evidence after number", error);
+    throw error;
+  }
+}
+
+function getQuantityEvidenceBefore(fullText: string, start: number): QuantityEvidence | null {
+  try {
+    const before = fullText.slice(Math.max(0, start - 96), start);
+
+    for (const marker of getMarkerSuffixes(before)) {
+      const kind = getQuantityMarkerKind(marker);
+
+      if (kind === "currency" && (marker.length === 1 || /[ \t\u00A0\u2009\u202F*]$/.test(before))) {
+        return { kind, marker };
+      }
+    }
+
+    const signedSymbol = /([₽$€£¥₸₾₴₺֏₪₹₩₫฿₱])[ \t\u00A0\u2009\u202F]*(?:[+−-][ \t\u00A0\u2009\u202F]*)?\(?[ \t\u00A0\u2009\u202F]*$/.exec(before);
+
+    if (signedSymbol !== null) {
+      return { kind: "currency", marker: signedSymbol[1] };
+    }
+
+    const separated = /(?:^|[ \t\u00A0])([^,;()\[\]{}\n\r!?]{1,80})[ \t\u00A0]+(?:[:—–-])[ \t\u00A0]+$/.exec(before);
+
+    if (separated !== null) {
+      for (const marker of getMarkerSuffixes(separated[1])) {
+        const kind = getQuantityMarkerKind(marker);
+
+        if (kind !== null && marker.length > 1) {
+          return { kind, marker };
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find quantity evidence before number", error);
+    throw error;
+  }
+}
+
+function getQuantityEvidence(fullText: string, start: number, end: number, numberLayerContext: NumberLayerContext | null = null): QuantityEvidence | null {
+  try {
+    return getQuantityEvidenceAfter(fullText, end) ?? getQuantityEvidenceBefore(fullText, start) ?? numberLayerContext?.evidenceAfter ?? numberLayerContext?.evidenceBefore ?? null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to find quantity evidence", error);
+    throw error;
+  }
+}
+
+function hasProtectiveQuantityLabel(fullText: string, start: number): boolean {
+  try {
+    const before = fullText.slice(Math.max(0, start - 96), start).replace(/[ \t\u00A0\u2009\u202F:]+$/, "");
+
+    return QUANTITY_PROTECTIVE_LABELS.some((label) => {
+      const normalizedLabel = label.toLowerCase();
+      const normalizedBefore = before.toLowerCase();
+
+      if (!normalizedBefore.endsWith(normalizedLabel)) {
+        return false;
+      }
+
+      const boundary = normalizedBefore.length - normalizedLabel.length - 1;
+      return boundary < 0 || !/[A-Za-zА-Яа-яЁё\d]/.test(normalizedBefore[boundary]);
+    });
+  } catch (error) {
+    console.error("[Чистовик] Failed to check protective quantity label", error);
+    throw error;
+  }
+}
+
+function hasTelephoneQuantityLabel(fullText: string, start: number): boolean {
+  try {
+    const before = fullText.slice(Math.max(0, start - 32), start).replace(/[ \t\u00A0\u2009\u202F:]+$/, "").toLowerCase();
+    const label = "телефон";
+
+    if (!before.endsWith(label)) {
+      return false;
+    }
+
+    const boundary = before.length - label.length - 1;
+    return boundary < 0 || !/[A-Za-zА-Яа-яЁё\d]/.test(before[boundary]);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check telephone quantity label", error);
+    throw error;
+  }
+}
+
+function isCompactRussianPhoneDigits(integerPart: string): boolean {
+  try {
+    return /^9\d{9}$/.test(integerPart) || /^[78]\d{10}$/.test(integerPart);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check compact Russian phone digits", error);
+    throw error;
+  }
+}
+
+function isVisiblyStructuredNumericIdentifier(fullText: string, start: number, end: number): boolean {
+  try {
+    const bounds = getNumericIdentifierTokenBounds(fullText, start, end);
+    const token = normalizeHorizontalSpaces(fullText.slice(bounds.start, bounds.end)).trim();
+
+    if (isCardMaskToken(token)) {
+      return true;
+    }
+
+    if (!/[ \u00A0‑–—-]/.test(token)) {
+      return false;
+    }
+
+    return isPaymentCardNumberToken(token) || isPaymentAccountNumberToken(token);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check visible numeric identifier structure", error);
+    throw error;
+  }
+}
+
+function shouldProtectEvidenceBasedNumber(fullText: string, start: number, end: number, integerPart: string, numberLayerContext: NumberLayerContext | null = null, ignoreRangeSeparator = false): boolean {
+  try {
+    if (numberLayerContext?.protectedByNeighbor === true || hasProtectiveQuantityLabel(fullText, start) || isVisiblyStructuredNumericIdentifier(fullText, start, end)) {
+      return true;
+    }
+
+    if ((!ignoreRangeSeparator && isNumberPartOfCodeToken(fullText, start, end)) || isNumberInsideDateLikeToken(fullText, start, end) || isNumberInsideFullDate(fullText, start, end) || isNumberPartOfMaskedSecret(fullText, start, integerPart)) {
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("[Чистовик] Failed to protect evidence-based number", error);
+    throw error;
+  }
+}
+
+function formatEvidenceBasedNumberToken(token: string): string {
+  try {
+    const commaIndex = token.indexOf(",");
+    const integerPart = commaIndex === -1 ? token : token.slice(0, commaIndex);
+    const decimalPart = commaIndex === -1 ? "" : token.slice(commaIndex);
+    const compactInteger = integerPart.replace(/[ \t\u00A0\u2009\u202F]/g, "");
+
+    if (compactInteger.length < 4) {
+      return token;
+    }
+
+    return `${groupLongNumber(compactInteger)}${decimalPart}`;
+  } catch (error) {
+    console.error("[Чистовик] Failed to format evidence-based number token", error);
+    throw error;
+  }
+}
+
+function formatSharedQuantityConstructions(input: string, numberLayerContext: NumberLayerContext | null = null): string {
+  try {
+    const numberToken = QUANTITY_NUMBER_TOKEN_PATTERN;
+    let text = input;
+
+    text = text.replace(LEADING_CURRENCY_RANGE_PATTERN, (match: string, firstCurrency: string, first: string, secondCurrency: string, second: string, offset: number, fullText: string) => {
+      try {
+        const firstOffset = match.indexOf(first);
+        const secondOffset = match.lastIndexOf(second);
+        const firstStart = offset + firstOffset + first.search(/\d/);
+        const secondStart = offset + secondOffset + second.search(/\d/);
+        const firstInteger = first.replace(/^[+−-]/, "").split(",")[0].replace(/[ \t\u00A0\u2009\u202F]/g, "");
+        const secondInteger = second.replace(/^[+−-]/, "").split(",")[0].replace(/[ \t\u00A0\u2009\u202F]/g, "");
+
+        if (
+          shouldProtectEvidenceBasedNumber(fullText, firstStart, firstStart + firstInteger.length, firstInteger, numberLayerContext, true) ||
+          shouldProtectEvidenceBasedNumber(fullText, secondStart, secondStart + secondInteger.length, secondInteger, numberLayerContext, true)
+        ) {
+          return match;
+        }
+
+        const firstSign = /^[+−-]/.exec(first)?.[0] ?? "";
+        const secondSign = /^[+−-]/.exec(second)?.[0] ?? "";
+        const formattedFirst = `${firstSign}${formatEvidenceBasedNumberToken(first.slice(firstSign.length))}`;
+        const formattedSecond = `${secondSign}${formatEvidenceBasedNumberToken(second.slice(secondSign.length))}`;
+
+        if (firstCurrency === secondCurrency) {
+          return `${formattedFirst}${NBSP}${EM_DASH} ${formattedSecond}${NBSP}${secondCurrency}`;
+        }
+
+        return `${formattedFirst}${NBSP}${firstCurrency}${NBSP}${EM_DASH} ${formattedSecond}${NBSP}${secondCurrency}`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to format leading currency range", error);
+        return match;
+      }
+    });
+
+    const rangePattern = new RegExp(`(${numberToken})[ \\t\\u00A0]*(?:—|–|-|−)[ \\t\\u00A0]*(${numberToken})`, "g");
+
+    text = text.replace(rangePattern, (match: string, first: string, second: string, offset: number, fullText: string) => {
+      try {
+        const firstDigitsOffset = first.search(/\d/);
+        const firstStart = offset + firstDigitsOffset;
+        const secondOffset = match.lastIndexOf(second);
+        const secondDigitsOffset = second.search(/\d/);
+        const secondStart = offset + secondOffset + secondDigitsOffset;
+        const constructionEnd = offset + match.length;
+
+        if (getQuantityEvidenceAfter(fullText, constructionEnd) === null && (numberLayerContext?.evidenceAfter ?? numberLayerContext?.evidenceBefore ?? null) === null) {
+          return match;
+        }
+
+        const firstInteger = first.replace(/^[+−-]/, "").split(",")[0].replace(/[ \t\u00A0\u2009\u202F]/g, "");
+        const secondInteger = second.replace(/^[+−-]/, "").split(",")[0].replace(/[ \t\u00A0\u2009\u202F]/g, "");
+
+        if (shouldProtectEvidenceBasedNumber(fullText, firstStart, firstStart + firstInteger.length, firstInteger, numberLayerContext, true) || shouldProtectEvidenceBasedNumber(fullText, secondStart, secondStart + secondInteger.length, secondInteger, numberLayerContext, true)) {
+          return match;
+        }
+
+        const firstSign = /^[+−-]/.exec(first)?.[0] ?? "";
+        const secondSign = /^[+−-]/.exec(second)?.[0] ?? "";
+        return `${firstSign}${formatEvidenceBasedNumberToken(first.slice(firstSign.length))}${EM_DASH}${secondSign}${formatEvidenceBasedNumberToken(second.slice(secondSign.length))}`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to format shared quantity range", error);
+        return match;
+      }
+    });
+
+    const wordRangePattern = new RegExp(`\\b(от|с)[ \\t\\u00A0]+(${numberToken})[ \\t\\u00A0]+(до|по)[ \\t\\u00A0]+(${numberToken})`, "gi");
+    text = text.replace(wordRangePattern, (match: string, fromWord: string, first: string, toWord: string, second: string, offset: number, fullText: string) => {
+      try {
+        if (getQuantityEvidenceAfter(fullText, offset + match.length) === null && (numberLayerContext?.evidenceAfter ?? numberLayerContext?.evidenceBefore ?? null) === null) {
+          return match;
+        }
+
+        return `${fromWord} ${formatEvidenceBasedNumberToken(first)} ${toWord} ${formatEvidenceBasedNumberToken(second)}`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to format shared word quantity range", error);
+        return match;
+      }
+    });
+
+    const listPattern = new RegExp(`(${numberToken})(?:(,[ \\t\\u00A0]+|;[ \\t\\u00A0]+|[ \\t\\u00A0]+(?:и|или)[ \\t\\u00A0]+)(${numberToken})){1,}`, "gi");
+    text = text.replace(listPattern, (match: string, _first: string, _separator: string, _last: string, offset: number, fullText: string) => {
+      try {
+        if (getQuantityEvidenceAfter(fullText, offset + match.length) === null && (numberLayerContext?.evidenceAfter ?? numberLayerContext?.evidenceBefore ?? null) === null) {
+          return match;
+        }
+
+        let protectedMember = false;
+        match.replace(/[+−-]?(\d+(?:[ \t\u00A0\u2009\u202F]\d{3})*)(?:,\d+)?/g, (numberMatch: string, integer: string, numberOffset: number) => {
+          const digitOffset = numberMatch.search(/\d/);
+          const compactInteger = integer.replace(/[ \t\u00A0\u2009\u202F]/g, "");
+          const start = offset + numberOffset + digitOffset;
+
+          if (shouldProtectEvidenceBasedNumber(fullText, start, start + compactInteger.length, compactInteger, numberLayerContext)) {
+            protectedMember = true;
+          }
+
+          return numberMatch;
+        });
+
+        if (protectedMember) {
+          return match;
+        }
+
+        return match.replace(/[+−-]?(?:\d+(?:[ \t\u00A0\u2009\u202F]\d{3})*)(?:,\d+)?/g, (numberMatch: string) => {
+          const sign = /^[+−-]/.exec(numberMatch)?.[0] ?? "";
+          return `${sign}${formatEvidenceBasedNumberToken(numberMatch.slice(sign.length))}`;
+        });
+      } catch (error) {
+        console.error("[Чистовик] Failed to format shared quantity list", error);
+        return match;
+      }
+    });
+
+    return text;
+  } catch (error) {
+    console.error("[Чистовик] Failed to format shared quantity constructions", error);
+    throw error;
+  }
+}
+
+function formatQuantitativeMathExpressions(input: string): string {
+  try {
+    const expressionPattern = /(?:^|[^A-Za-zА-Яа-яЁё\d_])([+−-]?\d+(?:[.,]\d+)?(?:[ \t\u00A0]*(?:\+|−|-|±|\/|÷|×|x|х|:|·)[ \t\u00A0]*[+−-]?\d+(?:[.,]\d+)?)*[ \t\u00A0]*=[ \t\u00A0]*[+−-]?\d+(?:[.,]\d+)?(?:[ \t\u00A0]*(?:\+|−|-|±|\/|÷|×|x|х|:|·)[ \t\u00A0]*[+−-]?\d+(?:[.,]\d+)?)*)/g;
+
+    return input.replace(expressionPattern, (match: string, expression: string) => {
+      try {
+        const prefix = match.slice(0, match.length - expression.length);
+        const formatted = expression.replace(/\d{4,}(?:,\d+)?/g, (numberMatch: string) => formatEvidenceBasedNumberToken(numberMatch));
+        return `${prefix}${formatted}`;
+      } catch (error) {
+        console.error("[Чистовик] Failed to format quantitative math expression", error);
+        return match;
+      }
+    });
+  } catch (error) {
+    console.error("[Чистовик] Failed to format quantitative math expressions", error);
+    throw error;
+  }
+}
+
+function formatNumbersAndMoney(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null, numberLayerContext: NumberLayerContext | null = null): string {
   try {
     let text = applyTypographyRule(ruleAnalyticsCollector, "number_protect_date", input, normalizeCommaSeparatedDates);
     text = applyTypographyRule(ruleAnalyticsCollector, "number_document_outline", text, normalizeDottedNumberingSeparators);
-    text = applyTypographyRule(ruleAnalyticsCollector, "number_western_format", text, normalizeWesternGroupedNumbers);
+    text = applyTypographyRule(ruleAnalyticsCollector, "number_western_format", text, (value) => normalizeWesternGroupedNumbers(value, numberLayerContext));
 
     text = applyTypographyRule(ruleAnalyticsCollector, "number_decimal_comma", text, (value) =>
       value.replace(/\b(\d+)\.(\d+)\b/g, (match, integerPart: string, decimalPart: string, offset: number, fullText: string) => {
         try {
-          if (isProtectedDottedNumber(fullText, offset, offset + match.length)) {
+          if (isProtectedDottedNumber(fullText, offset, offset + match.length) || getQuantityEvidence(fullText, offset, offset + match.length, numberLayerContext) === null) {
             recordProtectedDottedNumberRuleObservations(ruleAnalyticsCollector, fullText, offset, offset + match.length);
             return match;
           }
@@ -6419,27 +7399,43 @@ function formatNumbersAndMoney(input: string, ruleAnalyticsCollector: Typography
       })
     );
 
-    text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, (value) =>
-      value.replace(/\b\d{4,}(?:,\d+)?\b/g, (match: string, offset: number, fullText: string) => {
-        try {
-          const [integerPart, decimalPart] = match.split(",");
+    text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, formatQuantitativeMathExpressions);
+    text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, (value) => formatSharedQuantityConstructions(value, numberLayerContext));
 
-          if (isNumberPartOfDate(fullText, offset, offset + integerPart.length) || shouldSkipNumberGrouping(fullText, offset, offset + integerPart.length, integerPart)) {
+    text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, (value) =>
+      value.replace(/\b(?:\d{4,}|\d{1,3}(?:[ \t\u00A0\u2009\u202F]\d{3})+)(?:,\d+)?\b/g, (match: string, offset: number, fullText: string) => {
+        try {
+          const integerPart = match.split(",")[0].replace(/[ \t\u00A0\u2009\u202F]/g, "");
+          const evidence = getQuantityEvidence(fullText, offset, offset + match.length, numberLayerContext);
+
+          if (
+            evidence === null ||
+            (evidence.kind !== "currency" && isCompactRussianPhoneDigits(integerPart)) ||
+            isNumberPartOfDate(fullText, offset, offset + integerPart.length) ||
+            shouldProtectEvidenceBasedNumber(fullText, offset, offset + match.length, integerPart, numberLayerContext)
+          ) {
             recordProtectedGroupedNumberRuleObservations(ruleAnalyticsCollector, fullText, offset, offset + integerPart.length);
             return match;
           }
 
-          return `${groupLongNumber(integerPart)}${decimalPart === undefined ? "" : `,${decimalPart}`}`;
+          return formatEvidenceBasedNumberToken(match);
         } catch (error) {
           console.error("[Чистовик] Failed to group number", error);
           return match;
         }
       })
     );
-
-    text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, normalizeGroupedNumberSpaces);
     text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, (value) =>
-      value.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]*(₽|\$|€|км|кг|м)(?=$|[^A-Za-zА-Яа-яЁё])/g, `$1${NBSP}$2`)
+      value.replace(
+        new RegExp(`(\\d(?:[\\d \\u00A0\\u2009\\u202F]*\\d)?(?:,\\d+)?)[ \\t\\u00A0\\u2009\\u202F]*([${QUANTITY_CURRENCY_SYMBOLS}]|км|кг|м)(?=$|[^${LETTERS}])`, "g"),
+        `$1${NBSP}$2`
+      )
+    );
+    text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, (value) =>
+      value.replace(
+        new RegExp(`(\\d(?:[\\d \\u00A0\\u2009\\u202F]*\\d)?(?:,\\d+)?)[ \\t\\u00A0\\u2009\\u202F]+(${QUANTITY_SCALE_PATTERN})[ \\t\\u00A0\\u2009\\u202F]*([${QUANTITY_CURRENCY_SYMBOLS}])(?=$|[^${LETTERS}])`, "gi"),
+        `$1${NBSP}$2${NBSP}$3`
+      )
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, normalizeTechnicalMeasurementUnits);
     return applyTypographyRule(ruleAnalyticsCollector, "year_context", text, normalizeSpacedYears);
@@ -6543,15 +7539,17 @@ function normalizeDottedNumberingSeparators(input: string): string {
   }
 }
 
-function normalizeWesternGroupedNumbers(input: string): string {
+function normalizeWesternGroupedNumbers(input: string, numberLayerContext: NumberLayerContext | null = null): string {
   try {
     return input.replace(/(^|[^\d])(\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?=$|[^\d])/g, (match, prefix: string, candidate: string, offset: number, fullText: string) => {
       try {
         const candidateStart = offset + prefix.length;
         const [integerPart, decimalPart] = candidate.split(".");
         const compactInteger = integerPart.replace(/,/g, "");
+        const evidence = getQuantityEvidence(fullText, candidateStart, candidateStart + candidate.length, numberLayerContext);
+        const commaGroups = countMatches(integerPart, /,/g);
 
-        if (shouldSkipNumberGrouping(fullText, candidateStart, candidateStart + integerPart.length, compactInteger)) {
+        if (evidence?.kind !== "currency" || (commaGroups < 2 && decimalPart === undefined) || shouldProtectEvidenceBasedNumber(fullText, candidateStart, candidateStart + candidate.length, compactInteger, numberLayerContext)) {
           return match;
         }
 
