@@ -252,6 +252,37 @@ assert.strictEqual(unchangedDecimalDiagnostics[0].status, "skipped_policy");
 assert.strictEqual(unchangedDecimalDiagnostics[0].beforeText, "значение 338.00. Доставка");
 assert.strictEqual(unchangedDecimalDiagnostics[0].reason, "Признак количества не найден");
 
+const nearbySpaceDiagnostics = createNumberDiagnosticCases(
+  "iPhone 17 Pro Max",
+  `iPhone 17${NBSP}Pro Max`,
+  null
+);
+assert.strictEqual(nearbySpaceDiagnostics.length, 1);
+assert.strictEqual(nearbySpaceDiagnostics[0].status, "changed");
+assert.strictEqual(nearbySpaceDiagnostics[0].numberBefore, "17");
+assert.strictEqual(nearbySpaceDiagnostics[0].numberAfter, "17");
+assert.strictEqual(
+  nearbySpaceDiagnostics[0].reason,
+  "Изменён пробел рядом с числом; числовое правило не применялось"
+);
+assert.deepStrictEqual(Array.from(nearbySpaceDiagnostics[0].ruleCodes), ["number_context_nbsp"]);
+
+const mccDiagnostics = createNumberDiagnosticCases("MCC 5411", "MCC 5411", null);
+assert.strictEqual(mccDiagnostics.length, 1);
+assert.strictEqual(mccDiagnostics[0].status, "skipped_policy");
+assert.strictEqual(mccDiagnostics[0].numberKind, "MCC-код");
+assert.strictEqual(mccDiagnostics[0].reason, "Защита: MCC-код");
+
+const mccCurrencyDiagnostics = createNumberDiagnosticCases(
+  "MCC 5411 ₽",
+  `MCC 5${NBSP}411${NBSP}₽`,
+  null
+);
+assert.strictEqual(mccCurrencyDiagnostics.length, 1);
+assert.strictEqual(mccCurrencyDiagnostics[0].status, "changed");
+assert.strictEqual(mccCurrencyDiagnostics[0].numberKind, "Сумма с валютой");
+assert.strictEqual(mccCurrencyDiagnostics[0].reason, "₽ после числа");
+
 const dateContextDiagnostics = createNumberDiagnosticCases(
   "Сохраняем случаи до 18 сентября включительно",
   `Сохраняем случаи до 18${NBSP}сентября включительно`,
@@ -477,6 +508,44 @@ const genericContextCases = createNumberDiagnosticCases(
 );
 assert.strictEqual(genericContextCases[0].layerMode, "multiple");
 assert.strictEqual(genericContextCases[0].reason, "Признак количества не найден");
+
+const selectedContainerContext = buildNumberDiagnosticLayerContexts(
+  [genericContextValue],
+  [genericContextLabel, genericContextValue]
+).get(genericContextValue.id);
+assert(selectedContainerContext);
+assert.strictEqual(selectedContainerContext.diagnosticNeighbors.length, 1);
+assert.strictEqual(selectedContainerContext.diagnosticNeighbors[0].text, "Остаток баллов");
+
+const competingSelectedLabel = createProcessTextNodeMock(
+  "diagnostic-competing-selection-label",
+  "Чужая карточка",
+  { height: 20, width: 60, x: 120, y: 160 },
+  null
+);
+competingSelectedLabel.parent = {
+  ...accountLabelWrapper,
+  children: [competingSelectedLabel],
+  id: "diagnostic-competing-selection-wrapper",
+};
+const separatedSelectionContext = buildNumberDiagnosticLayerContexts(
+  [genericContextValue],
+  [genericContextLabel, competingSelectedLabel, genericContextValue],
+  new Map([
+    [genericContextLabel.id, "selected-container"],
+    [genericContextValue.id, "selected-container"],
+    [competingSelectedLabel.id, "other-selected-container"],
+  ])
+).get(genericContextValue.id);
+assert(separatedSelectionContext);
+assert.strictEqual(separatedSelectionContext.diagnosticNeighbors.length, 1);
+assert.strictEqual(separatedSelectionContext.diagnosticNeighbors[0].text, "Остаток баллов");
+
+const selectedTextOnlyContext = buildNumberDiagnosticLayerContexts(
+  [genericContextValue],
+  [genericContextValue]
+).get(genericContextValue.id);
+assert.strictEqual(selectedTextOnlyContext, undefined);
 
 const legacyQueuedEvent = {
   attempts: 1,

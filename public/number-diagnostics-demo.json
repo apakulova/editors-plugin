@@ -1,8 +1,8 @@
 {
   "ok": true,
   "summary": {
-    "all": 6,
-    "changed": 2,
+    "all": 7,
+    "changed": 3,
     "skipped_policy": 3,
     "already_correct": 1,
     "review": 0
@@ -12,12 +12,14 @@
       { "reason": "₽ в соседнем слое", "count": 8 },
       { "reason": "Признак количества не найден", "count": 5 },
       { "reason": "₽ после числа", "count": 4 },
+      { "reason": "Изменён пробел рядом с числом; числовое правило не применялось", "count": 1 },
       { "reason": "Не удалось уверенно сопоставить результат", "count": 1 }
     ],
     "rules": [
       { "rule_code": "number_group_digits", "count": 6 },
       { "rule_code": "number_decimal_comma", "count": 3 },
-      { "rule_code": "number_unit_currency_nbsp", "count": 3 }
+      { "rule_code": "number_unit_currency_nbsp", "count": 3 },
+      { "rule_code": "number_context_nbsp", "count": 1 }
     ]
   },
   "cases": {
@@ -25,14 +27,32 @@
     "to": "2026-09-18",
     "page": 1,
     "limit": 50,
-    "total": 6,
+    "total": 7,
     "items": [
+      {
+        "id": "demo-nearby-change",
+        "captured_at": "2026-08-26T15:35:00.000Z",
+        "run_id": "demo-run-nearby-change",
+        "plugin_release": "2026-08-26",
+        "diagnostics_schema_version": 4,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "changed",
+        "number_kind": "Число без количественного признака",
+        "reason": "Изменён пробел рядом с числом; числовое правило не применялось",
+        "number_before": "17",
+        "number_after": "17",
+        "before_text": "iPhone 17 Pro Max",
+        "after_text": "iPhone 17 Pro Max",
+        "layer_mode": "single",
+        "neighbors": [],
+        "rule_codes": ["number_context_nbsp"]
+      },
       {
         "id": "demo-context",
         "captured_at": "2026-08-26T15:31:00.000Z",
         "run_id": "demo-run-context",
         "plugin_release": "2026-08-26",
-        "diagnostics_schema_version": 3,
+        "diagnostics_schema_version": 4,
         "number_rules_version": "numbers-2026-08-25-v1",
         "status": "skipped_policy",
         "number_kind": "Число без количественного признака",
@@ -52,7 +72,7 @@
         "captured_at": "2026-08-26T15:29:00.000Z",
         "run_id": "demo-run-no-context",
         "plugin_release": "2026-08-26",
-        "diagnostics_schema_version": 3,
+        "diagnostics_schema_version": 4,
         "number_rules_version": "numbers-2026-08-25-v1",
         "status": "skipped_policy",
         "number_kind": "Число без количественного признака",

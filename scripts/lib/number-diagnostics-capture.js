@@ -164,7 +164,7 @@ function validateNumberDiagnosticsPayload(body) {
 
   assertExactKeys(payload, new Set(["capturedAt", "cases", "pluginRelease", "runId", "schemaVersion"]), "forbidden_payload_property");
 
-  if (payload.schemaVersion !== 1 && payload.schemaVersion !== 2 && payload.schemaVersion !== 3) {
+  if (![1, 2, 3, 4].includes(payload.schemaVersion)) {
     throw new NumberDiagnosticsCaptureError(400, "unsupported_schema_version");
   }
 

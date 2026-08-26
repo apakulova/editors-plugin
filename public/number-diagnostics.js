@@ -11,6 +11,8 @@
   const STATUS_ORDER = ["all", "changed", "skipped_policy", "already_correct", "review"];
   const RULE_LABELS = {
     number_decimal_comma: "Десятичная запятая",
+    number_context_change: "Текст рядом с числом",
+    number_context_nbsp: "Пробел рядом с числом",
     number_group_digits: "Разряды числа",
     number_unit_currency_nbsp: "Пробел с обозначением",
     number_western_format: "Западная запись числа",
@@ -267,7 +269,12 @@
     const badge = document.createElement("span");
     badge.className = "status-badge";
     badge.dataset.status = item.status;
-    badge.textContent = STATUS_LABELS[item.status] || item.status;
+    const changedOnlyNearby =
+      item.status === "changed" &&
+      Array.isArray(item.rule_codes) &&
+      item.rule_codes.some((code) => code === "number_context_change" || code === "number_context_nbsp") &&
+      item.number_before === item.number_after;
+    badge.textContent = changedOnlyNearby ? "Изменён текст рядом" : STATUS_LABELS[item.status] || item.status;
     const layout = document.createElement("span");
     layout.className = "case-layout";
     layout.textContent = item.layer_mode === "multiple" ? "Несколько слоёв" : "Один слой";

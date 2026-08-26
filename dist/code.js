@@ -16,7 +16,7 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
 const NUMBER_DIAGNOSTICS_CAPTURE_PATH = "/api/number-diagnostics";
-const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 3;
+const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 4;
 const NUMBER_DIAGNOSTICS_END_AT_MS = Date.parse("2026-09-19T00:00:00+03:00");
 const NUMBER_DIAGNOSTICS_QUEUE_KEY = "numberDiagnosticsQueue";
 const NUMBER_DIAGNOSTICS_MAX_QUEUED_REPORTS = 10;
@@ -313,7 +313,7 @@ async function executeTypographRun(options, source) {
             processLocked: options.processLockedNodes,
         }));
         analyticsStage = "clean_text";
-        result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
+        result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options, DEFAULT_TEXT_WRITE_STRATEGY, collection.diagnosticContextNodes, collection.diagnosticContextScopeByNodeId);
         queueNumberDiagnosticsReport(analyticsContext.runId, result.numberDiagnostics);
         if (result.failed > 0) {
             analyticsStage = (_a = result.failedStage) !== null && _a !== void 0 ? _a : "unknown";
@@ -1533,6 +1533,7 @@ async function collectTargetTextNodes(options) {
     try {
         const selection = figma.currentPage.selection;
         let candidates = [];
+        const diagnosticContextScopeByNodeId = new Map();
         if (selection.length === 0) {
             await withFigmaOperationTimeout(() => figma.currentPage.loadAsync(), "current_page_load");
             candidates = figma.currentPage.findAllWithCriteria({ types: ["TEXT"] });
@@ -1540,10 +1541,30 @@ async function collectTargetTextNodes(options) {
         else {
             const seen = new Set();
             for (const selectedNode of selection) {
-                collectTextNodesFromNode(selectedNode, candidates, seen);
+                const scopedCandidates = [];
+                collectTextNodesFromNode(selectedNode, scopedCandidates, new Set());
+                for (const textNode of scopedCandidates) {
+                    if (!diagnosticContextScopeByNodeId.has(textNode.id)) {
+                        diagnosticContextScopeByNodeId.set(textNode.id, selectedNode.id);
+                    }
+                    if (!seen.has(textNode.id)) {
+                        candidates.push(textNode);
+                        seen.add(textNode.id);
+                    }
+                }
             }
         }
-        return filterProcessableTextNodes(candidates, options);
+        const collection = filterProcessableTextNodes(candidates, options);
+        const hiddenStateCache = new Map();
+        const diagnosticContextNodes = candidates.filter((textNode) => {
+            try {
+                return !isTextNodeRemoved(textNode) && !isHiddenForProcessing(textNode, hiddenStateCache);
+            }
+            catch (_a) {
+                return false;
+            }
+        });
+        return Object.assign(Object.assign({}, collection), { diagnosticContextNodes, diagnosticContextScopeByNodeId });
     }
     catch (error) {
         console.error("[Чистовик] Failed to collect text nodes", error);
@@ -2048,8 +2069,8 @@ function isPotentialNumberDiagnosticContextText(input) {
         return false;
     }
 }
-function getNumberDiagnosticLayoutInfos(textNodes) {
-    var _a, _b;
+function getNumberDiagnosticLayoutInfos(textNodes, scopeByNodeId = new Map()) {
+    var _a, _b, _c;
     try {
         const result = [];
         for (const textNode of textNodes) {
@@ -2067,6 +2088,7 @@ function getNumberDiagnosticLayoutInfos(textNodes) {
                     box,
                     containerId: (_b = (_a = textNode.parent) === null || _a === void 0 ? void 0 : _a.id) !== null && _b !== void 0 ? _b : null,
                     id: textNode.id,
+                    scopeId: (_c = scopeByNodeId.get(textNode.id)) !== null && _c !== void 0 ? _c : null,
                     text,
                 });
             }
@@ -2179,10 +2201,13 @@ function findSpatialIdentifierDiagnosticNeighbors(target, layoutInfos) {
             if (candidate.id === target.id || !isNumberDiagnosticSameVisualRow(target.box, candidate.box)) {
                 continue;
             }
+            if (target.scopeId !== null && candidate.scopeId !== target.scopeId) {
+                continue;
+            }
             const relation = getNumberDiagnosticHorizontalRelation(target.box, candidate.box);
             const ancestorDistance = getNumberDiagnosticCommonAncestorDistance(target, candidate);
             const role = getSpatialIdentifierContextRole(target.text, candidate.text);
-            if (relation === null || relation.gap > 720 || ancestorDistance === null || ancestorDistance > 8 || role === null) {
+            if (relation === null || relation.gap > 720 || ancestorDistance === null || ancestorDistance > 4 || role === null) {
                 continue;
             }
             const score = ancestorDistance * 1000 + relation.gap;
@@ -2208,7 +2233,7 @@ function findSpatialIdentifierDiagnosticNeighbors(target, layoutInfos) {
         return [];
     }
 }
-function buildNumberDiagnosticLayerContexts(textNodes) {
+function buildNumberDiagnosticLayerContexts(textNodes, diagnosticContextTextNodes = textNodes, diagnosticContextScopeByNodeId = new Map()) {
     var _a, _b, _c, _d, _e;
     try {
         const contexts = new Map();
@@ -2220,7 +2245,10 @@ function buildNumberDiagnosticLayerContexts(textNodes) {
                 return false;
             }
         });
-        const layoutInfos = needsSpatialDiagnosticContext ? getNumberDiagnosticLayoutInfos(textNodes) : [];
+        const layoutTextNodes = Array.from(new Map([...diagnosticContextTextNodes, ...textNodes].map((textNode) => [textNode.id, textNode])).values());
+        const layoutInfos = needsSpatialDiagnosticContext
+            ? getNumberDiagnosticLayoutInfos(layoutTextNodes, diagnosticContextScopeByNodeId)
+            : [];
         const layoutInfoById = new Map(layoutInfos.map((info) => [info.id, info]));
         const parentSnapshotCache = new Map();
         const visibleChildrenCache = new Map();
@@ -2290,7 +2318,7 @@ function assertNumberLayerContextUnchanged(textNode, initialContext, parentSnaps
         throw error;
     }
 }
-async function processTextNodes(textNodes, skippedLocked, skippedHidden, options, writeStrategy = DEFAULT_TEXT_WRITE_STRATEGY) {
+async function processTextNodes(textNodes, skippedLocked, skippedHidden, options, writeStrategy = DEFAULT_TEXT_WRITE_STRATEGY, diagnosticContextTextNodes = textNodes, diagnosticContextScopeByNodeId = new Map()) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     try {
         let processed = 0;
@@ -2339,7 +2367,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         }, () => buildNumberLayerContexts(textNodes));
         const numberDiagnosticLayerContexts = measureDuration((duration) => {
             timings.numberContext += duration;
-        }, () => buildNumberDiagnosticLayerContexts(textNodes));
+        }, () => buildNumberDiagnosticLayerContexts(textNodes, diagnosticContextTextNodes, diagnosticContextScopeByNodeId));
         const processingTextNodes = textNodes.slice();
         const deferredNumberContextNodeIds = new Set();
         const finalNumberContextParentSnapshotCache = new Map();
@@ -6122,6 +6150,9 @@ function getNumberDiagnosticKind(input, token, evidence, numberLayerContext) {
                 ? "Количество с обозначением в соседнем слое"
                 : "Количество с обозначением";
         }
+        if (getNumberDiagnosticCodeLabelBefore(input, token.start) !== null) {
+            return "MCC-код";
+        }
         if (/[—–-]/.test(value.slice(1))) {
             return "Диапазон чисел";
         }
@@ -6153,6 +6184,16 @@ function getProtectiveLabelBeforeNumber(input, start) {
         return null;
     }
 }
+function getNumberDiagnosticCodeLabelBefore(input, start) {
+    try {
+        const before = input.slice(Math.max(0, start - 24), start);
+        const match = new RegExp(`(?:^|[^${LETTERS}])MCC[ \\t\\u00A0\\u2009\\u202F:]*$`, "i").exec(before);
+        return match === null ? null : "MCC";
+    }
+    catch (_a) {
+        return null;
+    }
+}
 function getNumberDiagnosticProtectionBasis(input, token, numberLayerContext) {
     try {
         const protectiveNeighbor = numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.diagnosticNeighbors.find((neighbor) => neighbor.usedAsEvidence && neighbor.role === "protection");
@@ -6162,6 +6203,10 @@ function getNumberDiagnosticProtectionBasis(input, token, numberLayerContext) {
         const protectiveLabel = getProtectiveLabelBeforeNumber(input, token.start);
         if (protectiveLabel !== null) {
             return `Защита: ${protectiveLabel}`;
+        }
+        const codeLabel = getNumberDiagnosticCodeLabelBefore(input, token.start);
+        if (codeLabel !== null) {
+            return `Защита: ${codeLabel}-код`;
         }
         const bounds = getNumericIdentifierTokenBounds(input, token.start, token.end);
         const identifierToken = normalizeHorizontalSpaces(input.slice(bounds.start, bounds.end)).trim();
@@ -6230,10 +6275,10 @@ function getNumberDiagnosticDecisionBasis(input, token, numberLayerContext, repr
         return "Не удалось определить признак решения";
     }
 }
-function getNumberDiagnosticRuleCodes(before, after, numberKind) {
+function getNumberDiagnosticRuleCodes(before, after, numberKind, contextChangeCode = null) {
     try {
         if (before === after) {
-            return [];
+            return contextChangeCode === null ? [] : [contextChangeCode];
         }
         const codes = new Set();
         const beforeDigits = before.replace(/\D/g, "");
@@ -6268,6 +6313,24 @@ function getNumberDiagnosticRuleCodes(before, after, numberKind) {
         return [];
     }
 }
+function getNumberDiagnosticContextChangeCode(beforeText, before, afterText, after) {
+    try {
+        const beforeWindow = getNumberDiagnosticLocalWindow(beforeText, before);
+        const afterWindow = getNumberDiagnosticLocalWindow(afterText, after);
+        const normalizeSpaces = (value) => value.replace(/[ \t\u00A0\u2009\u202F]+/g, " ");
+        return normalizeSpaces(beforeWindow) === normalizeSpaces(afterWindow)
+            ? "number_context_nbsp"
+            : "number_context_change";
+    }
+    catch (_a) {
+        return "number_context_change";
+    }
+}
+function getNumberDiagnosticContextChangeReason(code) {
+    return code === "number_context_nbsp"
+        ? "Изменён пробел рядом с числом; числовое правило не применялось"
+        : "Изменён текст рядом с числом; числовое правило не применялось";
+}
 function createNumberDiagnosticCases(beforeText, afterText, numberLayerContext, beforeDevelopmentMarkerIndexes = [], afterDevelopmentMarkerIndexes = []) {
     var _a;
     try {
@@ -6286,13 +6349,26 @@ function createNumberDiagnosticCases(beforeText, afterText, numberLayerContext, 
             const numberBefore = getNumberDiagnosticRepresentation(diagnosticBeforeText, before, numberLayerContext);
             const numberAfter = getNumberDiagnosticRepresentation(diagnosticAfterText, after, numberLayerContext);
             const numberKind = getNumberDiagnosticKind(sourceText, sourceToken, evidence, numberLayerContext);
-            const representationChanged = before !== null &&
+            const numberRepresentationChanged = before !== null && after !== null && numberBefore !== numberAfter;
+            const localContextChanged = before !== null &&
                 after !== null &&
-                (numberBefore !== numberAfter ||
-                    getNumberDiagnosticLocalWindow(diagnosticBeforeText, before) !==
-                        getNumberDiagnosticLocalWindow(diagnosticAfterText, after));
+                getNumberDiagnosticLocalWindow(diagnosticBeforeText, before) !==
+                    getNumberDiagnosticLocalWindow(diagnosticAfterText, after);
+            const representationChanged = numberRepresentationChanged || localContextChanged;
             const protectedNumber = before !== null && isProtectedNumberDiagnostic(diagnosticBeforeText, before, numberLayerContext);
             const hasEvidence = evidence.before !== null || evidence.after !== null;
+            const decisionBasis = before !== null && after !== null
+                ? getNumberDiagnosticDecisionBasis(sourceText, sourceToken, numberLayerContext, representationChanged, protectedNumber)
+                : null;
+            const contextChangeCode = !numberRepresentationChanged &&
+                localContextChanged &&
+                !protectedNumber &&
+                !hasEvidence &&
+                decisionBasis === "Признак количества не найден" &&
+                before !== null &&
+                after !== null
+                ? getNumberDiagnosticContextChangeCode(diagnosticBeforeText, before, diagnosticAfterText, after)
+                : null;
             const alreadyFormattedPhone = before !== null && isRussianFullPhoneToken(before.text.trim());
             let status;
             let reason;
@@ -6300,21 +6376,25 @@ function createNumberDiagnosticCases(beforeText, afterText, numberLayerContext, 
                 status = "review";
                 reason = "Не удалось уверенно сопоставить число до и после обработки";
             }
+            else if (contextChangeCode !== null) {
+                status = "changed";
+                reason = getNumberDiagnosticContextChangeReason(contextChangeCode);
+            }
             else if (representationChanged) {
                 status = "changed";
-                reason = getNumberDiagnosticDecisionBasis(sourceText, sourceToken, numberLayerContext, representationChanged, protectedNumber);
+                reason = decisionBasis !== null && decisionBasis !== void 0 ? decisionBasis : "Не удалось определить признак решения";
             }
             else if (protectedNumber && !alreadyFormattedPhone) {
                 status = "skipped_policy";
-                reason = getNumberDiagnosticDecisionBasis(sourceText, sourceToken, numberLayerContext, representationChanged, protectedNumber);
+                reason = decisionBasis !== null && decisionBasis !== void 0 ? decisionBasis : "Не удалось определить признак решения";
             }
             else if (hasEvidence || alreadyFormattedPhone) {
                 status = "already_correct";
-                reason = getNumberDiagnosticDecisionBasis(sourceText, sourceToken, numberLayerContext, representationChanged, protectedNumber);
+                reason = decisionBasis !== null && decisionBasis !== void 0 ? decisionBasis : "Не удалось определить признак решения";
             }
             else {
                 status = "skipped_policy";
-                reason = "Признак количества не найден";
+                reason = decisionBasis !== null && decisionBasis !== void 0 ? decisionBasis : "Признак количества не найден";
             }
             return {
                 afterText: getNumberDiagnosticContext(diagnosticAfterText, after),
@@ -6327,7 +6407,7 @@ function createNumberDiagnosticCases(beforeText, afterText, numberLayerContext, 
                 numberKind,
                 numberRulesVersion: NUMBER_RULES_VERSION,
                 reason,
-                ruleCodes: getNumberDiagnosticRuleCodes(numberBefore, numberAfter, numberKind),
+                ruleCodes: getNumberDiagnosticRuleCodes(numberBefore, numberAfter, numberKind, contextChangeCode),
                 status,
             };
         });
