@@ -271,6 +271,41 @@ assert.strictEqual(alreadyCorrectDiagnostics.length, 1);
 assert.strictEqual(alreadyCorrectDiagnostics[0].status, "already_correct");
 assert.strictEqual(alreadyCorrectDiagnostics[0].reason, "₽ после числа");
 
+const developmentNumberBefore = `iPhone 17${NBSP}Pro Max и${NBSP}20${NBSP}000${NBSP}₽`;
+const developmentNumberAfter = developmentNumberBefore.replaceAll(NBSP, "*");
+const developmentMarkerIndexes = Array.from(developmentNumberAfter)
+  .map((character, index) => character === "*" ? index : -1)
+  .filter((index) => index >= 0);
+const developmentNumberDiagnostics = createNumberDiagnosticCases(
+  developmentNumberBefore,
+  developmentNumberAfter,
+  null,
+  [],
+  developmentMarkerIndexes
+);
+assert.strictEqual(developmentNumberDiagnostics.length, 2);
+assert.strictEqual(developmentNumberDiagnostics.some((item) => item.status === "review"), false);
+assert.strictEqual(developmentNumberDiagnostics.some((item) => item.beforeText === "" || item.afterText === ""), false);
+assert.strictEqual(developmentNumberDiagnostics.some((item) => item.beforeText.includes("*") || item.afterText.includes("*")), false);
+const developmentAmountDiagnostic = developmentNumberDiagnostics.find(
+  (item) => item.numberBefore.replace(/\D/g, "") === "20000"
+);
+assert(developmentAmountDiagnostic);
+assert.strictEqual(developmentAmountDiagnostic.numberBefore, `20${NBSP}000${NBSP}₽`);
+assert.strictEqual(developmentAmountDiagnostic.numberAfter, `20${NBSP}000${NBSP}₽`);
+assert.strictEqual(developmentAmountDiagnostic.status, "already_correct");
+
+const restoredBeautyNumberDiagnostics = createNumberDiagnosticCases(
+  developmentNumberAfter,
+  developmentNumberBefore,
+  null,
+  developmentMarkerIndexes,
+  []
+);
+assert.strictEqual(restoredBeautyNumberDiagnostics.length, 2);
+assert.strictEqual(restoredBeautyNumberDiagnostics.some((item) => item.status === "review"), false);
+assert.strictEqual(restoredBeautyNumberDiagnostics.some((item) => item.beforeText === "" || item.afterText === ""), false);
+
 const neighboringCurrencyDiagnostics = createNumberDiagnosticCases(
   "10000",
   `10${NBSP}000`,
@@ -404,6 +439,44 @@ assert.strictEqual(spatialIdContext.diagnosticNeighbors[0].text, "ID");
 assert.strictEqual(spatialIdContext.diagnosticNeighbors[0].usedAsEvidence, true);
 const spatialIdCases = createNumberDiagnosticCases(spatialIdValue.characters, spatialIdValue.characters, spatialIdContext);
 assert.strictEqual(spatialIdCases[0].reason, "Защита: ID в соседнем слое");
+
+const genericContextLabel = createProcessTextNodeMock(
+  "diagnostic-generic-label",
+  "Остаток баллов",
+  { height: 20, width: 110, x: 40, y: 160 },
+  null
+);
+const genericContextValue = createProcessTextNodeMock(
+  "diagnostic-generic-value",
+  "29143",
+  { height: 20, width: 60, x: 190, y: 160 },
+  null
+);
+const unrelatedNextRowLabel = createProcessTextNodeMock(
+  "diagnostic-unrelated-label",
+  "Следующий показатель",
+  { height: 20, width: 140, x: 40, y: 190 },
+  null
+);
+genericContextLabel.parent = { ...accountLabelWrapper, children: [genericContextLabel], id: "diagnostic-generic-label-wrapper" };
+genericContextValue.parent = { ...accountValueWrapper, children: [genericContextValue], id: "diagnostic-generic-value-wrapper" };
+unrelatedNextRowLabel.parent = { ...accountLabelWrapper, children: [unrelatedNextRowLabel], id: "diagnostic-unrelated-label-wrapper" };
+const genericContext = buildNumberDiagnosticLayerContexts([
+  genericContextLabel,
+  genericContextValue,
+  unrelatedNextRowLabel,
+]).get(genericContextValue.id);
+assert(genericContext);
+assert.strictEqual(genericContext.diagnosticNeighbors.length, 1);
+assert.strictEqual(genericContext.diagnosticNeighbors[0].text, "Остаток баллов");
+assert.strictEqual(genericContext.diagnosticNeighbors[0].usedAsEvidence, false);
+const genericContextCases = createNumberDiagnosticCases(
+  genericContextValue.characters,
+  genericContextValue.characters,
+  genericContext
+);
+assert.strictEqual(genericContextCases[0].layerMode, "multiple");
+assert.strictEqual(genericContextCases[0].reason, "Признак количества не найден");
 
 const legacyQueuedEvent = {
   attempts: 1,

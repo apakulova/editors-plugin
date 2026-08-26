@@ -428,7 +428,7 @@ h2 {
   color: inherit;
 }
 
-.nbsp-marker {
+.comparison-text .nbsp-marker {
   color: #ff4053;
   font-weight: 750;
 }
@@ -449,6 +449,11 @@ h2 {
 
 .neighbor-item.is-evidence {
   box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.neighbor-item.is-missing {
+  background: var(--surface-secondary);
+  color: var(--text-secondary);
 }
 
 .neighbor-item p {

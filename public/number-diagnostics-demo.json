@@ -1,9 +1,9 @@
 {
   "ok": true,
   "summary": {
-    "all": 4,
+    "all": 6,
     "changed": 2,
-    "skipped_policy": 1,
+    "skipped_policy": 3,
     "already_correct": 1,
     "review": 0
   },
@@ -25,8 +25,46 @@
     "to": "2026-09-18",
     "page": 1,
     "limit": 50,
-    "total": 4,
+    "total": 6,
     "items": [
+      {
+        "id": "demo-context",
+        "captured_at": "2026-08-26T15:31:00.000Z",
+        "run_id": "demo-run-context",
+        "plugin_release": "2026-08-26",
+        "diagnostics_schema_version": 3,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "skipped_policy",
+        "number_kind": "Число без количественного признака",
+        "reason": "Признак количества не найден",
+        "number_before": "29143",
+        "number_after": "29143",
+        "before_text": "29143",
+        "after_text": "29143",
+        "layer_mode": "multiple",
+        "neighbors": [
+          { "direction": "left", "role": "context", "text": "Остаток баллов", "usedAsEvidence": false }
+        ],
+        "rule_codes": []
+      },
+      {
+        "id": "demo-no-context",
+        "captured_at": "2026-08-26T15:29:00.000Z",
+        "run_id": "demo-run-no-context",
+        "plugin_release": "2026-08-26",
+        "diagnostics_schema_version": 3,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "skipped_policy",
+        "number_kind": "Число без количественного признака",
+        "reason": "Признак количества не найден",
+        "number_before": "29143",
+        "number_after": "29143",
+        "before_text": "29143",
+        "after_text": "29143",
+        "layer_mode": "single",
+        "neighbors": [],
+        "rule_codes": []
+      },
       {
         "id": "demo-1",
         "captured_at": "2026-08-26T07:32:00.000Z",

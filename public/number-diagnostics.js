@@ -288,14 +288,20 @@
 
     card.append(header, comparison);
 
-    const decisionNeighbors = Array.isArray(item.neighbors)
-      ? item.neighbors.filter((neighbor) => neighbor.usedAsEvidence)
+    const visibleNeighbors = Array.isArray(item.neighbors)
+      ? item.neighbors.filter((neighbor) => neighbor.role !== "separator")
       : [];
 
-    if (decisionNeighbors.length > 0) {
+    if (visibleNeighbors.length > 0 || isStandaloneContextCase(item)) {
       const neighbors = document.createElement("div");
       neighbors.className = "neighbor-strip";
-      decisionNeighbors.forEach((neighbor) => neighbors.append(createDecisionContext(item, neighbor)));
+
+      if (visibleNeighbors.length > 0) {
+        visibleNeighbors.forEach((neighbor) => neighbors.append(createNeighborContext(item, neighbor)));
+      } else {
+        neighbors.append(createMissingNeighborContext());
+      }
+
       card.append(neighbors);
     }
 
@@ -395,12 +401,17 @@
     };
   }
 
-  function createDecisionContext(caseItem, neighbor) {
+
+  function isStandaloneContextCase(caseItem) {
+    return !/[A-Za-zА-Яа-яЁё]{4,}/.test(caseItem.before_text || "");
+  }
+
+  function createNeighborContext(caseItem, neighbor) {
     const item = document.createElement("div");
-    item.className = "neighbor-item is-evidence";
+    item.className = neighbor.usedAsEvidence ? "neighbor-item is-evidence" : "neighbor-item";
     const label = document.createElement("span");
     label.className = "detail-label";
-    label.textContent = "Контекст решения";
+    label.textContent = neighbor.usedAsEvidence ? "Контекст решения" : "Соседний слой для проверки";
     const text = document.createElement("p");
     const parts = neighbor.direction === "left"
       ? [neighbor.text, caseItem.number_before]
@@ -408,6 +419,18 @@
     appendTextWithSpaces(text, parts[0]);
     text.append(document.createTextNode(" · "));
     appendTextWithSpaces(text, parts[1]);
+    item.append(label, text);
+    return item;
+  }
+
+  function createMissingNeighborContext() {
+    const item = document.createElement("div");
+    item.className = "neighbor-item is-missing";
+    const label = document.createElement("span");
+    label.className = "detail-label";
+    label.textContent = "Контекст отдельного слоя";
+    const text = document.createElement("p");
+    text.textContent = "Соседний текстовый слой не найден";
     item.append(label, text);
     return item;
   }

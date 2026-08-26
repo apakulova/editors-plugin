@@ -16,7 +16,7 @@ const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
 const NUMBER_DIAGNOSTICS_CAPTURE_PATH = "/api/number-diagnostics";
-const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 2;
+const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 3;
 const NUMBER_DIAGNOSTICS_END_AT_MS = Date.parse("2026-09-19T00:00:00+03:00");
 const NUMBER_DIAGNOSTICS_QUEUE_KEY = "numberDiagnosticsQueue";
 const NUMBER_DIAGNOSTICS_MAX_QUEUED_REPORTS = 10;
@@ -2036,6 +2036,18 @@ function isPotentialNumberDiagnosticContextLabel(input) {
         return false;
     }
 }
+function isPotentialNumberDiagnosticContextText(input) {
+    try {
+        const text = input.trim();
+        return (text.length > 0 &&
+            (isPotentialNumberDiagnosticContextLabel(text) ||
+                getExactContextMarker(text) !== null ||
+                new RegExp(`[${LETTERS}]{4,}`).test(text)));
+    }
+    catch (_a) {
+        return false;
+    }
+}
 function getNumberDiagnosticLayoutInfos(textNodes) {
     var _a, _b;
     try {
@@ -2043,7 +2055,7 @@ function getNumberDiagnosticLayoutInfos(textNodes) {
         for (const textNode of textNodes) {
             try {
                 const text = textNode.characters;
-                if (isTextNodeRemoved(textNode) || isWhitespaceOnlyText(text) || (!/\d/.test(text) && !isPotentialNumberDiagnosticContextLabel(text))) {
+                if (isTextNodeRemoved(textNode) || isWhitespaceOnlyText(text) || (!/\d/.test(text) && !isPotentialNumberDiagnosticContextText(text))) {
                     continue;
                 }
                 const box = textNode.absoluteBoundingBox;
@@ -2130,7 +2142,13 @@ function getSpatialIdentifierContextRole(targetText, neighborText) {
         }
         const hasLettersAndDigits = new RegExp(`[${LETTERS}]`).test(target) && /\d/.test(target);
         const codeLabel = new RegExp(`(^|[^${LETTERS}])(?:id|ид|код)(?=$|[^${LETTERS}])`, "i").test(neighbor);
-        return hasLettersAndDigits && codeLabel ? "context" : null;
+        if (hasLettersAndDigits && codeLabel) {
+            return "context";
+        }
+        if (getExactContextMarker(neighborText) !== null || new RegExp(`[${LETTERS}]{4,}`).test(neighbor)) {
+            return "context";
+        }
+        return null;
     }
     catch (error) {
         console.error("[Чистовик] Failed to classify spatial diagnostic context", error);
@@ -2175,7 +2193,7 @@ function findSpatialIdentifierDiagnosticNeighbors(target, layoutInfos) {
                         direction: relation.direction,
                         role,
                         text: candidate.text,
-                        usedAsEvidence: true,
+                        usedAsEvidence: role === "protection" || isPotentialNumberDiagnosticContextLabel(candidate.text),
                     },
                     score,
                 });
@@ -2194,7 +2212,15 @@ function buildNumberDiagnosticLayerContexts(textNodes) {
     var _a, _b, _c, _d, _e;
     try {
         const contexts = new Map();
-        const layoutInfos = getNumberDiagnosticLayoutInfos(textNodes);
+        const needsSpatialDiagnosticContext = textNodes.some((textNode) => {
+            try {
+                return !isTextNodeRemoved(textNode) && isStandaloneNumberDiagnosticLayer(textNode.characters);
+            }
+            catch (_a) {
+                return false;
+            }
+        });
+        const layoutInfos = needsSpatialDiagnosticContext ? getNumberDiagnosticLayoutInfos(textNodes) : [];
         const layoutInfoById = new Map(layoutInfos.map((info) => [info.id, info]));
         const parentSnapshotCache = new Map();
         const visibleChildrenCache = new Map();
@@ -2382,7 +2408,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext);
                 });
                 const newText = cleanResult.text;
-                currentLayerNumberDiagnostics = createNumberDiagnosticCases(oldText, newText, numberDiagnosticLayerContext);
+                currentLayerNumberDiagnostics = createNumberDiagnosticCases(oldText, newText, numberDiagnosticLayerContext, existingDevelopmentMarkerIndexes, cleanResult.developmentMarkerIndexes);
                 if (newText !== oldText) {
                     const pointEditPlan = measureDuration((duration) => {
                         timings.pointEditPlanning += duration;
@@ -5894,6 +5920,24 @@ function collectNumberDiagnosticTokens(input) {
 function getNumberDiagnosticDigits(token) {
     return token.text.replace(/\D/g, "");
 }
+function normalizeDevelopmentMarkersForNumberDiagnostics(input, developmentMarkerIndexes) {
+    try {
+        if (developmentMarkerIndexes.length === 0 || !input.includes(DEVELOPMENT_NBSP_MARKER)) {
+            return input;
+        }
+        const characters = input.split("");
+        for (const index of developmentMarkerIndexes) {
+            if (Number.isInteger(index) && index >= 0 && index < characters.length && characters[index] === DEVELOPMENT_NBSP_MARKER) {
+                characters[index] = NBSP;
+            }
+        }
+        return characters.join("");
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to normalize development markers for number diagnostics", error);
+        return input;
+    }
+}
 function pairNumberDiagnosticTokens(beforeTokens, afterTokens) {
     try {
         const pairs = [];
@@ -6224,27 +6268,30 @@ function getNumberDiagnosticRuleCodes(before, after, numberKind) {
         return [];
     }
 }
-function createNumberDiagnosticCases(beforeText, afterText, numberLayerContext) {
+function createNumberDiagnosticCases(beforeText, afterText, numberLayerContext, beforeDevelopmentMarkerIndexes = [], afterDevelopmentMarkerIndexes = []) {
     var _a;
     try {
-        const beforeTokens = collectNumberDiagnosticTokens(beforeText);
-        const afterTokens = collectNumberDiagnosticTokens(afterText);
+        const diagnosticBeforeText = normalizeDevelopmentMarkersForNumberDiagnostics(beforeText, beforeDevelopmentMarkerIndexes);
+        const diagnosticAfterText = normalizeDevelopmentMarkersForNumberDiagnostics(afterText, afterDevelopmentMarkerIndexes);
+        const beforeTokens = collectNumberDiagnosticTokens(diagnosticBeforeText);
+        const afterTokens = collectNumberDiagnosticTokens(diagnosticAfterText);
         const pairs = pairNumberDiagnosticTokens(beforeTokens, afterTokens);
-        const includeNeighbors = isStandaloneNumberDiagnosticLayer(beforeText);
+        const includeNeighbors = isStandaloneNumberDiagnosticLayer(diagnosticBeforeText);
         const neighbors = includeNeighbors ? (_a = numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.diagnosticNeighbors) !== null && _a !== void 0 ? _a : [] : [];
         const layerMode = neighbors.length > 0 ? "multiple" : "single";
         return pairs.map(({ after, before }) => {
             const sourceToken = before !== null && before !== void 0 ? before : after;
-            const sourceText = before === null ? afterText : beforeText;
+            const sourceText = before === null ? diagnosticAfterText : diagnosticBeforeText;
             const evidence = getNumberDiagnosticEvidence(sourceText, sourceToken, numberLayerContext);
-            const numberBefore = getNumberDiagnosticRepresentation(beforeText, before, numberLayerContext);
-            const numberAfter = getNumberDiagnosticRepresentation(afterText, after, numberLayerContext);
+            const numberBefore = getNumberDiagnosticRepresentation(diagnosticBeforeText, before, numberLayerContext);
+            const numberAfter = getNumberDiagnosticRepresentation(diagnosticAfterText, after, numberLayerContext);
             const numberKind = getNumberDiagnosticKind(sourceText, sourceToken, evidence, numberLayerContext);
             const representationChanged = before !== null &&
                 after !== null &&
                 (numberBefore !== numberAfter ||
-                    getNumberDiagnosticLocalWindow(beforeText, before) !== getNumberDiagnosticLocalWindow(afterText, after));
-            const protectedNumber = before !== null && isProtectedNumberDiagnostic(beforeText, before, numberLayerContext);
+                    getNumberDiagnosticLocalWindow(diagnosticBeforeText, before) !==
+                        getNumberDiagnosticLocalWindow(diagnosticAfterText, after));
+            const protectedNumber = before !== null && isProtectedNumberDiagnostic(diagnosticBeforeText, before, numberLayerContext);
             const hasEvidence = evidence.before !== null || evidence.after !== null;
             const alreadyFormattedPhone = before !== null && isRussianFullPhoneToken(before.text.trim());
             let status;
@@ -6270,8 +6317,8 @@ function createNumberDiagnosticCases(beforeText, afterText, numberLayerContext) 
                 reason = "Признак количества не найден";
             }
             return {
-                afterText: getNumberDiagnosticContext(afterText, after),
-                beforeText: getNumberDiagnosticContext(beforeText, before),
+                afterText: getNumberDiagnosticContext(diagnosticAfterText, after),
+                beforeText: getNumberDiagnosticContext(diagnosticBeforeText, before),
                 id: createAnalyticsEventId(),
                 layerMode,
                 neighbors,
