@@ -5,7 +5,7 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": ["https://chistovik-plugin.vercel.app"],
-    "reasoning": "Плагин отправляет анонимные технические события использования и ошибки для улучшения продукта."
+    "reasoning": "Плагин отправляет техническую аналитику, а до 18 сентября 2026 года — диагностические фрагменты с числами до и после обработки для внутреннего бета-теста."
   },
   "main": "dist/code.js",
   "ui": "src/ui.html",

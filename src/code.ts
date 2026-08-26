@@ -14,8 +14,17 @@ const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
+const NUMBER_DIAGNOSTICS_CAPTURE_PATH = "/api/number-diagnostics";
+const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 2;
+const NUMBER_DIAGNOSTICS_END_AT_MS = Date.parse("2026-09-19T00:00:00+03:00");
+const NUMBER_DIAGNOSTICS_QUEUE_KEY = "numberDiagnosticsQueue";
+const NUMBER_DIAGNOSTICS_MAX_QUEUED_REPORTS = 10;
+const NUMBER_DIAGNOSTICS_MAX_CASES_PER_PAYLOAD = 50;
+const NUMBER_DIAGNOSTICS_MAX_PAYLOAD_BYTES = 440 * 1024;
+const NUMBER_DIAGNOSTICS_MAX_TEXT_LENGTH = 12_000;
+const NUMBER_RULES_VERSION = "numbers-2026-08-25-v1";
 const ANALYTICS_SCHEMA_VERSION = 13;
-const ANALYTICS_PLUGIN_RELEASE = "2026-08-07";
+const ANALYTICS_PLUGIN_RELEASE = "2026-08-26";
 const PERFORMANCE_MEASUREMENT_VERSION = 8;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
 const DEFAULT_TEXT_WRITE_STRATEGY: TextWriteStrategy = "point";
@@ -427,7 +436,48 @@ interface TextProcessResult {
   skippedHidden: number;
   skippedLocked: number;
   problemLayers: ProblemLayerReportItem[];
+  numberDiagnostics: NumberDiagnosticCase[];
   analytics: TextProcessAnalytics;
+}
+
+type NumberDiagnosticStatus = "changed" | "skipped_policy" | "already_correct" | "review";
+type NumberDiagnosticLayerMode = "single" | "multiple";
+type NumberDiagnosticNeighborRole = "context" | "evidence" | "protection" | "separator";
+
+interface NumberDiagnosticNeighbor {
+  direction: "left" | "right";
+  role: NumberDiagnosticNeighborRole;
+  text: string;
+  usedAsEvidence: boolean;
+}
+
+interface NumberDiagnosticCase {
+  afterText: string;
+  beforeText: string;
+  id: string;
+  layerMode: NumberDiagnosticLayerMode;
+  neighbors: NumberDiagnosticNeighbor[];
+  numberAfter: string;
+  numberBefore: string;
+  numberKind: string;
+  numberRulesVersion: string;
+  reason: string;
+  ruleCodes: string[];
+  status: NumberDiagnosticStatus;
+}
+
+interface NumberDiagnosticsPayload {
+  capturedAt: string;
+  cases: NumberDiagnosticCase[];
+  pluginRelease: string;
+  runId: string;
+  schemaVersion: number;
+}
+
+interface QueuedNumberDiagnosticsPayload {
+  attempts: number;
+  id: string;
+  payload: NumberDiagnosticsPayload;
 }
 
 interface AnalyticsErrorDiagnostic {
@@ -590,6 +640,10 @@ interface TextNodeLayoutInfo {
   text: string;
 }
 
+interface NumberDiagnosticLayoutInfo extends TextNodeLayoutInfo {
+  ancestorIds: string[];
+}
+
 interface PhoneTailLayoutIndex {
   byCenterY: TextNodeLayoutInfo[];
   byX: TextNodeLayoutInfo[];
@@ -604,6 +658,7 @@ type StyleSegment = Pick<StyledTextSegment, PreservedStyleField | "characters" |
 const pendingAnalyticsEvents: Promise<void>[] = [];
 let analyticsIdentityPromise: Promise<AnalyticsIdentity> | null = null;
 let analyticsQueueOperation: Promise<void> = Promise.resolve();
+let numberDiagnosticsQueueOperation: Promise<void> = Promise.resolve();
 let typographRunPromise: Promise<void> | null = null;
 
 async function run(): Promise<void> {
@@ -751,6 +806,7 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
     );
     analyticsStage = "clean_text";
     result = await processTextNodes(collection.nodes, collection.skippedLocked, collection.skippedHidden, options);
+    queueNumberDiagnosticsReport(analyticsContext.runId, result.numberDiagnostics);
 
     if (result.failed > 0) {
       analyticsStage = result.failedStage ?? "unknown";
@@ -1633,6 +1689,251 @@ async function sendAnalyticsPayload(payload: AnalyticsPayload): Promise<void> {
   }
 }
 
+function isNumberDiagnosticsCollectionOpen(now: Date = new Date()): boolean {
+  try {
+    return now.getTime() < NUMBER_DIAGNOSTICS_END_AT_MS;
+  } catch {
+    return false;
+  }
+}
+
+function truncateNumberDiagnosticText(value: string, maximumLength: number = NUMBER_DIAGNOSTICS_MAX_TEXT_LENGTH): string {
+  if (value.length <= maximumLength) {
+    return value;
+  }
+
+  const half = Math.floor((maximumLength - 3) / 2);
+  return `${value.slice(0, half)}…${value.slice(value.length - half)}`;
+}
+
+function getUtf8ByteLength(value: string): number {
+  let length = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code < 0x80) {
+      length += 1;
+    } else if (code < 0x800) {
+      length += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length) {
+      const next = value.charCodeAt(index + 1);
+
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        length += 4;
+        index += 1;
+      } else {
+        length += 3;
+      }
+    } else {
+      length += 3;
+    }
+  }
+
+  return length;
+}
+
+function normalizeNumberDiagnosticCaseForSending(item: NumberDiagnosticCase): NumberDiagnosticCase {
+  return {
+    ...item,
+    afterText: truncateNumberDiagnosticText(item.afterText),
+    beforeText: truncateNumberDiagnosticText(item.beforeText),
+    neighbors: item.neighbors.map((neighbor) => ({
+      ...neighbor,
+      text: truncateNumberDiagnosticText(neighbor.text),
+    })),
+    numberAfter: truncateNumberDiagnosticText(item.numberAfter, 1000),
+    numberBefore: truncateNumberDiagnosticText(item.numberBefore, 1000),
+  };
+}
+
+function createNumberDiagnosticsPayloads(runId: string, cases: NumberDiagnosticCase[], capturedAt: string): NumberDiagnosticsPayload[] {
+  try {
+    const payloads: NumberDiagnosticsPayload[] = [];
+    let currentCases: NumberDiagnosticCase[] = [];
+
+    const finishCurrentPayload = (): void => {
+      if (currentCases.length === 0) {
+        return;
+      }
+
+      payloads.push({
+        capturedAt,
+        cases: currentCases,
+        pluginRelease: ANALYTICS_PLUGIN_RELEASE,
+        runId,
+        schemaVersion: NUMBER_DIAGNOSTICS_SCHEMA_VERSION,
+      });
+      currentCases = [];
+    };
+
+    for (const originalCase of cases) {
+      const item = normalizeNumberDiagnosticCaseForSending(originalCase);
+      const tentativeCases = [...currentCases, item];
+      const tentativePayload: NumberDiagnosticsPayload = {
+        capturedAt,
+        cases: tentativeCases,
+        pluginRelease: ANALYTICS_PLUGIN_RELEASE,
+        runId,
+        schemaVersion: NUMBER_DIAGNOSTICS_SCHEMA_VERSION,
+      };
+      const payloadBytes = getUtf8ByteLength(JSON.stringify(tentativePayload));
+
+      if (
+        currentCases.length > 0 &&
+        (tentativeCases.length > NUMBER_DIAGNOSTICS_MAX_CASES_PER_PAYLOAD || payloadBytes > NUMBER_DIAGNOSTICS_MAX_PAYLOAD_BYTES)
+      ) {
+        finishCurrentPayload();
+      }
+
+      currentCases.push(item);
+    }
+
+    finishCurrentPayload();
+    return payloads;
+  } catch (error) {
+    console.error("[Чистовик] Failed to prepare number diagnostics payloads", error);
+    return [];
+  }
+}
+
+function queueNumberDiagnosticsReport(runId: string, cases: NumberDiagnosticCase[]): void {
+  try {
+    if (cases.length === 0 || !isNumberDiagnosticsCollectionOpen()) {
+      return;
+    }
+
+    const capturedAt = new Date().toISOString();
+
+    for (const payload of createNumberDiagnosticsPayloads(runId, cases, capturedAt)) {
+      const reportId = createAnalyticsEventId();
+      const promise = trackNumberDiagnosticsPayload(payload, reportId);
+      pendingAnalyticsEvents.push(promise);
+
+      void promise.finally(() => {
+        const index = pendingAnalyticsEvents.indexOf(promise);
+
+        if (index !== -1) {
+          pendingAnalyticsEvents.splice(index, 1);
+        }
+      });
+    }
+  } catch {
+    // Number diagnostics must never affect typography.
+  }
+}
+
+async function trackNumberDiagnosticsPayload(payload: NumberDiagnosticsPayload, reportId: string): Promise<void> {
+  try {
+    await enqueueNumberDiagnosticsPayload(payload, reportId);
+    await flushQueuedNumberDiagnosticsPayloads();
+  } catch {
+    // Number diagnostics must never affect typography.
+  }
+}
+
+async function enqueueNumberDiagnosticsPayload(payload: NumberDiagnosticsPayload, reportId: string): Promise<void> {
+  await runNumberDiagnosticsQueueOperation(async () => {
+    const queue = await readQueuedNumberDiagnosticsPayloads();
+    const next: QueuedNumberDiagnosticsPayload = {
+      attempts: 0,
+      id: reportId,
+      payload,
+    };
+    const nextQueue = queue
+      .filter((queued) => queued.id !== reportId)
+      .concat(next)
+      .slice(-NUMBER_DIAGNOSTICS_MAX_QUEUED_REPORTS);
+    await figma.clientStorage.setAsync(NUMBER_DIAGNOSTICS_QUEUE_KEY, nextQueue);
+  });
+}
+
+async function readQueuedNumberDiagnosticsPayloads(): Promise<QueuedNumberDiagnosticsPayload[]> {
+  try {
+    const stored = await figma.clientStorage.getAsync(NUMBER_DIAGNOSTICS_QUEUE_KEY);
+
+    if (!Array.isArray(stored)) {
+      return [];
+    }
+
+    return stored.filter((item): item is QueuedNumberDiagnosticsPayload => {
+      if (item === null || typeof item !== "object") {
+        return false;
+      }
+
+      const candidate = item as Partial<QueuedNumberDiagnosticsPayload>;
+      return (
+        typeof candidate.id === "string" &&
+        typeof candidate.attempts === "number" &&
+        candidate.payload !== null &&
+        typeof candidate.payload === "object" &&
+        Array.isArray(candidate.payload.cases)
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function flushQueuedNumberDiagnosticsPayloads(): Promise<void> {
+  await runNumberDiagnosticsQueueOperation(async () => {
+    const queue = await readQueuedNumberDiagnosticsPayloads();
+
+    if (queue.length === 0) {
+      return;
+    }
+
+    if (!isNumberDiagnosticsCollectionOpen()) {
+      await figma.clientStorage.setAsync(NUMBER_DIAGNOSTICS_QUEUE_KEY, []);
+      return;
+    }
+
+    const remaining: QueuedNumberDiagnosticsPayload[] = [];
+
+    for (const queued of queue) {
+      try {
+        await sendNumberDiagnosticsPayload(queued.payload);
+      } catch {
+        remaining.push({
+          ...queued,
+          attempts: queued.attempts + 1,
+        });
+      }
+    }
+
+    await figma.clientStorage.setAsync(NUMBER_DIAGNOSTICS_QUEUE_KEY, remaining.slice(-NUMBER_DIAGNOSTICS_MAX_QUEUED_REPORTS));
+  });
+}
+
+async function sendNumberDiagnosticsPayload(payload: NumberDiagnosticsPayload): Promise<void> {
+  const response = await fetch(`${ANALYTICS_API_HOST}${NUMBER_DIAGNOSTICS_CAPTURE_PATH}`, {
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (response.status === 400 || response.status === 410 || response.status === 413) {
+    return;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Number diagnostics capture failed: ${response.status}`);
+  }
+}
+
+function runNumberDiagnosticsQueueOperation(operation: () => Promise<void>): Promise<void> {
+  const nextOperation = numberDiagnosticsQueueOperation.then(operation, operation);
+
+  numberDiagnosticsQueueOperation = nextOperation.then(
+    () => undefined,
+    () => undefined
+  );
+
+  return nextOperation;
+}
+
 function runAnalyticsQueueOperation(operation: () => Promise<void>): Promise<void> {
   const nextOperation = analyticsQueueOperation.then(operation, operation);
 
@@ -2338,6 +2639,61 @@ function markerHasUniqueNumberNeighbor(children: SceneNode[], markerIndex: numbe
   }
 }
 
+function createDiagnosticNumberContextNeighbors(
+  children: SceneNode[],
+  index: number,
+  usedIndex: number | null = null
+): NumberDiagnosticNeighbor[] {
+  try {
+    const neighbors: NumberDiagnosticNeighbor[] = [];
+
+    for (const direction of [-1, 1] as const) {
+      let inspectedCount = 0;
+
+      for (
+        let neighborIndex = index + direction;
+        neighborIndex >= 0 && neighborIndex < children.length && inspectedCount < 4;
+        neighborIndex += direction
+      ) {
+        inspectedCount += 1;
+        const neighbor = children[neighborIndex];
+
+        if (neighbor.type !== "TEXT" || !isSupportedNumberContextTextNode(neighbor)) {
+          continue;
+        }
+
+        const text = neighbor.characters;
+        const usedAsEvidence = neighborIndex === usedIndex;
+        let role: NumberDiagnosticNeighborRole = "context";
+
+        if (isAllowedNumberContextSeparator(text)) {
+          role = "separator";
+        } else if (isExactProtectiveContextLabel(text)) {
+          role = "protection";
+        } else if (getExactContextMarker(text) !== null || usedAsEvidence) {
+          role = "evidence";
+        }
+
+        neighbors.push({
+          direction: direction === -1 ? "left" : "right",
+          role,
+          text,
+          usedAsEvidence,
+        });
+
+        if (!isAllowedNumberContextSeparator(text)) {
+          break;
+        }
+      }
+    }
+
+    return neighbors.slice(0, 4);
+  } catch (error) {
+    console.error("[Чистовик] Failed to build diagnostic number neighbors", error);
+    return [];
+  }
+}
+
 function buildNumberLayerContextForNode(
   textNode: TextNode,
   parentSnapshotCache: Map<string, string> | null = null,
@@ -2393,6 +2749,7 @@ function buildNumberLayerContextForNode(
     });
     const snapshotKey = JSON.stringify({ localParticipants, parent: parentSnapshotKey });
     const context: NumberLayerContext = {
+      diagnosticNeighbors: createDiagnosticNumberContextNeighbors(children, index),
       evidenceAfter: null,
       evidenceBefore: null,
       protectedAsPhoneByNeighbor: false,
@@ -2411,6 +2768,7 @@ function buildNumberLayerContextForNode(
       isRussianPhoneTailToken(children[rightIndex].characters)
     ) {
       context.standalonePhonePrefix = true;
+      context.diagnosticNeighbors = createDiagnosticNumberContextNeighbors(children, index, rightIndex);
       return context;
     }
 
@@ -2456,6 +2814,7 @@ function buildNumberLayerContextForNode(
         protectiveNode.type === "TEXT" &&
         protectiveNode.characters.trim().replace(/:$/, "").trim().toLowerCase() === "телефон";
       context.protectedByNeighbor = true;
+      context.diagnosticNeighbors = createDiagnosticNumberContextNeighbors(children, index, candidate.index);
       return context;
     }
 
@@ -2474,6 +2833,8 @@ function buildNumberLayerContextForNode(
     } else {
       context.evidenceAfter = candidate.evidence;
     }
+
+    context.diagnosticNeighbors = createDiagnosticNumberContextNeighbors(children, index, candidate.index);
 
     return context;
   } catch (error) {
@@ -2511,6 +2872,318 @@ function buildNumberLayerContexts(textNodes: TextNode[]): Map<string, NumberLaye
   } catch (error) {
     console.error("[Чистовик] Failed to build number layer contexts", error);
     throw error;
+  }
+}
+
+function getNumberDiagnosticAncestorIds(textNode: TextNode): string[] {
+  try {
+    const ids: string[] = [];
+    let parent: BaseNode | null | undefined = textNode.parent;
+
+    while (parent != null && ids.length < 8) {
+      if (parent.type === "PAGE" || parent.type === "DOCUMENT") {
+        break;
+      }
+
+      ids.push(parent.id);
+      parent = parent.parent;
+    }
+
+    return ids;
+  } catch (error) {
+    console.error("[Чистовик] Failed to collect diagnostic number ancestors", error);
+    return [];
+  }
+}
+
+function isPotentialNumberDiagnosticContextLabel(input: string): boolean {
+  try {
+    const label = input.trim().replace(/:$/, "").trim();
+
+    return (
+      isExactProtectiveContextLabel(label) ||
+      /сч[её]т|карт/i.test(label) ||
+      new RegExp(`(^|[^${LETTERS}])(?:id|ид|код)(?=$|[^${LETTERS}])`, "i").test(label)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getNumberDiagnosticLayoutInfos(textNodes: TextNode[]): NumberDiagnosticLayoutInfo[] {
+  try {
+    const result: NumberDiagnosticLayoutInfo[] = [];
+
+    for (const textNode of textNodes) {
+      try {
+        const text = textNode.characters;
+
+        if (isTextNodeRemoved(textNode) || isWhitespaceOnlyText(text) || (!/\d/.test(text) && !isPotentialNumberDiagnosticContextLabel(text))) {
+          continue;
+        }
+
+        const box = textNode.absoluteBoundingBox;
+
+        if (box === null) {
+          continue;
+        }
+
+        result.push({
+          ancestorIds: getNumberDiagnosticAncestorIds(textNode),
+          box,
+          containerId: textNode.parent?.id ?? null,
+          id: textNode.id,
+          text,
+        });
+      } catch (error) {
+        if (!isTextNodeRemoved(textNode)) {
+          throw error;
+        }
+      }
+    }
+
+    return result.sort((first, second) => getRectCenterY(first.box) - getRectCenterY(second.box));
+  } catch (error) {
+    console.error("[Чистовик] Failed to collect diagnostic number layout", error);
+    return [];
+  }
+}
+
+function getNumberDiagnosticCommonAncestorDistance(
+  first: NumberDiagnosticLayoutInfo,
+  second: NumberDiagnosticLayoutInfo
+): number | null {
+  try {
+    const secondIndexes = new Map(second.ancestorIds.map((id, index) => [id, index]));
+    let minimum: number | null = null;
+
+    first.ancestorIds.forEach((id, firstIndex) => {
+      const secondIndex = secondIndexes.get(id);
+
+      if (secondIndex !== undefined) {
+        const distance = firstIndex + secondIndex;
+        minimum = minimum === null ? distance : Math.min(minimum, distance);
+      }
+    });
+
+    return minimum;
+  } catch {
+    return null;
+  }
+}
+
+function isNumberDiagnosticSameVisualRow(first: Rect, second: Rect): boolean {
+  try {
+    const centerDistance = Math.abs(getRectCenterY(first) - getRectCenterY(second));
+    return centerDistance <= Math.max(4, Math.min(first.height, second.height) / 2);
+  } catch {
+    return false;
+  }
+}
+
+function getNumberDiagnosticHorizontalRelation(
+  target: Rect,
+  candidate: Rect
+): { direction: "left" | "right"; gap: number } | null {
+  try {
+    const targetRight = target.x + target.width;
+    const candidateRight = candidate.x + candidate.width;
+
+    if (candidateRight <= target.x + 4) {
+      return { direction: "left", gap: Math.max(0, target.x - candidateRight) };
+    }
+
+    if (candidate.x >= targetRight - 4) {
+      return { direction: "right", gap: Math.max(0, candidate.x - targetRight) };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function getSpatialIdentifierContextRole(
+  targetText: string,
+  neighborText: string
+): NumberDiagnosticNeighborRole | null {
+  try {
+    const target = normalizeHorizontalSpaces(targetText).trim();
+    const neighbor = neighborText.trim().replace(/:$/, "").trim();
+    const normalizedNeighbor = neighbor.toLowerCase();
+
+    if (isExactProtectiveContextLabel(neighbor)) {
+      return "protection";
+    }
+
+    if (isPaymentAccountNumberToken(target) && /сч[её]т/.test(normalizedNeighbor)) {
+      return "context";
+    }
+
+    if (
+      (isPaymentCardNumberToken(target) || isCardMaskToken(target)) &&
+      /карт/.test(normalizedNeighbor)
+    ) {
+      return "context";
+    }
+
+    const hasLettersAndDigits = new RegExp(`[${LETTERS}]`).test(target) && /\d/.test(target);
+    const codeLabel = new RegExp(`(^|[^${LETTERS}])(?:id|ид|код)(?=$|[^${LETTERS}])`, "i").test(neighbor);
+
+    return hasLettersAndDigits && codeLabel ? "context" : null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to classify spatial diagnostic context", error);
+    return null;
+  }
+}
+
+function findSpatialIdentifierDiagnosticNeighbors(
+  target: NumberDiagnosticLayoutInfo,
+  layoutInfos: NumberDiagnosticLayoutInfo[]
+): NumberDiagnosticNeighbor[] {
+  try {
+    const maximumCenterDistance = Math.max(12, target.box.height);
+    const targetCenterY = getRectCenterY(target.box);
+    let low = 0;
+    let high = layoutInfos.length;
+
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+
+      if (getRectCenterY(layoutInfos[middle].box) < targetCenterY - maximumCenterDistance) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+
+    const nearest = new Map<"left" | "right", { neighbor: NumberDiagnosticNeighbor; score: number }>();
+
+    for (let index = low; index < layoutInfos.length; index += 1) {
+      const candidate = layoutInfos[index];
+
+      if (getRectCenterY(candidate.box) > targetCenterY + maximumCenterDistance) {
+        break;
+      }
+
+      if (candidate.id === target.id || !isNumberDiagnosticSameVisualRow(target.box, candidate.box)) {
+        continue;
+      }
+
+      const relation = getNumberDiagnosticHorizontalRelation(target.box, candidate.box);
+      const ancestorDistance = getNumberDiagnosticCommonAncestorDistance(target, candidate);
+      const role = getSpatialIdentifierContextRole(target.text, candidate.text);
+
+      if (relation === null || relation.gap > 720 || ancestorDistance === null || ancestorDistance > 8 || role === null) {
+        continue;
+      }
+
+      const score = ancestorDistance * 1000 + relation.gap;
+      const current = nearest.get(relation.direction);
+
+      if (current === undefined || score < current.score) {
+        nearest.set(relation.direction, {
+          neighbor: {
+            direction: relation.direction,
+            role,
+            text: candidate.text,
+            usedAsEvidence: true,
+          },
+          score,
+        });
+      }
+    }
+
+    return (["left", "right"] as const)
+      .map((direction) => nearest.get(direction)?.neighbor ?? null)
+      .filter((neighbor): neighbor is NumberDiagnosticNeighbor => neighbor !== null);
+  } catch (error) {
+    console.error("[Чистовик] Failed to find spatial diagnostic number neighbors", error);
+    return [];
+  }
+}
+
+function buildNumberDiagnosticLayerContexts(textNodes: TextNode[]): Map<string, NumberLayerContext> {
+  try {
+    const contexts = new Map<string, NumberLayerContext>();
+    const layoutInfos = getNumberDiagnosticLayoutInfos(textNodes);
+    const layoutInfoById = new Map(layoutInfos.map((info) => [info.id, info]));
+    const parentSnapshotCache = new Map<string, string>();
+    const visibleChildrenCache = new Map<string, SceneNode[]>();
+    const childIndexCache = new Map<string, Map<string, number>>();
+
+    for (const textNode of textNodes) {
+      try {
+        if (isTextNodeRemoved(textNode) || !/\d/.test(textNode.characters)) {
+          continue;
+        }
+
+        let context = buildNumberLayerContextForNode(textNode, parentSnapshotCache, visibleChildrenCache, childIndexCache);
+
+        if (context !== null && !context.protectedByNeighbor && isStandaloneNumberDiagnosticLayer(textNode.characters)) {
+          const protectiveNeighbors = context.diagnosticNeighbors.filter(
+            (neighbor) => neighbor.role === "protection" && isExactProtectiveContextLabel(neighbor.text)
+          );
+
+          if (protectiveNeighbors.length === 1) {
+            const protectiveText = protectiveNeighbors[0].text.trim().replace(/:$/, "").trim().toLowerCase();
+            context = {
+              ...context,
+              diagnosticNeighbors: context.diagnosticNeighbors.map((neighbor) =>
+                neighbor === protectiveNeighbors[0] ? { ...neighbor, usedAsEvidence: true } : neighbor
+              ),
+              protectedAsPhoneByNeighbor: protectiveText === "телефон",
+              protectedByNeighbor: true,
+            };
+          }
+        }
+
+        if (isStandaloneNumberDiagnosticLayer(textNode.characters)) {
+          const targetLayout = layoutInfoById.get(textNode.id);
+          const hasUsedNeighbor = context?.diagnosticNeighbors.some((neighbor) => neighbor.usedAsEvidence) === true;
+
+          if (targetLayout !== undefined && !hasUsedNeighbor) {
+            const spatialNeighbors = findSpatialIdentifierDiagnosticNeighbors(targetLayout, layoutInfos);
+
+            if (spatialNeighbors.length > 0) {
+              const protectedNeighbor = spatialNeighbors.find((neighbor) => neighbor.role === "protection");
+              const diagnosticNeighbors = [
+                ...(context?.diagnosticNeighbors ?? []).filter(
+                  (neighbor) => !spatialNeighbors.some(
+                    (spatial) => spatial.direction === neighbor.direction && spatial.text === neighbor.text
+                  )
+                ),
+                ...spatialNeighbors,
+              ];
+              context = {
+                diagnosticNeighbors,
+                evidenceAfter: context?.evidenceAfter ?? null,
+                evidenceBefore: context?.evidenceBefore ?? null,
+                protectedAsPhoneByNeighbor:
+                  context?.protectedAsPhoneByNeighbor === true ||
+                  protectedNeighbor?.text.trim().replace(/:$/, "").trim().toLowerCase() === "телефон",
+                protectedByNeighbor: context?.protectedByNeighbor === true || protectedNeighbor !== undefined,
+                standalonePhonePrefix: context?.standalonePhonePrefix ?? false,
+                snapshotKey: context?.snapshotKey ?? `diagnostic-layout:${textNode.id}`,
+              };
+            }
+          }
+        }
+
+        if (context !== null) {
+          contexts.set(textNode.id, context);
+        }
+      } catch (error) {
+        if (!isTextNodeRemoved(textNode)) {
+          throw error;
+        }
+      }
+    }
+
+    return contexts;
+  } catch (error) {
+    console.error("[Чистовик] Failed to build diagnostic number layer contexts", error);
+    return new Map<string, NumberLayerContext>();
   }
 }
 
@@ -2565,6 +3238,7 @@ async function processTextNodes(
     let undoCheckpointCreated = false;
     let stoppedAtTextNodeIndex: number | null = null;
     const problemLayers: ProblemLayerReportItem[] = [];
+    const numberDiagnostics: NumberDiagnosticCase[] = [];
     const linkedStyleAvailabilityCache = new Map<string, Promise<void>>();
     const linkedVariableAvailabilityCache = new Map<string, Promise<void>>();
     const ruleAnalyticsCollector = createTypographyRuleAnalyticsCollector();
@@ -2585,6 +3259,12 @@ async function processTextNodes(
       },
       () => buildNumberLayerContexts(textNodes)
     );
+    const numberDiagnosticLayerContexts = measureDuration(
+      (duration) => {
+        timings.numberContext += duration;
+      },
+      () => buildNumberDiagnosticLayerContexts(textNodes)
+    );
     const processingTextNodes = textNodes.slice();
     const deferredNumberContextNodeIds = new Set<string>();
     const finalNumberContextParentSnapshotCache = new Map<string, string>();
@@ -2604,6 +3284,8 @@ async function processTextNodes(
       let currentLayerSnapshot: TextLayerStateSnapshot | null = null;
       let currentLayerMutationJournal: PointTextMutationJournal | null = null;
       let numberLayerContext: NumberLayerContext | null = null;
+      let numberDiagnosticLayerContext: NumberLayerContext | null = null;
+      let currentLayerNumberDiagnostics: NumberDiagnosticCase[] = [];
 
       try {
         if (isTextNodeRemoved(textNode)) {
@@ -2622,8 +3304,10 @@ async function processTextNodes(
           }
 
           numberLayerContext = buildNumberLayerContextForNode(textNode);
+          numberDiagnosticLayerContext = numberLayerContext;
         } else {
           numberLayerContext = numberLayerContexts.get(textNode.id) ?? null;
+          numberDiagnosticLayerContext = numberDiagnosticLayerContexts.get(textNode.id) ?? numberLayerContext;
         }
         const ensureCurrentLayerSnapshot = (knownStyles?: StyleSegment[]): TextLayerStateSnapshot => {
           if (currentLayerSnapshot === null) {
@@ -2666,6 +3350,7 @@ async function processTextNodes(
           }
         );
         const newText = cleanResult.text;
+        currentLayerNumberDiagnostics = createNumberDiagnosticCases(oldText, newText, numberDiagnosticLayerContext);
 
         if (newText !== oldText) {
           const pointEditPlan = measureDuration(
@@ -2899,6 +3584,7 @@ async function processTextNodes(
         }
 
         successful += 1;
+        numberDiagnostics.push(...currentLayerNumberDiagnostics);
       } catch (error) {
         let caughtError = error;
         let rollbackFailed = false;
@@ -3052,6 +3738,7 @@ async function processTextNodes(
       skippedHidden,
       skippedLocked,
       problemLayers,
+      numberDiagnostics,
       analytics: {
         charactersChangedTotal,
         charactersProcessedTotal,
@@ -6934,12 +7621,563 @@ interface QuantityEvidence {
 }
 
 interface NumberLayerContext {
+  diagnosticNeighbors: NumberDiagnosticNeighbor[];
   evidenceAfter: QuantityEvidence | null;
   evidenceBefore: QuantityEvidence | null;
   protectedAsPhoneByNeighbor: boolean;
   protectedByNeighbor: boolean;
   standalonePhonePrefix: boolean;
   snapshotKey: string;
+}
+
+interface NumberDiagnosticToken {
+  end: number;
+  start: number;
+  text: string;
+}
+
+function collectNumberDiagnosticTokens(input: string): NumberDiagnosticToken[] {
+  try {
+    const tokens: NumberDiagnosticToken[] = [];
+    const pattern = /[+−-]?\d(?:[\d \t\u00A0\u2009\u202F.,:'’ʼ/()—–‑-]*\d)?/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(input)) !== null) {
+      let start = match.index;
+      let text = match[0];
+
+      if (
+        /^[+−-]/.test(text) &&
+        start > 0 &&
+        new RegExp(`[${LETTERS}\\d]`).test(input[start - 1])
+      ) {
+        start += 1;
+        text = text.slice(1);
+      }
+
+      if (/\d/.test(text)) {
+        tokens.push({
+          end: start + text.length,
+          start,
+          text,
+        });
+      }
+
+      if (match[0].length === 0) {
+        pattern.lastIndex += 1;
+      }
+    }
+
+    return tokens;
+  } catch (error) {
+    console.error("[Чистовик] Failed to collect number diagnostic tokens", error);
+    return [];
+  }
+}
+
+function getNumberDiagnosticDigits(token: NumberDiagnosticToken): string {
+  return token.text.replace(/\D/g, "");
+}
+
+function pairNumberDiagnosticTokens(
+  beforeTokens: NumberDiagnosticToken[],
+  afterTokens: NumberDiagnosticToken[]
+): Array<{ after: NumberDiagnosticToken | null; before: NumberDiagnosticToken | null }> {
+  try {
+    const pairs: Array<{ after: NumberDiagnosticToken | null; before: NumberDiagnosticToken | null }> = [];
+    const usedAfterIndexes = new Set<number>();
+
+    for (let beforeIndex = 0; beforeIndex < beforeTokens.length; beforeIndex += 1) {
+      const before = beforeTokens[beforeIndex];
+      const digits = getNumberDiagnosticDigits(before);
+      let afterIndex = afterTokens.findIndex(
+        (candidate, candidateIndex) => !usedAfterIndexes.has(candidateIndex) && getNumberDiagnosticDigits(candidate) === digits
+      );
+
+      if (afterIndex === -1 && beforeIndex < afterTokens.length && !usedAfterIndexes.has(beforeIndex)) {
+        afterIndex = beforeIndex;
+      }
+
+      if (afterIndex === -1) {
+        pairs.push({ after: null, before });
+      } else {
+        usedAfterIndexes.add(afterIndex);
+        pairs.push({ after: afterTokens[afterIndex], before });
+      }
+    }
+
+    for (let afterIndex = 0; afterIndex < afterTokens.length; afterIndex += 1) {
+      if (!usedAfterIndexes.has(afterIndex)) {
+        pairs.push({ after: afterTokens[afterIndex], before: null });
+      }
+    }
+
+    return pairs;
+  } catch (error) {
+    console.error("[Чистовик] Failed to pair number diagnostic tokens", error);
+    return [];
+  }
+}
+
+function getNumberDiagnosticContext(input: string, token: NumberDiagnosticToken | null): string {
+  try {
+    if (token === null) {
+      return "";
+    }
+
+    const wordPattern = new RegExp(`[${LETTERS}]{4,}`, "g");
+    const words: Array<{ end: number; start: number }> = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = wordPattern.exec(input)) !== null) {
+      words.push({ start: match.index, end: match.index + match[0].length });
+    }
+
+    const previousWord = words.filter((word) => word.end <= token.start).pop() ?? null;
+    const nextWord = words.find((word) => word.start >= token.end) ?? null;
+    const start = previousWord?.start ?? 0;
+    const end = nextWord?.end ?? input.length;
+    return input.slice(start, end);
+  } catch (error) {
+    console.error("[Чистовик] Failed to build number diagnostic context", error);
+    return token?.text ?? "";
+  }
+}
+
+function getNumberDiagnosticEvidence(
+  input: string,
+  token: NumberDiagnosticToken,
+  numberLayerContext: NumberLayerContext | null
+): { after: QuantityEvidence | null; before: QuantityEvidence | null } {
+  try {
+    return {
+      after: getQuantityEvidenceAfter(input, token.end) ?? numberLayerContext?.evidenceAfter ?? null,
+      before: getQuantityEvidenceBefore(input, token.start) ?? numberLayerContext?.evidenceBefore ?? null,
+    };
+  } catch (error) {
+    console.error("[Чистовик] Failed to read number diagnostic evidence", error);
+    return {
+      after: numberLayerContext?.evidenceAfter ?? null,
+      before: numberLayerContext?.evidenceBefore ?? null,
+    };
+  }
+}
+
+function findDiagnosticMarkerBefore(input: string, start: number, marker: string): number | null {
+  try {
+    const left = input.slice(Math.max(0, start - marker.length - 16), start);
+    const normalizedMarker = marker.toLowerCase();
+    const index = left.toLowerCase().lastIndexOf(normalizedMarker);
+    return index === -1 ? null : Math.max(0, start - marker.length - 16) + index;
+  } catch {
+    return null;
+  }
+}
+
+function findDiagnosticMarkerAfter(input: string, end: number, marker: string): number | null {
+  try {
+    const right = input.slice(end, Math.min(input.length, end + marker.length + 16));
+    const index = right.toLowerCase().indexOf(marker.toLowerCase());
+    return index === -1 ? null : end + index;
+  } catch {
+    return null;
+  }
+}
+
+function getNumberDiagnosticRepresentation(
+  input: string,
+  token: NumberDiagnosticToken | null,
+  numberLayerContext: NumberLayerContext | null
+): string {
+  try {
+    if (token === null) {
+      return "";
+    }
+
+    const evidence = getNumberDiagnosticEvidence(input, token, numberLayerContext);
+    let start = token.start;
+    let end = token.end;
+
+    if (evidence.before !== null && numberLayerContext?.evidenceBefore == null) {
+      const markerStart = findDiagnosticMarkerBefore(input, token.start, evidence.before.marker);
+
+      if (markerStart !== null) {
+        start = markerStart;
+      }
+    }
+
+    if (evidence.after !== null && numberLayerContext?.evidenceAfter == null) {
+      const markerStart = findDiagnosticMarkerAfter(input, token.end, evidence.after.marker);
+
+      if (markerStart !== null) {
+        end = markerStart + evidence.after.marker.length;
+      }
+    }
+
+    return input.slice(start, end);
+  } catch (error) {
+    console.error("[Чистовик] Failed to build number diagnostic representation", error);
+    return token?.text ?? "";
+  }
+}
+
+function isStandaloneNumberDiagnosticLayer(input: string): boolean {
+  try {
+    const trimmed = input.trim();
+    return /\d/.test(trimmed) && !new RegExp(`[${LETTERS}]{4,}`).test(trimmed);
+  } catch {
+    return false;
+  }
+}
+
+function getNumberDiagnosticLocalWindow(input: string, token: NumberDiagnosticToken | null): string {
+  if (token === null) {
+    return "";
+  }
+
+  return input.slice(Math.max(0, token.start - 4), Math.min(input.length, token.end + 4));
+}
+
+function isProtectedNumberDiagnostic(
+  input: string,
+  token: NumberDiagnosticToken,
+  numberLayerContext: NumberLayerContext | null
+): boolean {
+  try {
+    return (
+      numberLayerContext?.protectedByNeighbor === true ||
+      isInsideProtectedNumericIdentifier(input, token.start, token.end) ||
+      isNumberInsideDateLikeToken(input, token.start, token.end) ||
+      isDottedNumbering(input, token.start, token.end) ||
+      isNumberPartOfDate(input, token.start, token.end) ||
+      isNumberPartOfCodeToken(input, token.start, token.end) ||
+      isInsidePhoneNumberCandidate(input, token.start, token.end) ||
+      isVisiblyStructuredNumericIdentifier(input, token.start, token.end)
+    );
+  } catch (error) {
+    console.error("[Чистовик] Failed to classify protected diagnostic number", error);
+    return false;
+  }
+}
+
+function getNumberDiagnosticKind(
+  input: string,
+  token: NumberDiagnosticToken,
+  evidence: { after: QuantityEvidence | null; before: QuantityEvidence | null },
+  numberLayerContext: NumberLayerContext | null
+): string {
+  try {
+    const value = token.text.trim();
+    const compact = value.replace(/[ \t\u00A0\u2009\u202F]/g, "");
+
+    if (isInsidePhoneNumberCandidate(input, token.start, token.end) || isRussianFullPhoneToken(value)) {
+      return "Номер телефона";
+    }
+
+    if (numberLayerContext?.protectedByNeighbor === true || isInsideProtectedNumericIdentifier(input, token.start, token.end)) {
+      return "Идентификатор";
+    }
+
+    if (isNumberInsideDateLikeToken(input, token.start, token.end) || isNumberPartOfDate(input, token.start, token.end)) {
+      return "Дата";
+    }
+
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(compact)) {
+      return "IP-адрес";
+    }
+
+    if (/^v?\d+(?:\.\d+){1,}$/i.test(compact)) {
+      return "Версия или нумерация";
+    }
+
+    if (isNumberPartOfCodeToken(input, token.start, token.end)) {
+      return "Число внутри кода";
+    }
+
+    const quantityEvidence = evidence.after ?? evidence.before;
+
+    if (quantityEvidence?.kind === "currency") {
+      return numberLayerContext !== null && (numberLayerContext.evidenceAfter !== null || numberLayerContext.evidenceBefore !== null)
+        ? "Сумма с валютой в соседнем слое"
+        : "Сумма с валютой";
+    }
+
+    if (quantityEvidence?.kind === "quantity") {
+      return numberLayerContext !== null && (numberLayerContext.evidenceAfter !== null || numberLayerContext.evidenceBefore !== null)
+        ? "Количество с обозначением в соседнем слое"
+        : "Количество с обозначением";
+    }
+
+    if (/[—–-]/.test(value.slice(1))) {
+      return "Диапазон чисел";
+    }
+
+    return "Число без количественного признака";
+  } catch (error) {
+    console.error("[Чистовик] Failed to name number diagnostic kind", error);
+    return "Числовая конструкция";
+  }
+}
+
+function getProtectiveLabelBeforeNumber(input: string, start: number): string | null {
+  try {
+    const before = input.slice(Math.max(0, start - 96), start).replace(/[ \t\u00A0\u2009\u202F:]+$/, "");
+    const normalizedBefore = before.toLowerCase();
+
+    for (const label of QUANTITY_PROTECTIVE_LABELS) {
+      const normalizedLabel = label.toLowerCase();
+
+      if (!normalizedBefore.endsWith(normalizedLabel)) {
+        continue;
+      }
+
+      const boundary = normalizedBefore.length - normalizedLabel.length - 1;
+
+      if (boundary < 0 || !/[A-Za-zА-Яа-яЁё\d]/.test(normalizedBefore[boundary])) {
+        return label;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to read protective label for diagnostics", error);
+    return null;
+  }
+}
+
+function getNumberDiagnosticProtectionBasis(
+  input: string,
+  token: NumberDiagnosticToken,
+  numberLayerContext: NumberLayerContext | null
+): string | null {
+  try {
+    const protectiveNeighbor = numberLayerContext?.diagnosticNeighbors.find(
+      (neighbor) => neighbor.usedAsEvidence && neighbor.role === "protection"
+    );
+
+    if (protectiveNeighbor !== undefined) {
+      return `Защита: ${protectiveNeighbor.text.trim().replace(/:$/, "")} в соседнем слое`;
+    }
+
+    const protectiveLabel = getProtectiveLabelBeforeNumber(input, token.start);
+
+    if (protectiveLabel !== null) {
+      return `Защита: ${protectiveLabel}`;
+    }
+
+    const bounds = getNumericIdentifierTokenBounds(input, token.start, token.end);
+    const identifierToken = normalizeHorizontalSpaces(input.slice(bounds.start, bounds.end)).trim();
+
+    if (isCardMaskToken(identifierToken) || isNumberPartOfMaskedSecret(input, token.start, token.text.replace(/\D/g, ""))) {
+      return "Защита: маска карты";
+    }
+
+    if (isPaymentAccountNumberToken(identifierToken)) {
+      return "Защита: номер счёта";
+    }
+
+    if (isPaymentCardNumberToken(identifierToken)) {
+      return "Защита: номер карты";
+    }
+
+    if (isInsidePhoneNumberCandidate(input, token.start, token.end) || isRussianFullPhoneToken(token.text.trim())) {
+      return "Защита: номер телефона";
+    }
+
+    if (isNumberInsideDateLikeToken(input, token.start, token.end) || isNumberPartOfDate(input, token.start, token.end)) {
+      return "Защита: дата";
+    }
+
+    if (isDottedNumbering(input, token.start, token.end)) {
+      return "Защита: версия или нумерация";
+    }
+
+    if (isNumberPartOfCodeToken(input, token.start, token.end)) {
+      return "Защита: буквенно-числовой код";
+    }
+
+    if (isVisiblyStructuredNumericIdentifier(input, token.start, token.end)) {
+      return "Защита: структурированный идентификатор";
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[Чистовик] Failed to explain number protection", error);
+    return null;
+  }
+}
+
+function getNumberDiagnosticDecisionBasis(
+  input: string,
+  token: NumberDiagnosticToken,
+  numberLayerContext: NumberLayerContext | null,
+  representationChanged: boolean,
+  protectedNumber: boolean
+): string {
+  try {
+    if (protectedNumber && !representationChanged) {
+      const protection = getNumberDiagnosticProtectionBasis(input, token, numberLayerContext);
+
+      if (protection !== null) {
+        return protection;
+      }
+    }
+
+    const evidenceNeighbor = numberLayerContext?.diagnosticNeighbors.find(
+      (neighbor) => neighbor.usedAsEvidence && neighbor.role === "evidence"
+    );
+
+    if (evidenceNeighbor !== undefined) {
+      const marker = numberLayerContext?.evidenceAfter?.marker ?? numberLayerContext?.evidenceBefore?.marker ?? evidenceNeighbor.text.trim();
+      return `${marker} в соседнем слое`;
+    }
+
+    const evidenceAfter = getQuantityEvidenceAfter(input, token.end);
+
+    if (evidenceAfter !== null) {
+      return `${evidenceAfter.marker} после числа`;
+    }
+
+    const evidenceBefore = getQuantityEvidenceBefore(input, token.start);
+
+    if (evidenceBefore !== null) {
+      return `${evidenceBefore.marker} перед числом`;
+    }
+
+    const monthAfter = /^[ \t\u00A0\u2009\u202F]*(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?=$|[^A-Za-zА-Яа-яЁё])/i.exec(
+      input.slice(token.end)
+    );
+
+    if (monthAfter !== null) {
+      return `${monthAfter[1]} после числа`;
+    }
+
+    const protection = getNumberDiagnosticProtectionBasis(input, token, numberLayerContext);
+    return protection ?? "Признак количества не найден";
+  } catch (error) {
+    console.error("[Чистовик] Failed to explain number decision", error);
+    return "Не удалось определить признак решения";
+  }
+}
+
+function getNumberDiagnosticRuleCodes(before: string, after: string, numberKind: string): string[] {
+  try {
+    if (before === after) {
+      return [];
+    }
+
+    const codes = new Set<string>();
+    const beforeDigits = before.replace(/\D/g, "");
+    const afterDigits = after.replace(/\D/g, "");
+
+    if (/\d\.\d/.test(before) && /\d,\d/.test(after)) {
+      codes.add("number_decimal_comma");
+    }
+
+    if (beforeDigits === afterDigits && /\d[ \u00A0\u2009\u202F]\d{3}/.test(after) && !/\d[ \u00A0\u2009\u202F]\d{3}/.test(before)) {
+      codes.add("number_group_digits");
+    }
+
+    if (/\d,\d{3}(?:,\d{3})|\d['’ʼ]\d{3}/.test(before) && /\d[ \u00A0\u202F]\d{3}/.test(after)) {
+      codes.add("number_western_format");
+    }
+
+    if (
+      new RegExp(`[${QUANTITY_CURRENCY_SYMBOLS}]`).test(before + after) &&
+      before !== after
+    ) {
+      codes.add("number_unit_currency_nbsp");
+    }
+
+    if (/Номер телефона/.test(numberKind)) {
+      codes.add("phone_ru_format");
+      codes.add("phone_ru_separators");
+    }
+
+    if (/\d[ \t\u00A0]+%/.test(before) && /\d%/.test(after)) {
+      codes.add("space_percent");
+    }
+
+    if (codes.size === 0) {
+      codes.add("number_context_change");
+    }
+
+    return Array.from(codes);
+  } catch (error) {
+    console.error("[Чистовик] Failed to derive number diagnostic rules", error);
+    return [];
+  }
+}
+
+function createNumberDiagnosticCases(
+  beforeText: string,
+  afterText: string,
+  numberLayerContext: NumberLayerContext | null
+): NumberDiagnosticCase[] {
+  try {
+    const beforeTokens = collectNumberDiagnosticTokens(beforeText);
+    const afterTokens = collectNumberDiagnosticTokens(afterText);
+    const pairs = pairNumberDiagnosticTokens(beforeTokens, afterTokens);
+    const includeNeighbors = isStandaloneNumberDiagnosticLayer(beforeText);
+    const neighbors = includeNeighbors ? numberLayerContext?.diagnosticNeighbors ?? [] : [];
+    const layerMode: NumberDiagnosticLayerMode = neighbors.length > 0 ? "multiple" : "single";
+
+    return pairs.map(({ after, before }) => {
+      const sourceToken = before ?? after as NumberDiagnosticToken;
+      const sourceText = before === null ? afterText : beforeText;
+      const evidence = getNumberDiagnosticEvidence(sourceText, sourceToken, numberLayerContext);
+      const numberBefore = getNumberDiagnosticRepresentation(beforeText, before, numberLayerContext);
+      const numberAfter = getNumberDiagnosticRepresentation(afterText, after, numberLayerContext);
+      const numberKind = getNumberDiagnosticKind(sourceText, sourceToken, evidence, numberLayerContext);
+      const representationChanged =
+        before !== null &&
+        after !== null &&
+        (
+          numberBefore !== numberAfter ||
+          getNumberDiagnosticLocalWindow(beforeText, before) !== getNumberDiagnosticLocalWindow(afterText, after)
+        );
+      const protectedNumber = before !== null && isProtectedNumberDiagnostic(beforeText, before, numberLayerContext);
+      const hasEvidence = evidence.before !== null || evidence.after !== null;
+      const alreadyFormattedPhone = before !== null && isRussianFullPhoneToken(before.text.trim());
+      let status: NumberDiagnosticStatus;
+      let reason: string;
+
+      if (before === null || after === null) {
+        status = "review";
+        reason = "Не удалось уверенно сопоставить число до и после обработки";
+      } else if (representationChanged) {
+        status = "changed";
+        reason = getNumberDiagnosticDecisionBasis(sourceText, sourceToken, numberLayerContext, representationChanged, protectedNumber);
+      } else if (protectedNumber && !alreadyFormattedPhone) {
+        status = "skipped_policy";
+        reason = getNumberDiagnosticDecisionBasis(sourceText, sourceToken, numberLayerContext, representationChanged, protectedNumber);
+      } else if (hasEvidence || alreadyFormattedPhone) {
+        status = "already_correct";
+        reason = getNumberDiagnosticDecisionBasis(sourceText, sourceToken, numberLayerContext, representationChanged, protectedNumber);
+      } else {
+        status = "skipped_policy";
+        reason = "Признак количества не найден";
+      }
+
+      return {
+        afterText: getNumberDiagnosticContext(afterText, after),
+        beforeText: getNumberDiagnosticContext(beforeText, before),
+        id: createAnalyticsEventId(),
+        layerMode,
+        neighbors,
+        numberAfter,
+        numberBefore,
+        numberKind,
+        numberRulesVersion: NUMBER_RULES_VERSION,
+        reason,
+        ruleCodes: getNumberDiagnosticRuleCodes(numberBefore, numberAfter, numberKind),
+        status,
+      };
+    });
+  } catch (error) {
+    console.error("[Чистовик] Failed to create number diagnostic cases", error);
+    return [];
+  }
 }
 
 function normalizeQuantityMarkerForLookup(input: string): string {

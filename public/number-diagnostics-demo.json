@@ -1,0 +1,107 @@
+{
+  "ok": true,
+  "summary": {
+    "all": 4,
+    "changed": 2,
+    "skipped_policy": 1,
+    "already_correct": 1,
+    "review": 0
+  },
+  "filters": {
+    "reasons": [
+      { "reason": "₽ в соседнем слое", "count": 8 },
+      { "reason": "Признак количества не найден", "count": 5 },
+      { "reason": "₽ после числа", "count": 4 },
+      { "reason": "Не удалось уверенно сопоставить результат", "count": 1 }
+    ],
+    "rules": [
+      { "rule_code": "number_group_digits", "count": 6 },
+      { "rule_code": "number_decimal_comma", "count": 3 },
+      { "rule_code": "number_unit_currency_nbsp", "count": 3 }
+    ]
+  },
+  "cases": {
+    "from": "2026-08-25",
+    "to": "2026-09-18",
+    "page": 1,
+    "limit": 50,
+    "total": 4,
+    "items": [
+      {
+        "id": "demo-1",
+        "captured_at": "2026-08-26T07:32:00.000Z",
+        "run_id": "demo-run-1",
+        "plugin_release": "2026-08-26",
+        "diagnostics_schema_version": 2,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "changed",
+        "number_kind": "Сумма с валютой",
+        "reason": "$ перед числом",
+        "number_before": "$338.00",
+        "number_after": "338,00 $",
+        "before_text": "Стоимость $338.00 за месяц",
+        "after_text": "Стоимость 338,00 $ за месяц",
+        "layer_mode": "single",
+        "neighbors": [],
+        "rule_codes": ["number_decimal_comma", "number_unit_currency_nbsp"]
+      },
+      {
+        "id": "demo-2",
+        "captured_at": "2026-08-26T06:08:00.000Z",
+        "run_id": "demo-run-2",
+        "plugin_release": "2026-08-26",
+        "diagnostics_schema_version": 2,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "changed",
+        "number_kind": "Количество с валютой в соседнем слое",
+        "reason": "₽ в соседнем слое",
+        "number_before": "10000",
+        "number_after": "10 000",
+        "before_text": "10000",
+        "after_text": "10 000",
+        "layer_mode": "multiple",
+        "neighbors": [
+          { "direction": "left", "role": "context", "text": "Стоимость", "usedAsEvidence": false },
+          { "direction": "right", "role": "evidence", "text": "₽", "usedAsEvidence": true }
+        ],
+        "rule_codes": ["number_group_digits"]
+      },
+      {
+        "id": "demo-3",
+        "captured_at": "2026-08-25T15:17:00.000Z",
+        "run_id": "demo-run-3",
+        "plugin_release": "2026-08-26",
+        "diagnostics_schema_version": 2,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "skipped_policy",
+        "number_kind": "Число без количественного признака",
+        "reason": "Признак количества не найден",
+        "number_before": "338.00",
+        "number_after": "338.00",
+        "before_text": "Проверяем значение 338.00. Доставка завтра",
+        "after_text": "Проверяем значение 338.00. Доставка завтра",
+        "layer_mode": "single",
+        "neighbors": [],
+        "rule_codes": []
+      },
+      {
+        "id": "demo-4",
+        "captured_at": "2026-08-25T10:43:00.000Z",
+        "run_id": "demo-run-4",
+        "plugin_release": "2026-08-26",
+        "diagnostics_schema_version": 2,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "already_correct",
+        "number_kind": "Сумма с валютой",
+        "reason": "₽ после числа",
+        "number_before": "10 000 ₽",
+        "number_after": "10 000 ₽",
+        "before_text": "Стоимость подписки 10 000 ₽ ежегодно",
+        "after_text": "Стоимость подписки 10 000 ₽ ежегодно",
+        "layer_mode": "single",
+        "neighbors": [],
+        "rule_codes": []
+      }
+    ]
+  }
+}

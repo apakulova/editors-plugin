@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow, noarchive">
+    <title>Диагностика чисел — Чистовик</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/number-diagnostics.css">
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="login-card" id="loginView" hidden>
+        <div class="brand-mark" aria-hidden="true">Ч</div>
+        <p class="eyebrow">Внутренний отчёт бета-теста</p>
+        <h1>Диагностика чисел</h1>
+        <p class="login-copy">Введите пароль, чтобы открыть диагностические случаи.</p>
+        <p class="login-note">Данные собираются до 18 сентября 2026 года включительно.</p>
+        <form id="loginForm" class="login-form">
+          <label for="password">Пароль</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <p class="form-error" id="loginError" role="alert" hidden>Неверный пароль</p>
+          <button class="button button-primary" type="submit">Открыть отчёт</button>
+        </form>
+      </section>
+
+      <section id="reportView" hidden>
+        <header class="report-header">
+          <div>
+            <p class="eyebrow">Внутренний отчёт бета-теста</p>
+            <h1>Диагностика чисел</h1>
+            <p class="header-copy">Числовые случаи из внутренних макетов. Данные собираются до 18 сентября 2026 года включительно.</p>
+            <p class="timezone-note">Время указано по Москве.</p>
+          </div>
+          <button class="button button-secondary" id="logoutButton" type="button">Выйти</button>
+        </header>
+
+        <section class="date-controls" aria-label="Период отчёта">
+          <div class="date-field">
+            <label for="dateFrom">С</label>
+            <input id="dateFrom" type="date" min="2026-08-25" max="2026-09-18" value="2026-08-25">
+          </div>
+          <div class="date-field">
+            <label for="dateTo">По</label>
+            <input id="dateTo" type="date" min="2026-08-25" max="2026-09-18" value="2026-09-18">
+          </div>
+        </section>
+
+        <section class="summary-grid" id="summaryGrid" aria-label="Сводка"></section>
+
+        <section class="toolbar" aria-label="Фильтры отчёта">
+          <div class="search-field">
+            <label class="visually-hidden" for="searchInput">Найти число или текст</label>
+            <input id="searchInput" type="search" placeholder="Найти число или текст">
+          </div>
+          <select id="reasonFilter" aria-label="Причина решения">
+            <option value="">Все причины</option>
+          </select>
+          <select id="ruleFilter" aria-label="Сработавшее правило">
+            <option value="">Все правила</option>
+          </select>
+          <select id="layerModeFilter" aria-label="Расположение по слоям">
+            <option value="">Все варианты расположения</option>
+            <option value="single">Один слой</option>
+            <option value="multiple">Несколько слоёв</option>
+          </select>
+          <button class="button button-quiet" id="resetButton" type="button">Сбросить фильтры</button>
+        </section>
+
+        <section class="list-heading">
+          <div>
+            <h2>Случаи</h2>
+            <p id="resultCount">Найдено: 0 случаев</p>
+          </div>
+          <div class="list-actions">
+            <label class="switch-control">
+              <input id="spacesToggle" type="checkbox" checked>
+              <span>Показать неразрывные пробелы</span>
+            </label>
+            <button class="button button-secondary" id="exportFilteredButton" type="button">Выгрузить выбранные</button>
+            <button class="button button-primary" id="exportAllButton" type="button">Выгрузить все случаи</button>
+          </div>
+        </section>
+
+        <div class="notice" id="pageNotice" role="status" hidden></div>
+        <section class="case-list" id="caseList" aria-live="polite"></section>
+        <button class="button button-more" id="loadMoreButton" type="button" hidden>Показать ещё</button>
+        <p class="pagination-note" id="paginationNote"></p>
+
+        <footer class="report-footer">
+          В отчёте нет имён пользователей, названий и ссылок на файлы, страницы и слои. Подробные диагностические данные будут удалены после итогового отчёта за 18 сентября.
+        </footer>
+      </section>
+    </main>
+    <script src="/number-diagnostics.js" defer></script>
+  </body>
+</html>

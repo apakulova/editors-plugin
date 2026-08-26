@@ -3,6 +3,8 @@ const {
   createAnalyticsMessageOrDiagnostic,
   sendTelegramMessage,
 } = require("../scripts/lib/analytics-report");
+const { getNumberDiagnosticsDatabaseUrl, shouldDeleteNumberDiagnostics } = require("../scripts/lib/number-diagnostics-config");
+const { deleteNumberDiagnosticCases } = require("../scripts/lib/number-diagnostics-store");
 
 function sendJson(response, statusCode, payload) {
   response.statusCode = statusCode;
@@ -39,6 +41,11 @@ module.exports = async function handler(request, response) {
     const text = await createAnalyticsMessageOrDiagnostic("yesterday");
 
     await sendTelegramMessage(text);
+
+    if (shouldDeleteNumberDiagnostics() && getNumberDiagnosticsDatabaseUrl(process.env)) {
+      await deleteNumberDiagnosticCases(process.env);
+    }
+
     sendJson(response, 200, { ok: true, period: "yesterday" });
   } catch (error) {
     console.error(error);

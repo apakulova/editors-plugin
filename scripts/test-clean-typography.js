@@ -70,6 +70,7 @@ const source = compiledSource.replace(
     "globalThis.captureDevelopmentMarkerFills = captureDevelopmentMarkerFills;",
     "globalThis.getStandalonePhoneCountryPrefixIds = getStandalonePhoneCountryPrefixIds;",
     "globalThis.buildNumberLayerContexts = buildNumberLayerContexts;",
+    "globalThis.buildNumberDiagnosticLayerContexts = buildNumberDiagnosticLayerContexts;",
     "globalThis.createProblemLayerTextPreview = createProblemLayerTextPreview;",
     "globalThis.selectProblemTextLayer = selectProblemTextLayer;",
     "globalThis.measureDuration = measureDuration;",
@@ -91,6 +92,9 @@ const source = compiledSource.replace(
     "globalThis.beginTypographyRuleAnalyticsTextLayer = beginTypographyRuleAnalyticsTextLayer;",
     "globalThis.finishTypographyRuleAnalyticsTextLayer = finishTypographyRuleAnalyticsTextLayer;",
     "globalThis.createTypographyRuleAnalyticsSummary = createTypographyRuleAnalyticsSummary;",
+    "globalThis.createNumberDiagnosticCases = createNumberDiagnosticCases;",
+    "globalThis.collectNumberDiagnosticTokens = collectNumberDiagnosticTokens;",
+    "globalThis.createDiagnosticNumberContextNeighbors = createDiagnosticNumberContextNeighbors;",
     "globalThis.TYPOGRAPHY_RULE_CODES = TYPOGRAPHY_RULE_CODES;",
     "globalThis.presentRunOutcome = presentRunOutcome;",
     "globalThis.runTypograph = runTypograph;",
@@ -169,6 +173,10 @@ const createTypographyRuleAnalyticsCollector = context.globalThis.createTypograp
 const beginTypographyRuleAnalyticsTextLayer = context.globalThis.beginTypographyRuleAnalyticsTextLayer;
 const finishTypographyRuleAnalyticsTextLayer = context.globalThis.finishTypographyRuleAnalyticsTextLayer;
 const createTypographyRuleAnalyticsSummary = context.globalThis.createTypographyRuleAnalyticsSummary;
+const createNumberDiagnosticCases = context.globalThis.createNumberDiagnosticCases;
+const collectNumberDiagnosticTokens = context.globalThis.collectNumberDiagnosticTokens;
+const createDiagnosticNumberContextNeighbors = context.globalThis.createDiagnosticNumberContextNeighbors;
+const buildNumberDiagnosticLayerContexts = context.globalThis.buildNumberDiagnosticLayerContexts;
 const typographyRuleCodes = context.globalThis.TYPOGRAPHY_RULE_CODES;
 const presentRunOutcome = context.globalThis.presentRunOutcome;
 const runTypograph = context.globalThis.runTypograph;
@@ -216,8 +224,186 @@ assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
 assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 13);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
-assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-07");
+assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-26");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
+
+const movedCurrencyDiagnostics = createNumberDiagnosticCases(
+  "Стоимость $338.00 за месяц",
+  `Стоимость 338,00${NBSP}$ за месяц`,
+  null
+);
+assert.strictEqual(movedCurrencyDiagnostics.length, 1);
+assert.strictEqual(movedCurrencyDiagnostics[0].status, "changed");
+assert.strictEqual(movedCurrencyDiagnostics[0].numberBefore, "$338.00");
+assert.strictEqual(movedCurrencyDiagnostics[0].numberAfter, `338,00${NBSP}$`);
+assert.strictEqual(movedCurrencyDiagnostics[0].beforeText, "Стоимость $338.00 за месяц");
+assert.strictEqual(movedCurrencyDiagnostics[0].reason, "$ перед числом");
+assert.strictEqual(movedCurrencyDiagnostics[0].numberRulesVersion, "numbers-2026-08-25-v1");
+assert(movedCurrencyDiagnostics[0].ruleCodes.includes("number_decimal_comma"));
+assert(movedCurrencyDiagnostics[0].ruleCodes.includes("number_unit_currency_nbsp"));
+
+const unchangedDecimalDiagnostics = createNumberDiagnosticCases(
+  "Проверяем значение 338.00. Доставка завтра",
+  "Проверяем значение 338.00. Доставка завтра",
+  null
+);
+assert.strictEqual(unchangedDecimalDiagnostics.length, 1);
+assert.strictEqual(unchangedDecimalDiagnostics[0].status, "skipped_policy");
+assert.strictEqual(unchangedDecimalDiagnostics[0].beforeText, "значение 338.00. Доставка");
+assert.strictEqual(unchangedDecimalDiagnostics[0].reason, "Признак количества не найден");
+
+const dateContextDiagnostics = createNumberDiagnosticCases(
+  "Сохраняем случаи до 18 сентября включительно",
+  `Сохраняем случаи до 18${NBSP}сентября включительно`,
+  null
+);
+assert.strictEqual(dateContextDiagnostics.length, 1);
+assert.strictEqual(dateContextDiagnostics[0].beforeText, "случаи до 18 сентября");
+assert.strictEqual(dateContextDiagnostics[0].afterText, `случаи до 18${NBSP}сентября`);
+assert.strictEqual(dateContextDiagnostics[0].reason, "сентября после числа");
+
+const alreadyCorrectDiagnostics = createNumberDiagnosticCases(
+  `Стоимость подписки 10${NBSP}000${NBSP}₽ ежегодно`,
+  `Стоимость подписки 10${NBSP}000${NBSP}₽ ежегодно`,
+  null
+);
+assert.strictEqual(alreadyCorrectDiagnostics.length, 1);
+assert.strictEqual(alreadyCorrectDiagnostics[0].status, "already_correct");
+assert.strictEqual(alreadyCorrectDiagnostics[0].reason, "₽ после числа");
+
+const neighboringCurrencyDiagnostics = createNumberDiagnosticCases(
+  "10000",
+  `10${NBSP}000`,
+  {
+    diagnosticNeighbors: [
+      { direction: "right", role: "evidence", text: "₽", usedAsEvidence: true },
+    ],
+    evidenceAfter: { kind: "currency", marker: "₽" },
+    evidenceBefore: null,
+    protectedAsPhoneByNeighbor: false,
+    protectedByNeighbor: false,
+    standalonePhonePrefix: false,
+    snapshotKey: "test",
+  }
+);
+assert.strictEqual(neighboringCurrencyDiagnostics.length, 1);
+assert.strictEqual(neighboringCurrencyDiagnostics[0].layerMode, "multiple");
+assert.strictEqual(neighboringCurrencyDiagnostics[0].neighbors[0].text, "₽");
+assert.strictEqual(neighboringCurrencyDiagnostics[0].status, "changed");
+assert.strictEqual(neighboringCurrencyDiagnostics[0].reason, "₽ в соседнем слое");
+
+const idLayerText = "A4172085226022010000010011270701";
+const idLayerDiagnostics = createNumberDiagnosticCases(
+  idLayerText,
+  idLayerText,
+  {
+    diagnosticNeighbors: [
+      { direction: "left", role: "protection", text: "ID", usedAsEvidence: true },
+    ],
+    evidenceAfter: null,
+    evidenceBefore: null,
+    protectedAsPhoneByNeighbor: false,
+    protectedByNeighbor: true,
+    standalonePhonePrefix: false,
+    snapshotKey: "test-id-row",
+  }
+);
+assert.strictEqual(idLayerDiagnostics.length, 1);
+assert.strictEqual(idLayerDiagnostics[0].layerMode, "multiple");
+assert.strictEqual(idLayerDiagnostics[0].neighbors[0].text, "ID");
+assert.strictEqual(idLayerDiagnostics[0].reason, "Защита: ID в соседнем слое");
+
+const createDiagnosticTextNode = (id, characters) => ({
+  characters,
+  id,
+  layoutPositioning: "AUTO",
+  maxLines: null,
+  removed: false,
+  rotation: 0,
+  textAutoResize: "WIDTH_AND_HEIGHT",
+  type: "TEXT",
+});
+const idRowNeighbors = createDiagnosticNumberContextNeighbors(
+  [
+    createDiagnosticTextNode("label", "ID"),
+    { id: "leader", type: "VECTOR" },
+    createDiagnosticTextNode("value", idLayerText),
+  ],
+  2
+);
+assert.strictEqual(idRowNeighbors.length, 1);
+assert.strictEqual(idRowNeighbors[0].direction, "left");
+assert.strictEqual(idRowNeighbors[0].text, "ID");
+
+const diagnosticRoot = {
+  id: "diagnostic-root",
+  layoutMode: "VERTICAL",
+  locked: false,
+  parent: null,
+  type: "FRAME",
+  visible: true,
+};
+const accountLabel = createProcessTextNodeMock(
+  "diagnostic-account-label",
+  "Счёт зачисления",
+  { height: 20, width: 110, x: 40, y: 100 },
+  null
+);
+const accountValue = createProcessTextNodeMock(
+  "diagnostic-account-value",
+  "12345678912345678902",
+  { height: 20, width: 180, x: 190, y: 100 },
+  null
+);
+const accountLabelWrapper = {
+  children: [accountLabel],
+  id: "diagnostic-account-label-wrapper",
+  layoutMode: "NONE",
+  locked: false,
+  parent: diagnosticRoot,
+  type: "FRAME",
+  visible: true,
+};
+const accountValueWrapper = {
+  children: [accountValue],
+  id: "diagnostic-account-value-wrapper",
+  layoutMode: "NONE",
+  locked: false,
+  parent: diagnosticRoot,
+  type: "FRAME",
+  visible: true,
+};
+accountLabel.parent = accountLabelWrapper;
+accountValue.parent = accountValueWrapper;
+const spatialAccountContext = buildNumberDiagnosticLayerContexts([accountLabel, accountValue]).get(accountValue.id);
+assert(spatialAccountContext);
+assert.strictEqual(spatialAccountContext.diagnosticNeighbors.length, 1);
+assert.strictEqual(spatialAccountContext.diagnosticNeighbors[0].text, "Счёт зачисления");
+assert.strictEqual(spatialAccountContext.diagnosticNeighbors[0].usedAsEvidence, true);
+const spatialAccountCases = createNumberDiagnosticCases(accountValue.characters, accountValue.characters, spatialAccountContext);
+assert.strictEqual(spatialAccountCases[0].layerMode, "multiple");
+assert.strictEqual(spatialAccountCases[0].reason, "Защита: номер счёта");
+
+const spatialIdLabel = createProcessTextNodeMock(
+  "diagnostic-id-label",
+  "ID",
+  { height: 20, width: 18, x: 40, y: 130 },
+  null
+);
+const spatialIdValue = createProcessTextNodeMock(
+  "diagnostic-id-value",
+  "A4172085226022010000010011270701",
+  { height: 20, width: 260, x: 190, y: 130 },
+  null
+);
+spatialIdLabel.parent = { ...accountLabelWrapper, children: [spatialIdLabel], id: "diagnostic-id-label-wrapper" };
+spatialIdValue.parent = { ...accountValueWrapper, children: [spatialIdValue], id: "diagnostic-id-value-wrapper" };
+const spatialIdContext = buildNumberDiagnosticLayerContexts([spatialIdLabel, spatialIdValue]).get(spatialIdValue.id);
+assert(spatialIdContext);
+assert.strictEqual(spatialIdContext.diagnosticNeighbors[0].text, "ID");
+assert.strictEqual(spatialIdContext.diagnosticNeighbors[0].usedAsEvidence, true);
+const spatialIdCases = createNumberDiagnosticCases(spatialIdValue.characters, spatialIdValue.characters, spatialIdContext);
+assert.strictEqual(spatialIdCases[0].reason, "Защита: ID в соседнем слое");
 
 const legacyQueuedEvent = {
   attempts: 1,
@@ -2236,6 +2422,60 @@ function runNumberLayerContextPerformanceTests() {
 
   assert.strictEqual(contexts.size, numberNodes.length);
   assert(durationMs < 1500, `Number context lookup took ${durationMs} ms for ${numberNodes.length} layers`);
+}
+
+function runNumberDiagnosticSpatialContextPerformanceTests() {
+  const nodes = [];
+  const root = {
+    id: "diagnostic-performance-root",
+    layoutMode: "VERTICAL",
+    locked: false,
+    parent: null,
+    type: "FRAME",
+    visible: true,
+  };
+
+  for (let index = 0; index < 2000; index += 1) {
+    const y = index * 24;
+    const label = createProcessTextNodeMock(
+      `diagnostic-performance-label-${index}`,
+      "Счёт зачисления",
+      { height: 20, width: 110, x: 0, y },
+      null
+    );
+    const value = createProcessTextNodeMock(
+      `diagnostic-performance-value-${index}`,
+      "12345678912345678902",
+      { height: 20, width: 180, x: 150, y },
+      null
+    );
+    label.parent = {
+      children: [label],
+      id: `diagnostic-performance-label-wrapper-${index}`,
+      layoutMode: "NONE",
+      locked: false,
+      parent: root,
+      type: "FRAME",
+      visible: true,
+    };
+    value.parent = {
+      children: [value],
+      id: `diagnostic-performance-value-wrapper-${index}`,
+      layoutMode: "NONE",
+      locked: false,
+      parent: root,
+      type: "FRAME",
+      visible: true,
+    };
+    nodes.push(label, value);
+  }
+
+  const startedAt = Date.now();
+  const contexts = buildNumberDiagnosticLayerContexts(nodes);
+  const durationMs = Date.now() - startedAt;
+
+  assert.strictEqual(contexts.size, 2000);
+  assert(durationMs < 1500, `Diagnostic number context lookup took ${durationMs} ms for ${nodes.length} layers`);
 }
 
 function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId = "shared-container") {
@@ -4794,6 +5034,7 @@ runDevelopmentMarkerScanTests();
 runProblemLayerPreviewTests();
 runPhoneLayoutPerformanceTests();
 runNumberLayerContextPerformanceTests();
+runNumberDiagnosticSpatialContextPerformanceTests();
 runParentStateCacheTests();
 runAdjacentPunctuationStylePreservationTests();
 

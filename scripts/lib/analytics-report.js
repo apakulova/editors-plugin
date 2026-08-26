@@ -1,9 +1,12 @@
 const MOSCOW_TIME_ZONE = "Europe/Moscow";
+const { getNumberDiagnosticSummary } = require("./number-diagnostics-store");
+const { getNumberDiagnosticsDatabaseUrl } = require("./number-diagnostics-config");
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_POSTHOG_HOST = "https://eu.posthog.com";
 const DEFAULT_POSTHOG_PROJECT_ID = "184090";
 const DEFAULT_POSTHOG_DASHBOARD_URL = "https://eu.posthog.com/project/184090/dashboard/695809";
 const DEFAULT_POSTHOG_PERFORMANCE_DASHBOARD_URL = "https://eu.posthog.com/project/184090/dashboard/854930";
+const DEFAULT_NUMBER_DIAGNOSTICS_REPORT_URL = "https://chistovik-plugin.vercel.app/number-diagnostics";
 const POSTHOG_UNEXPECTED_RESPONSE_REASON = "PostHog вернул неожиданный формат данных.";
 const MIN_WEEKLY_PERFORMANCE_RUNS = 10;
 const PERFORMANCE_MEASUREMENT_VERSION = 8;
@@ -525,6 +528,7 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
       count: Number(categoryRow[1] || 0),
     }))
     .filter((item) => item.count > 0);
+  const numberDiagnosticCases = await fetchNumberDiagnosticCasesCount(dateRange, env);
 
   return {
     ...summary,
@@ -539,11 +543,70 @@ async function fetchPostHogSummary(dateRange, env = process.env) {
       p90DurationMs: baselinePerformance.p90DurationMs,
     },
     errorCategories,
+    numberDiagnosticCases,
     pointEditingReadiness: {
       fullDays: getPointEditingFullDays(dateRange.end),
       successfulRuns: pointEditing.successfulRuns,
     },
   };
+}
+
+function formatMoscowIsoDate(date) {
+  const parts = getMoscowDateParts(date);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+async function fetchNumberDiagnosticCasesCount(dateRange, env = process.env) {
+  if (!getNumberDiagnosticsDatabaseUrl(env)) {
+    return null;
+  }
+
+  try {
+    const summary = await getNumberDiagnosticSummary(
+      {
+        from: formatMoscowIsoDate(dateRange.start),
+        to: formatMoscowIsoDate(new Date(dateRange.end.getTime() - 1)),
+      },
+      env
+    );
+    return summary.all;
+  } catch (error) {
+    console.error("[number-diagnostics] Failed to count daily cases", error?.code || error?.name || "unknown");
+    return null;
+  }
+}
+
+function formatRussianCount(value, singular, few, many) {
+  const absolute = Math.abs(Number(value)) % 100;
+  const lastDigit = absolute % 10;
+
+  if (absolute >= 11 && absolute <= 19) {
+    return many;
+  }
+
+  if (lastDigit === 1) {
+    return singular;
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return few;
+  }
+
+  return many;
+}
+
+function formatNumberDiagnosticCasesLine(dateRange, count, env = process.env) {
+  if (!Number.isFinite(count)) {
+    return null;
+  }
+
+  const from = formatMoscowIsoDate(dateRange.start);
+  const to = formatMoscowIsoDate(new Date(dateRange.end.getTime() - 1));
+  const reportUrl = env.NUMBER_DIAGNOSTICS_REPORT_URL || DEFAULT_NUMBER_DIAGNOSTICS_REPORT_URL;
+  const separator = reportUrl.includes("?") ? "&" : "?";
+  const link = `${reportUrl}${separator}from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const casesLabel = formatRussianCount(Number(count), "случай", "случая", "случаев");
+  return `<a href="${escapeHtml(link)}">Изменения чисел: ${Number(count)} ${casesLabel}</a>`;
 }
 
 function parseNumericResult(payload, columns) {
@@ -806,6 +869,11 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
 
   if (summary.typographRuns === 0) {
     const emptyLines = [...headingLines, "", "Плагин никто не запускал"];
+    const numberDiagnosticsLine = formatNumberDiagnosticCasesLine(dateRange, summary.numberDiagnosticCases, env);
+
+    if (numberDiagnosticsLine !== null) {
+      emptyLines.push("", numberDiagnosticsLine);
+    }
 
     if (dashboardUrl) {
       emptyLines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с vpn)`);
@@ -856,6 +924,12 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     if (errorsInsight) {
       lines.push("", errorsInsight);
     }
+  }
+
+  const numberDiagnosticsLine = formatNumberDiagnosticCasesLine(dateRange, summary.numberDiagnosticCases, env);
+
+  if (numberDiagnosticsLine !== null) {
+    lines.push("", numberDiagnosticsLine);
   }
 
   const medianDuration = formatDuration(summary.medianDurationMs);
@@ -1263,10 +1337,12 @@ module.exports = {
   createWeeklyErrorsMessageOrDiagnostic,
   createWeeklyPerformanceMessageOrDiagnostic,
   fetchPostHogSummary,
+  fetchNumberDiagnosticCasesCount,
   fetchWeeklyErrorsSummary,
   fetchWeeklyPerformanceSummary,
   formatAnalyticsFailureMessage,
   formatAnalyticsMessage,
+  formatNumberDiagnosticCasesLine,
   formatPointEditingReadinessMessage,
   formatRussianDate,
   formatWeeklyErrorsMessage,
