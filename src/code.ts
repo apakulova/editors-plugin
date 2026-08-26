@@ -23,7 +23,7 @@ const NUMBER_DIAGNOSTICS_MAX_CASES_PER_PAYLOAD = 50;
 const NUMBER_DIAGNOSTICS_MAX_PAYLOAD_BYTES = 440 * 1024;
 const NUMBER_DIAGNOSTICS_MAX_TEXT_LENGTH = 12_000;
 const NUMBER_RULES_VERSION = "numbers-2026-08-25-v1";
-const ANALYTICS_SCHEMA_VERSION = 13;
+const ANALYTICS_SCHEMA_VERSION = 14;
 const ANALYTICS_PLUGIN_RELEASE = "2026-08-26";
 const PERFORMANCE_MEASUREMENT_VERSION = 8;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
@@ -187,6 +187,35 @@ type AnalyticsErrorCategory =
   | "typography_failed"
   | "timeout"
   | "unknown";
+type TextLayerRollbackFailureReason =
+  | "mutation_journal_missing"
+  | "mutation_journal_not_invertible"
+  | "mutation_journal_text_mismatch"
+  | "rollback_plan_mismatch"
+  | "text_restore_mismatch"
+  | "snapshot_verification_failed"
+  | "operation_failed";
+type TextLayerRollbackOperation =
+  | "verify_initial_snapshot"
+  | "validate_mutation_journal"
+  | "apply_inverse_text_mutations"
+  | "plan_text_rollback"
+  | "apply_planned_text_rollback"
+  | "verify_restored_text"
+  | "restore_development_marker_data"
+  | "restore_development_marker_fills"
+  | "verify_snapshot_after_marker_restore"
+  | "restore_whole_text_style"
+  | "restore_range_text_styles"
+  | "verify_final_snapshot";
+type TextLayerSnapshotVerificationFailure =
+  | "text"
+  | "styles"
+  | "development_marker_fills"
+  | "development_marker_indexes_data"
+  | "development_marker_text_data"
+  | "component_property_references"
+  | "parent_chain";
 type TypographyRuleCode =
   | "quote_ru_levels"
   | "quote_latin_levels"
@@ -431,6 +460,9 @@ interface TextProcessResult {
   failed: number;
   failureDiagnostic: AnalyticsErrorDiagnostic | null;
   failedStage: AnalyticsErrorStage | null;
+  originalFailureDiagnostic: AnalyticsErrorDiagnostic | null;
+  originalFailureStage: AnalyticsErrorStage | null;
+  rollbackFailureDiagnostic: TextLayerRollbackFailureDiagnostic | null;
   requiresStyleWarning: boolean;
   textLayerContentChanged: boolean;
   skippedHidden: number;
@@ -486,6 +518,19 @@ interface AnalyticsErrorDiagnostic {
   location: string;
   name: string;
   operation: string;
+}
+
+interface TextLayerRollbackFailureDiagnostic {
+  errorFingerprint: string | null;
+  errorName: string | null;
+  operation: TextLayerRollbackOperation;
+  reason: TextLayerRollbackFailureReason;
+  verificationFailures: TextLayerSnapshotVerificationFailure[];
+}
+
+interface TextLayerRollbackResult {
+  failureDiagnostic: TextLayerRollbackFailureDiagnostic | null;
+  succeeded: boolean;
 }
 
 interface TextCollectionResult {
@@ -865,6 +910,18 @@ async function executeTypographRun(options: PluginRunOptions, source: PluginRunS
       error_location: errorDiagnostic.location,
       error_name: errorDiagnostic.name,
       error_operation: errorDiagnostic.operation,
+      original_error_category: result?.originalFailureDiagnostic?.category ?? null,
+      original_error_fingerprint: result?.originalFailureDiagnostic?.fingerprint ?? null,
+      original_error_location: result?.originalFailureDiagnostic?.location ?? null,
+      original_error_name: result?.originalFailureDiagnostic?.name ?? null,
+      original_error_operation: result?.originalFailureDiagnostic?.operation ?? null,
+      original_error_stage: result?.originalFailureStage ?? null,
+      rollback_error_fingerprint: result?.rollbackFailureDiagnostic?.errorFingerprint ?? null,
+      rollback_error_name: result?.rollbackFailureDiagnostic?.errorName ?? null,
+      rollback_failure_operation: result?.rollbackFailureDiagnostic?.operation ?? null,
+      rollback_failure_reason: result?.rollbackFailureDiagnostic?.reason ?? null,
+      rollback_verification_failures:
+        result?.rollbackFailureDiagnostic?.verificationFailures.join(",") || null,
       failed_text_layers_count: result?.failed ?? null,
       found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked,
       characters_changed_total: result?.analytics.charactersChangedTotal ?? null,
@@ -3221,6 +3278,9 @@ async function processTextNodes(
     let failed = 0;
     let failureDiagnostic: AnalyticsErrorDiagnostic | null = null;
     let failedStage: AnalyticsErrorStage | null = null;
+    let originalFailureDiagnostic: AnalyticsErrorDiagnostic | null = null;
+    let originalFailureStage: AnalyticsErrorStage | null = null;
+    let rollbackFailureDiagnostic: TextLayerRollbackFailureDiagnostic | null = null;
     let requiresStyleWarning = false;
     let textLayerContentChanged = false;
     const timings = createEmptyTextProcessTimings();
@@ -3588,12 +3648,14 @@ async function processTextNodes(
       } catch (error) {
         let caughtError = error;
         let rollbackFailed = false;
+        const failureStageBeforeRollback = currentStage;
+        const diagnosticBeforeRollback = createAnalyticsErrorDiagnostic(error, failureStageBeforeRollback);
+        let rollbackResult: TextLayerRollbackResult | null = null;
 
         if (currentLayerWasMutated && currentLayerSnapshot !== null) {
           const snapshotToRestore = currentLayerSnapshot as TextLayerStateSnapshot;
-          const failureStageBeforeRollback = currentStage;
           rollbackAttemptedLayersCount += 1;
-          const rollbackSucceeded = await measureAsyncDuration(
+          rollbackResult = await measureAsyncDuration(
             (duration) => {
               timings.restoreStyles += duration;
             },
@@ -3609,7 +3671,7 @@ async function processTextNodes(
             styleSegmentsCount = Math.max(0, styleSegmentsCount - snapshotToRestore.styles.length);
           }
 
-          if (!rollbackSucceeded) {
+          if (!rollbackResult.succeeded) {
             rollbackFailedLayersCount += 1;
             requiresStyleWarning = true;
             rollbackFailed = true;
@@ -3621,7 +3683,9 @@ async function processTextNodes(
           }
         }
 
-        const diagnostic = createAnalyticsErrorDiagnostic(caughtError, rollbackFailed ? "rollback_styles" : currentStage);
+        const diagnostic = rollbackFailed
+          ? createAnalyticsErrorDiagnostic(caughtError, "rollback_styles")
+          : diagnosticBeforeRollback;
         const safelySkippedMissingTextNode = !currentLayerWasMutated && isTextNodeRemoved(textNode);
         let currentTextStillMatches = false;
 
@@ -3661,6 +3725,9 @@ async function processTextNodes(
           failed += 1;
           failedStage = "rollback_styles";
           failureDiagnostic = diagnostic;
+          originalFailureDiagnostic = diagnosticBeforeRollback;
+          originalFailureStage = failureStageBeforeRollback;
+          rollbackFailureDiagnostic = rollbackResult?.failureDiagnostic ?? null;
           problemLayers.push(
             createProblemLayerReportItem(
               textNode,
@@ -3733,6 +3800,9 @@ async function processTextNodes(
       failed,
       failureDiagnostic,
       failedStage,
+      originalFailureDiagnostic,
+      originalFailureStage,
+      rollbackFailureDiagnostic,
       requiresStyleWarning,
       textLayerContentChanged,
       skippedHidden,
@@ -3828,40 +3898,75 @@ async function restoreTextLayerSnapshot(
   snapshot: TextLayerStateSnapshot,
   mutationJournal: PointTextMutationJournal | null = null,
   rollbackTimeoutMs: number = TEXT_LAYER_ROLLBACK_TIMEOUT_MS
-): Promise<boolean> {
+): Promise<TextLayerRollbackResult> {
+  let operation: TextLayerRollbackOperation = "verify_initial_snapshot";
+  let verificationFailures: TextLayerSnapshotVerificationFailure[] = [];
+
   try {
     const rollbackDeadlineAt = Date.now() + rollbackTimeoutMs;
 
     if (verifyRestoredTextLayerSnapshot(snapshot)) {
-      return true;
+      return createSuccessfulTextLayerRollbackResult();
     }
 
     if (snapshot.textNode.characters !== snapshot.text) {
-      if (
-        mutationJournal === null ||
-        !mutationJournal.canInvert ||
-        snapshot.textNode.characters !== mutationJournal.expectedText
-      ) {
-        return false;
+      verificationFailures = ["text"];
+      operation = "validate_mutation_journal";
+
+      if (mutationJournal === null) {
+        return createFailedTextLayerRollbackResult(
+          "mutation_journal_missing",
+          operation,
+          verificationFailures
+        );
+      }
+
+      if (!mutationJournal.canInvert) {
+        return createFailedTextLayerRollbackResult(
+          "mutation_journal_not_invertible",
+          operation,
+          verificationFailures
+        );
+      }
+
+      if (snapshot.textNode.characters !== mutationJournal.expectedText) {
+        return createFailedTextLayerRollbackResult(
+          "mutation_journal_text_mismatch",
+          operation,
+          verificationFailures
+        );
       }
 
       if (mutationJournal.inverseOperations.length > 0) {
+        operation = "apply_inverse_text_mutations";
         applyInversePointTextMutations(snapshot.textNode, mutationJournal);
       } else {
+        operation = "plan_text_rollback";
         const rollbackPlan = createPointTextEditPlan(snapshot.textNode.characters, snapshot.text);
 
         if (!rollbackPlan.matches) {
-          return false;
+          return createFailedTextLayerRollbackResult(
+            "rollback_plan_mismatch",
+            operation,
+            verificationFailures
+          );
         }
 
+        operation = "apply_planned_text_rollback";
         applyPointTextEditsToTextNode(snapshot.textNode, rollbackPlan.edits);
       }
 
+      operation = "verify_restored_text";
       if (snapshot.textNode.characters !== snapshot.text) {
-        return false;
+        return createFailedTextLayerRollbackResult(
+          "text_restore_mismatch",
+          operation,
+          getTextLayerSnapshotVerificationFailures(snapshot)
+        );
       }
     }
 
+    operation = "restore_development_marker_data";
     setPluginDataIfChanged(
       snapshot.textNode,
       DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY,
@@ -3873,6 +3978,7 @@ async function restoreTextLayerSnapshot(
       snapshot.developmentMarkerTextPluginData
     );
 
+    operation = "restore_development_marker_fills";
     for (const markerFill of snapshot.developmentMarkerFills) {
       const currentFills = snapshot.textNode.getRangeFills(markerFill.index, markerFill.index + 1);
 
@@ -3881,15 +3987,18 @@ async function restoreTextLayerSnapshot(
       }
     }
 
+    operation = "verify_snapshot_after_marker_restore";
     if (verifyRestoredTextLayerSnapshot(snapshot)) {
-      return true;
+      return createSuccessfulTextLayerRollbackResult();
     }
 
     const wholeTextStyle = getWholeTextStyle(snapshot.styles, snapshot.text);
 
     if (wholeTextStyle !== null) {
+      operation = "restore_whole_text_style";
       await restoreWholeTextStyle(snapshot.textNode, wholeTextStyle, true, rollbackDeadlineAt);
     } else {
+      operation = "restore_range_text_styles";
       await restoreTextStyles(
         snapshot.textNode,
         buildStyleMap(snapshot.text, snapshot.text, snapshot.styles),
@@ -3899,11 +4008,52 @@ async function restoreTextLayerSnapshot(
       );
     }
 
-    return verifyRestoredTextLayerSnapshot(snapshot);
+    operation = "verify_final_snapshot";
+    if (verifyRestoredTextLayerSnapshot(snapshot)) {
+      return createSuccessfulTextLayerRollbackResult();
+    }
+
+    verificationFailures = getTextLayerSnapshotVerificationFailures(snapshot);
+    return createFailedTextLayerRollbackResult(
+      "snapshot_verification_failed",
+      operation,
+      verificationFailures
+    );
   } catch (rollbackError) {
     console.error(`[Чистовик] Failed to restore text layer ${snapshot.textNode.id}`, rollbackError);
-    return false;
+    verificationFailures = getTextLayerSnapshotVerificationFailures(snapshot);
+    return createFailedTextLayerRollbackResult(
+      "operation_failed",
+      operation,
+      verificationFailures,
+      rollbackError
+    );
   }
+}
+
+function createSuccessfulTextLayerRollbackResult(): TextLayerRollbackResult {
+  return {
+    failureDiagnostic: null,
+    succeeded: true,
+  };
+}
+
+function createFailedTextLayerRollbackResult(
+  reason: TextLayerRollbackFailureReason,
+  operation: TextLayerRollbackOperation,
+  verificationFailures: TextLayerSnapshotVerificationFailure[],
+  error: unknown = null
+): TextLayerRollbackResult {
+  return {
+    failureDiagnostic: {
+      errorFingerprint: error === null ? null : createErrorFingerprint(error),
+      errorName: error === null ? null : getErrorName(error),
+      operation,
+      reason,
+      verificationFailures,
+    },
+    succeeded: false,
+  };
 }
 
 function createTextLayerStateSnapshot(
@@ -4011,6 +4161,78 @@ function verifyRestoredTextLayerSnapshot(snapshot: TextLayerStateSnapshot): bool
     console.error(`[Чистовик] Failed to verify original text layer snapshot for text node ${snapshot.textNode.id}`, verificationError);
     return false;
   }
+}
+
+function getTextLayerSnapshotVerificationFailures(
+  snapshot: TextLayerStateSnapshot
+): TextLayerSnapshotVerificationFailure[] {
+  const failures: TextLayerSnapshotVerificationFailure[] = [];
+  let textMatches = false;
+
+  try {
+    textMatches = snapshot.textNode.characters === snapshot.text;
+  } catch {
+    textMatches = false;
+  }
+
+  if (!textMatches) {
+    failures.push("text");
+  } else if (!verifyRestoredOriginalTextState(snapshot.textNode, snapshot.text, snapshot.styles)) {
+    failures.push("styles");
+  }
+
+  try {
+    if (!verifyDevelopmentMarkerFills(snapshot)) {
+      failures.push("development_marker_fills");
+    }
+  } catch {
+    failures.push("development_marker_fills");
+  }
+
+  try {
+    if (
+      snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY) !==
+      snapshot.developmentMarkerIndexesPluginData
+    ) {
+      failures.push("development_marker_indexes_data");
+    }
+  } catch {
+    failures.push("development_marker_indexes_data");
+  }
+
+  try {
+    if (
+      snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY) !==
+      snapshot.developmentMarkerTextPluginData
+    ) {
+      failures.push("development_marker_text_data");
+    }
+  } catch {
+    failures.push("development_marker_text_data");
+  }
+
+  try {
+    if (
+      !areStyleValuesEqual(
+        cloneComponentPropertyReferences(snapshot.textNode),
+        snapshot.componentPropertyReferences
+      )
+    ) {
+      failures.push("component_property_references");
+    }
+  } catch {
+    failures.push("component_property_references");
+  }
+
+  try {
+    if (!areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds)) {
+      failures.push("parent_chain");
+    }
+  } catch {
+    failures.push("parent_chain");
+  }
+
+  return failures;
 }
 
 function verifyDevelopmentMarkerFills(snapshot: TextLayerStateSnapshot): boolean {

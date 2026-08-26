@@ -86,10 +86,51 @@ async function run() {
   assert.strictEqual(validatedErrorLayerCounts.properties.safe_failure_text_layers_count, 2);
   assert.strictEqual(validatedErrorLayerCounts.properties.successful_text_layers_count, 10);
 
+  const validatedRollbackDiagnostic = validateAnalyticsPayload(createPayload({
+    event: "plugin_run_failed",
+    properties: {
+      ...createPayload().properties,
+      error_category: "rollback_failed",
+      error_fingerprint: "27deso",
+      error_location: "src/code.ts:restoreTextLayerSnapshot",
+      error_name: "Error",
+      error_operation: "restore_original_text_layer_state",
+      original_error_category: "restore_styles_failed",
+      original_error_fingerprint: "original1",
+      original_error_location: "src/code.ts:restoreTextStyles",
+      original_error_name: "Error",
+      original_error_operation: "restore_text_layer_styles",
+      original_error_stage: "restore_styles",
+      rollback_error_fingerprint: null,
+      rollback_error_name: null,
+      rollback_failure_operation: "verify_final_snapshot",
+      rollback_failure_reason: "snapshot_verification_failed",
+      rollback_verification_failures: "component_property_references,styles",
+      stage: "rollback_styles",
+    },
+  }));
+  assert.strictEqual(validatedRollbackDiagnostic.properties.original_error_stage, "restore_styles");
+  assert.strictEqual(validatedRollbackDiagnostic.properties.rollback_failure_reason, "snapshot_verification_failed");
+  assert.strictEqual(
+    validatedRollbackDiagnostic.properties.rollback_verification_failures,
+    "component_property_references,styles"
+  );
+
   await expectCaptureError(
     () => Promise.resolve(validateAnalyticsPayload(createPayload({ event: "unknown_event" }))),
     400,
     "unknown_event"
+  );
+  await expectCaptureError(
+    () => Promise.resolve(validateAnalyticsPayload(createPayload({
+      event: "plugin_run_failed",
+      properties: {
+        ...createPayload().properties,
+        rollback_verification_failures: "styles,Layer name",
+      },
+    }))),
+    400,
+    "invalid_property_value"
   );
   await expectCaptureError(
     () => Promise.resolve(validateAnalyticsPayload(createPayload({ uuid: "not-a-uuid" }))),

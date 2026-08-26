@@ -24,7 +24,7 @@ const NUMBER_DIAGNOSTICS_MAX_CASES_PER_PAYLOAD = 50;
 const NUMBER_DIAGNOSTICS_MAX_PAYLOAD_BYTES = 440 * 1024;
 const NUMBER_DIAGNOSTICS_MAX_TEXT_LENGTH = 12000;
 const NUMBER_RULES_VERSION = "numbers-2026-08-25-v1";
-const ANALYTICS_SCHEMA_VERSION = 13;
+const ANALYTICS_SCHEMA_VERSION = 14;
 const ANALYTICS_PLUGIN_RELEASE = "2026-08-26";
 const PERFORMANCE_MEASUREMENT_VERSION = 8;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
@@ -288,7 +288,7 @@ function runTypograph(options, source) {
     return currentRunPromise;
 }
 async function executeTypographRun(options, source) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16;
     const analyticsContext = createAnalyticsRunContext(options, source);
     let analyticsStage = "unknown";
     let collectTextDuration = 0;
@@ -336,7 +336,7 @@ async function executeTypographRun(options, source) {
     catch (error) {
         console.error("[Чистовик] Failed to run typograph", error);
         const errorDiagnostic = (_c = result === null || result === void 0 ? void 0 : result.failureDiagnostic) !== null && _c !== void 0 ? _c : createAnalyticsErrorDiagnostic(error, analyticsStage);
-        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, failed_text_layers_count: (_d = result === null || result === void 0 ? void 0 : result.failed) !== null && _d !== void 0 ? _d : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_e = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _e !== void 0 ? _e : null, characters_processed_total: (_f = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _f !== void 0 ? _f : null, largest_text_layer_characters: (_g = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _g !== void 0 ? _g : null, point_edit_max_operations_count: (_h = result === null || result === void 0 ? void 0 : result.analytics.pointEditMaxOperationsCount) !== null && _h !== void 0 ? _h : null, point_edit_mismatch_layers_count: (_j = result === null || result === void 0 ? void 0 : result.analytics.pointEditMismatchLayersCount) !== null && _j !== void 0 ? _j : null, point_edit_operations_count: (_k = result === null || result === void 0 ? void 0 : result.analytics.pointEditOperationsCount) !== null && _k !== void 0 ? _k : null, point_edit_planned_layers_count: (_l = result === null || result === void 0 ? void 0 : result.analytics.pointEditPlannedLayersCount) !== null && _l !== void 0 ? _l : null, processed_text_layers_count: (_m = result === null || result === void 0 ? void 0 : result.processed) !== null && _m !== void 0 ? _m : null, successful_text_layers_count: (_o = result === null || result === void 0 ? void 0 : result.successful) !== null && _o !== void 0 ? _o : null, safe_failure_text_layers_count: (_p = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "safe_failure").length) !== null && _p !== void 0 ? _p : null, critical_integrity_text_layers_count: (_q = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "critical_integrity").length) !== null && _q !== void 0 ? _q : null, not_reached_text_layers_count: (_r = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "not_reached").length) !== null && _r !== void 0 ? _r : null, rollback_attempted_layers_count: (_s = result === null || result === void 0 ? void 0 : result.analytics.rollbackAttemptedLayersCount) !== null && _s !== void 0 ? _s : null, rollback_failed_layers_count: (_t = result === null || result === void 0 ? void 0 : result.analytics.rollbackFailedLayersCount) !== null && _t !== void 0 ? _t : null, slowest_text_layer_ms: (_u = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _u !== void 0 ? _u : null, stage: analyticsStage, changed_style_segments_count: (_v = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _v !== void 0 ? _v : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), (result === null ? {} : getTypographyRuleAnalyticsProperties(result.analytics.ruleAnalytics))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_w = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _w !== void 0 ? _w : null }));
+        queueAnalyticsEvent("plugin_run_failed", Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, getRunAnalyticsProperties(analyticsContext)), { duration_ms: getAnalyticsDuration(analyticsContext), error_category: errorDiagnostic.category, error_fingerprint: errorDiagnostic.fingerprint, error_location: errorDiagnostic.location, error_name: errorDiagnostic.name, error_operation: errorDiagnostic.operation, original_error_category: (_e = (_d = result === null || result === void 0 ? void 0 : result.originalFailureDiagnostic) === null || _d === void 0 ? void 0 : _d.category) !== null && _e !== void 0 ? _e : null, original_error_fingerprint: (_g = (_f = result === null || result === void 0 ? void 0 : result.originalFailureDiagnostic) === null || _f === void 0 ? void 0 : _f.fingerprint) !== null && _g !== void 0 ? _g : null, original_error_location: (_j = (_h = result === null || result === void 0 ? void 0 : result.originalFailureDiagnostic) === null || _h === void 0 ? void 0 : _h.location) !== null && _j !== void 0 ? _j : null, original_error_name: (_l = (_k = result === null || result === void 0 ? void 0 : result.originalFailureDiagnostic) === null || _k === void 0 ? void 0 : _k.name) !== null && _l !== void 0 ? _l : null, original_error_operation: (_o = (_m = result === null || result === void 0 ? void 0 : result.originalFailureDiagnostic) === null || _m === void 0 ? void 0 : _m.operation) !== null && _o !== void 0 ? _o : null, original_error_stage: (_p = result === null || result === void 0 ? void 0 : result.originalFailureStage) !== null && _p !== void 0 ? _p : null, rollback_error_fingerprint: (_r = (_q = result === null || result === void 0 ? void 0 : result.rollbackFailureDiagnostic) === null || _q === void 0 ? void 0 : _q.errorFingerprint) !== null && _r !== void 0 ? _r : null, rollback_error_name: (_t = (_s = result === null || result === void 0 ? void 0 : result.rollbackFailureDiagnostic) === null || _s === void 0 ? void 0 : _s.errorName) !== null && _t !== void 0 ? _t : null, rollback_failure_operation: (_v = (_u = result === null || result === void 0 ? void 0 : result.rollbackFailureDiagnostic) === null || _u === void 0 ? void 0 : _u.operation) !== null && _v !== void 0 ? _v : null, rollback_failure_reason: (_x = (_w = result === null || result === void 0 ? void 0 : result.rollbackFailureDiagnostic) === null || _w === void 0 ? void 0 : _w.reason) !== null && _x !== void 0 ? _x : null, rollback_verification_failures: ((_y = result === null || result === void 0 ? void 0 : result.rollbackFailureDiagnostic) === null || _y === void 0 ? void 0 : _y.verificationFailures.join(",")) || null, failed_text_layers_count: (_z = result === null || result === void 0 ? void 0 : result.failed) !== null && _z !== void 0 ? _z : null, found_text_layers_count: collection === null ? null : collection.nodes.length + collection.skippedHidden + collection.skippedLocked, characters_changed_total: (_0 = result === null || result === void 0 ? void 0 : result.analytics.charactersChangedTotal) !== null && _0 !== void 0 ? _0 : null, characters_processed_total: (_1 = result === null || result === void 0 ? void 0 : result.analytics.charactersProcessedTotal) !== null && _1 !== void 0 ? _1 : null, largest_text_layer_characters: (_2 = result === null || result === void 0 ? void 0 : result.analytics.largestTextLayerCharacters) !== null && _2 !== void 0 ? _2 : null, point_edit_max_operations_count: (_3 = result === null || result === void 0 ? void 0 : result.analytics.pointEditMaxOperationsCount) !== null && _3 !== void 0 ? _3 : null, point_edit_mismatch_layers_count: (_4 = result === null || result === void 0 ? void 0 : result.analytics.pointEditMismatchLayersCount) !== null && _4 !== void 0 ? _4 : null, point_edit_operations_count: (_5 = result === null || result === void 0 ? void 0 : result.analytics.pointEditOperationsCount) !== null && _5 !== void 0 ? _5 : null, point_edit_planned_layers_count: (_6 = result === null || result === void 0 ? void 0 : result.analytics.pointEditPlannedLayersCount) !== null && _6 !== void 0 ? _6 : null, processed_text_layers_count: (_7 = result === null || result === void 0 ? void 0 : result.processed) !== null && _7 !== void 0 ? _7 : null, successful_text_layers_count: (_8 = result === null || result === void 0 ? void 0 : result.successful) !== null && _8 !== void 0 ? _8 : null, safe_failure_text_layers_count: (_9 = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "safe_failure").length) !== null && _9 !== void 0 ? _9 : null, critical_integrity_text_layers_count: (_10 = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "critical_integrity").length) !== null && _10 !== void 0 ? _10 : null, not_reached_text_layers_count: (_11 = result === null || result === void 0 ? void 0 : result.problemLayers.filter((layer) => layer.kind === "not_reached").length) !== null && _11 !== void 0 ? _11 : null, rollback_attempted_layers_count: (_12 = result === null || result === void 0 ? void 0 : result.analytics.rollbackAttemptedLayersCount) !== null && _12 !== void 0 ? _12 : null, rollback_failed_layers_count: (_13 = result === null || result === void 0 ? void 0 : result.analytics.rollbackFailedLayersCount) !== null && _13 !== void 0 ? _13 : null, slowest_text_layer_ms: (_14 = result === null || result === void 0 ? void 0 : result.analytics.slowestTextLayerMs) !== null && _14 !== void 0 ? _14 : null, stage: analyticsStage, changed_style_segments_count: (_15 = result === null || result === void 0 ? void 0 : result.analytics.styleSegmentsCount) !== null && _15 !== void 0 ? _15 : null, timing_collect_text_ms: collectTextDuration }), (result === null ? {} : getTextProcessTimingAnalyticsProperties(result.analytics.timings))), (result === null ? {} : getTypographyRuleAnalyticsProperties(result.analytics.ruleAnalytics))), { timing_other_ms: result === null ? null : getOtherAnalyticsDuration(analyticsContext, collectTextDuration, result.analytics.timings), loaded_unique_fonts_count: (_16 = result === null || result === void 0 ? void 0 : result.analytics.uniqueFontsCount) !== null && _16 !== void 0 ? _16 : null }));
         outcome = {
             error: true,
             message: getFailureNotificationMessage(error),
@@ -2265,7 +2265,7 @@ function assertNumberLayerContextUnchanged(textNode, initialContext, parentSnaps
     }
 }
 async function processTextNodes(textNodes, skippedLocked, skippedHidden, options, writeStrategy = DEFAULT_TEXT_WRITE_STRATEGY) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     try {
         let processed = 0;
         let successful = 0;
@@ -2273,6 +2273,9 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
         let failed = 0;
         let failureDiagnostic = null;
         let failedStage = null;
+        let originalFailureDiagnostic = null;
+        let originalFailureStage = null;
+        let rollbackFailureDiagnostic = null;
         let requiresStyleWarning = false;
         let textLayerContentChanged = false;
         const timings = createEmptyTextProcessTimings();
@@ -2548,11 +2551,13 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             catch (error) {
                 let caughtError = error;
                 let rollbackFailed = false;
+                const failureStageBeforeRollback = currentStage;
+                const diagnosticBeforeRollback = createAnalyticsErrorDiagnostic(error, failureStageBeforeRollback);
+                let rollbackResult = null;
                 if (currentLayerWasMutated && currentLayerSnapshot !== null) {
                     const snapshotToRestore = currentLayerSnapshot;
-                    const failureStageBeforeRollback = currentStage;
                     rollbackAttemptedLayersCount += 1;
-                    const rollbackSucceeded = await measureAsyncDuration((duration) => {
+                    rollbackResult = await measureAsyncDuration((duration) => {
                         timings.restoreStyles += duration;
                     }, () => restoreTextLayerSnapshot(snapshotToRestore, currentLayerMutationJournal));
                     if (currentLayerCountedAsChanged) {
@@ -2562,7 +2567,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         charactersChangedTotal = Math.max(0, charactersChangedTotal - snapshotToRestore.text.length);
                         styleSegmentsCount = Math.max(0, styleSegmentsCount - snapshotToRestore.styles.length);
                     }
-                    if (!rollbackSucceeded) {
+                    if (!rollbackResult.succeeded) {
                         rollbackFailedLayersCount += 1;
                         requiresStyleWarning = true;
                         rollbackFailed = true;
@@ -2574,13 +2579,15 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         currentStage = failureStageBeforeRollback;
                     }
                 }
-                const diagnostic = createAnalyticsErrorDiagnostic(caughtError, rollbackFailed ? "rollback_styles" : currentStage);
+                const diagnostic = rollbackFailed
+                    ? createAnalyticsErrorDiagnostic(caughtError, "rollback_styles")
+                    : diagnosticBeforeRollback;
                 const safelySkippedMissingTextNode = !currentLayerWasMutated && isTextNodeRemoved(textNode);
                 let currentTextStillMatches = false;
                 try {
                     currentTextStillMatches = originalTextForRuleAnalytics !== null && textNode.characters === originalTextForRuleAnalytics;
                 }
-                catch (_k) {
+                catch (_l) {
                     currentTextStillMatches = false;
                 }
                 if (!rollbackFailed &&
@@ -2610,11 +2617,14 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     failed += 1;
                     failedStage = "rollback_styles";
                     failureDiagnostic = diagnostic;
-                    problemLayers.push(createProblemLayerReportItem(textNode, "critical_integrity", (_g = (_f = currentLayerSnapshot === null || currentLayerSnapshot === void 0 ? void 0 : currentLayerSnapshot.text) !== null && _f !== void 0 ? _f : originalTextForRuleAnalytics) !== null && _g !== void 0 ? _g : ""));
+                    originalFailureDiagnostic = diagnosticBeforeRollback;
+                    originalFailureStage = failureStageBeforeRollback;
+                    rollbackFailureDiagnostic = (_f = rollbackResult === null || rollbackResult === void 0 ? void 0 : rollbackResult.failureDiagnostic) !== null && _f !== void 0 ? _f : null;
+                    problemLayers.push(createProblemLayerReportItem(textNode, "critical_integrity", (_h = (_g = currentLayerSnapshot === null || currentLayerSnapshot === void 0 ? void 0 : currentLayerSnapshot.text) !== null && _g !== void 0 ? _g : originalTextForRuleAnalytics) !== null && _h !== void 0 ? _h : ""));
                 }
                 else {
                     failed += 1;
-                    problemLayers.push(createProblemLayerReportItem(textNode, "safe_failure", (_j = (_h = currentLayerSnapshot === null || currentLayerSnapshot === void 0 ? void 0 : currentLayerSnapshot.text) !== null && _h !== void 0 ? _h : originalTextForRuleAnalytics) !== null && _j !== void 0 ? _j : ""));
+                    problemLayers.push(createProblemLayerReportItem(textNode, "safe_failure", (_k = (_j = currentLayerSnapshot === null || currentLayerSnapshot === void 0 ? void 0 : currentLayerSnapshot.text) !== null && _j !== void 0 ? _j : originalTextForRuleAnalytics) !== null && _k !== void 0 ? _k : ""));
                     if (diagnostic.name === TEXT_LAYER_CONTENT_CHANGED_ERROR_NAME) {
                         textLayerContentChanged = true;
                     }
@@ -2631,7 +2641,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     try {
                         finalTextChanged = originalTextForRuleAnalytics !== null && textNode.characters !== originalTextForRuleAnalytics;
                     }
-                    catch (_l) {
+                    catch (_m) {
                         // If Figma no longer allows reading the layer, rule changes cannot be confirmed.
                     }
                     finishTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, finalTextChanged);
@@ -2652,7 +2662,7 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     }
                     problemLayers.push(createProblemLayerReportItem(textNode, "not_reached", textNode.characters));
                 }
-                catch (_m) {
+                catch (_o) {
                     // A layer removed while the report is being prepared no longer needs user action.
                 }
             }
@@ -2664,6 +2674,9 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
             failed,
             failureDiagnostic,
             failedStage,
+            originalFailureDiagnostic,
+            originalFailureStage,
+            rollbackFailureDiagnostic,
             requiresStyleWarning,
             textLayerContentChanged,
             skippedHidden,
@@ -2743,55 +2756,96 @@ function getProblemLayerPath(textNode) {
     }
 }
 async function restoreTextLayerSnapshot(snapshot, mutationJournal = null, rollbackTimeoutMs = TEXT_LAYER_ROLLBACK_TIMEOUT_MS) {
+    let operation = "verify_initial_snapshot";
+    let verificationFailures = [];
     try {
         const rollbackDeadlineAt = Date.now() + rollbackTimeoutMs;
         if (verifyRestoredTextLayerSnapshot(snapshot)) {
-            return true;
+            return createSuccessfulTextLayerRollbackResult();
         }
         if (snapshot.textNode.characters !== snapshot.text) {
-            if (mutationJournal === null ||
-                !mutationJournal.canInvert ||
-                snapshot.textNode.characters !== mutationJournal.expectedText) {
-                return false;
+            verificationFailures = ["text"];
+            operation = "validate_mutation_journal";
+            if (mutationJournal === null) {
+                return createFailedTextLayerRollbackResult("mutation_journal_missing", operation, verificationFailures);
+            }
+            if (!mutationJournal.canInvert) {
+                return createFailedTextLayerRollbackResult("mutation_journal_not_invertible", operation, verificationFailures);
+            }
+            if (snapshot.textNode.characters !== mutationJournal.expectedText) {
+                return createFailedTextLayerRollbackResult("mutation_journal_text_mismatch", operation, verificationFailures);
             }
             if (mutationJournal.inverseOperations.length > 0) {
+                operation = "apply_inverse_text_mutations";
                 applyInversePointTextMutations(snapshot.textNode, mutationJournal);
             }
             else {
+                operation = "plan_text_rollback";
                 const rollbackPlan = createPointTextEditPlan(snapshot.textNode.characters, snapshot.text);
                 if (!rollbackPlan.matches) {
-                    return false;
+                    return createFailedTextLayerRollbackResult("rollback_plan_mismatch", operation, verificationFailures);
                 }
+                operation = "apply_planned_text_rollback";
                 applyPointTextEditsToTextNode(snapshot.textNode, rollbackPlan.edits);
             }
+            operation = "verify_restored_text";
             if (snapshot.textNode.characters !== snapshot.text) {
-                return false;
+                return createFailedTextLayerRollbackResult("text_restore_mismatch", operation, getTextLayerSnapshotVerificationFailures(snapshot));
             }
         }
+        operation = "restore_development_marker_data";
         setPluginDataIfChanged(snapshot.textNode, DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY, snapshot.developmentMarkerIndexesPluginData);
         setPluginDataIfChanged(snapshot.textNode, DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY, snapshot.developmentMarkerTextPluginData);
+        operation = "restore_development_marker_fills";
         for (const markerFill of snapshot.developmentMarkerFills) {
             const currentFills = snapshot.textNode.getRangeFills(markerFill.index, markerFill.index + 1);
             if (currentFills === figma.mixed || !areStyleValuesEqual(Array.from(currentFills), Array.from(markerFill.fills))) {
                 snapshot.textNode.setRangeFills(markerFill.index, markerFill.index + 1, markerFill.fills);
             }
         }
+        operation = "verify_snapshot_after_marker_restore";
         if (verifyRestoredTextLayerSnapshot(snapshot)) {
-            return true;
+            return createSuccessfulTextLayerRollbackResult();
         }
         const wholeTextStyle = getWholeTextStyle(snapshot.styles, snapshot.text);
         if (wholeTextStyle !== null) {
+            operation = "restore_whole_text_style";
             await restoreWholeTextStyle(snapshot.textNode, wholeTextStyle, true, rollbackDeadlineAt);
         }
         else {
+            operation = "restore_range_text_styles";
             await restoreTextStyles(snapshot.textNode, buildStyleMap(snapshot.text, snapshot.text, snapshot.styles), snapshot.styles, true, rollbackDeadlineAt);
         }
-        return verifyRestoredTextLayerSnapshot(snapshot);
+        operation = "verify_final_snapshot";
+        if (verifyRestoredTextLayerSnapshot(snapshot)) {
+            return createSuccessfulTextLayerRollbackResult();
+        }
+        verificationFailures = getTextLayerSnapshotVerificationFailures(snapshot);
+        return createFailedTextLayerRollbackResult("snapshot_verification_failed", operation, verificationFailures);
     }
     catch (rollbackError) {
         console.error(`[Чистовик] Failed to restore text layer ${snapshot.textNode.id}`, rollbackError);
-        return false;
+        verificationFailures = getTextLayerSnapshotVerificationFailures(snapshot);
+        return createFailedTextLayerRollbackResult("operation_failed", operation, verificationFailures, rollbackError);
     }
+}
+function createSuccessfulTextLayerRollbackResult() {
+    return {
+        failureDiagnostic: null,
+        succeeded: true,
+    };
+}
+function createFailedTextLayerRollbackResult(reason, operation, verificationFailures, error = null) {
+    return {
+        failureDiagnostic: {
+            errorFingerprint: error === null ? null : createErrorFingerprint(error),
+            errorName: error === null ? null : getErrorName(error),
+            operation,
+            reason,
+            verificationFailures,
+        },
+        succeeded: false,
+    };
 }
 function createTextLayerStateSnapshot(textNode, text, styles) {
     return {
@@ -2874,6 +2928,65 @@ function verifyRestoredTextLayerSnapshot(snapshot) {
         console.error(`[Чистовик] Failed to verify original text layer snapshot for text node ${snapshot.textNode.id}`, verificationError);
         return false;
     }
+}
+function getTextLayerSnapshotVerificationFailures(snapshot) {
+    const failures = [];
+    let textMatches = false;
+    try {
+        textMatches = snapshot.textNode.characters === snapshot.text;
+    }
+    catch (_a) {
+        textMatches = false;
+    }
+    if (!textMatches) {
+        failures.push("text");
+    }
+    else if (!verifyRestoredOriginalTextState(snapshot.textNode, snapshot.text, snapshot.styles)) {
+        failures.push("styles");
+    }
+    try {
+        if (!verifyDevelopmentMarkerFills(snapshot)) {
+            failures.push("development_marker_fills");
+        }
+    }
+    catch (_b) {
+        failures.push("development_marker_fills");
+    }
+    try {
+        if (snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_INDEXES_PLUGIN_DATA_KEY) !==
+            snapshot.developmentMarkerIndexesPluginData) {
+            failures.push("development_marker_indexes_data");
+        }
+    }
+    catch (_c) {
+        failures.push("development_marker_indexes_data");
+    }
+    try {
+        if (snapshot.textNode.getPluginData(DEVELOPMENT_MARKER_TEXT_PLUGIN_DATA_KEY) !==
+            snapshot.developmentMarkerTextPluginData) {
+            failures.push("development_marker_text_data");
+        }
+    }
+    catch (_d) {
+        failures.push("development_marker_text_data");
+    }
+    try {
+        if (!areStyleValuesEqual(cloneComponentPropertyReferences(snapshot.textNode), snapshot.componentPropertyReferences)) {
+            failures.push("component_property_references");
+        }
+    }
+    catch (_e) {
+        failures.push("component_property_references");
+    }
+    try {
+        if (!areStyleValuesEqual(getTextNodeParentChainIds(snapshot.textNode), snapshot.parentChainIds)) {
+            failures.push("parent_chain");
+        }
+    }
+    catch (_f) {
+        failures.push("parent_chain");
+    }
+    return failures;
 }
 function verifyDevelopmentMarkerFills(snapshot) {
     return snapshot.developmentMarkerFills.every((markerFill) => {

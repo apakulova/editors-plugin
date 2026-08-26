@@ -222,7 +222,7 @@ assert.match(createAnalyticsEventId(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 13);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 14);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
 assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-26");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
@@ -2020,7 +2020,7 @@ async function runRollbackTimeoutTests() {
   node.setTextStyleIdAsync = () => new Promise(() => {});
 
   const startedAt = Date.now();
-  const restored = await restoreTextLayerSnapshot(
+  const rollbackResult = await restoreTextLayerSnapshot(
     {
       componentPropertyReferences: null,
       developmentMarkerFills: [],
@@ -2035,7 +2035,14 @@ async function runRollbackTimeoutTests() {
     5
   );
 
-  assert.strictEqual(restored, false);
+  assert.strictEqual(rollbackResult.succeeded, false);
+  assert.strictEqual(rollbackResult.failureDiagnostic.reason, "operation_failed");
+  assert.strictEqual(rollbackResult.failureDiagnostic.operation, "restore_whole_text_style");
+  assert.strictEqual(rollbackResult.failureDiagnostic.errorName, "FigmaOperationTimeoutError");
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(rollbackResult.failureDiagnostic.verificationFailures)),
+    ["styles"]
+  );
   assert(Date.now() - startedAt < 250, "A hanging whole-style restore must respect the one rollback deadline");
 
   await assert.rejects(
@@ -2778,6 +2785,15 @@ async function runDetectedRollbackDamageTests() {
   });
   assert.strictEqual(result.failedStage, "rollback_styles");
   assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
+  assert.strictEqual(result.originalFailureStage, "restore_styles");
+  assert.strictEqual(result.originalFailureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(result.rollbackFailureDiagnostic.reason, "operation_failed");
+  assert.strictEqual(result.rollbackFailureDiagnostic.operation, "restore_whole_text_style");
+  assert.strictEqual(result.rollbackFailureDiagnostic.errorName, "Error");
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(result.rollbackFailureDiagnostic.verificationFailures)),
+    ["styles"]
+  );
   assert.strictEqual(result.requiresStyleWarning, true);
   assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 1);
   assert.strictEqual(result.analytics.rollbackFailedLayersCount, 1);
@@ -3442,6 +3458,15 @@ async function runSuccessfulWriteConnectionVerificationTests() {
   assert.strictEqual(result.changed, 0);
   assert.strictEqual(result.failedStage, "rollback_styles");
   assert.strictEqual(result.failureDiagnostic.category, "rollback_failed");
+  assert.strictEqual(result.originalFailureStage, "restore_styles");
+  assert.strictEqual(result.originalFailureDiagnostic.category, "restore_styles_failed");
+  assert.strictEqual(result.rollbackFailureDiagnostic.reason, "snapshot_verification_failed");
+  assert.strictEqual(result.rollbackFailureDiagnostic.operation, "verify_final_snapshot");
+  assert.strictEqual(result.rollbackFailureDiagnostic.errorName, null);
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(result.rollbackFailureDiagnostic.verificationFailures)),
+    ["component_property_references"]
+  );
   assert.strictEqual(node.characters, originalText);
   assert.deepStrictEqual(node.componentPropertyReferences, { characters: "Changed label" });
   assert.strictEqual(mainComponentLoadCalls, 0);
