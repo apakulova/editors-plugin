@@ -1249,18 +1249,25 @@ async function sendTelegramMessage(text, env = process.env, chatId = env.TELEGRA
     throw new Error("Missing Telegram chat id");
   }
 
-  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    body: JSON.stringify({
-      chat_id: chatId,
-      disable_web_page_preview: true,
-      parse_mode: "HTML",
-      text,
-    }),
-    headers: {
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
+  let response;
+
+  try {
+    response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      body: JSON.stringify({
+        chat_id: chatId,
+        disable_web_page_preview: true,
+        parse_mode: "HTML",
+        text,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  } catch (error) {
+    error.telegramDeliveryUnknown = true;
+    throw error;
+  }
 
   if (!response.ok) {
     const body = await response.text();

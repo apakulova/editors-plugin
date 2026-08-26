@@ -9,7 +9,7 @@
     "build": "npm run sync-ui && tsc -p tsconfig.json",
     "configure-telegram-menu": "node scripts/configure-telegram-menu.js",
     "send-daily-analytics": "node scripts/send-daily-analytics.js",
-    "test": "npm run build && node scripts/test-clean-typography.js && node scripts/test-analytics-capture.js && node scripts/test-analytics-report.js && node scripts/test-number-diagnostics.js"
+    "test": "npm run build && node scripts/test-clean-typography.js && node scripts/test-analytics-capture.js && node scripts/test-analytics-report.js && node scripts/test-daily-report-delivery.js && node scripts/test-number-diagnostics.js"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.106.0",

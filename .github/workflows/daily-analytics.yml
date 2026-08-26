@@ -1,12 +1,28 @@
 name: Daily analytics report
 
 on:
+  schedule:
+    - cron: "17 6 * * *"
   workflow_dispatch:
+    inputs:
+      force_resend:
+        description: "Отправить повторно, даже если отчёт за эту дату уже был доставлен"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-analytics-report
+  cancel-in-progress: false
 
 jobs:
   send-daily-analytics:
     name: Send daily analytics to Telegram
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       POSTHOG_HOST: https://eu.posthog.com
       POSTHOG_PROJECT_ID: "184090"
@@ -15,6 +31,8 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       NUMBER_DIAGNOSTICS_DATABASE_URL: ${{ secrets.NUMBER_DIAGNOSTICS_DATABASE_URL }}
+      DAILY_REPORT_SOURCE: ${{ github.event_name == 'schedule' && 'github_primary' || 'github_manual' }}
+      DAILY_REPORT_FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force_resend || false }}
 
     steps:
       - name: Checkout repository
@@ -30,4 +48,4 @@ jobs:
         run: npm ci --omit=dev --ignore-scripts
 
       - name: Send report
-        run: node scripts/send-daily-analytics.js
+        run: npm run send-daily-analytics

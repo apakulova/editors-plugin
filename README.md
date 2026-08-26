@@ -394,6 +394,8 @@ npm run dev
 - `src/ui.html` — готовый HTML для Figma. В нем есть размеченные блоки `chistovik-content:*`, которые обновляет скрипт синхронизации.
 - `scripts/sync-ui-content.js` — генератор, который переносит данные из `src/ui-content.js` в `src/ui.html`.
 - `scripts/send-daily-analytics.js` — скрипт ежедневного Telegram-отчета по PostHog-аналитике.
+- `scripts/lib/daily-report-delivery.js` — общая отправка ежедневного отчёта с защитой от пропусков и повторов.
+- `scripts/lib/daily-report-delivery-store.js` — служебная отметка о состоянии доставки отчёта за конкретную дату.
 - `scripts/configure-telegram-menu.js` — скрипт обновления команд и подписей в меню Telegram.
 - `scripts/lib/analytics-report.js` — общая логика PostHog-запросов, форматирования Telegram-сообщений и отправки сообщений.
 - `api/telegram.js` — Vercel endpoint для Telegram webhook и команд `/today`, `/speed` и `/errors`.
@@ -505,7 +507,7 @@ npm run dev
 - Рабочая типографика должна оставаться отделенной от UI.
 - Правила типографики считаются критической зоной: нельзя менять `cleanTypography`, порядок правил, регулярные выражения, исключения и тестовые ожидания ради UI-отчета, аналитики или Telegram-логов.
 - Аналитика должна оставаться отделенной от правил типографики и не должна менять поведение `cleanTypography`.
-- Ежедневный Telegram-отчет должен жить отдельно от Figma-плагина: через Vercel Cron и `api/daily-analytics.js`, без влияния на запуск плагина в Figma.
+- Ежедневный Telegram-отчет должен жить отдельно от Figma-плагина: основной запуск через GitHub Actions в 09:17 по Москве, запасной через Vercel Cron в следующем часовом окне и общая защита от повторной отправки, без влияния на запуск плагина в Figma.
 - Telegram-команды должны жить отдельно от Figma-плагина: через Vercel endpoint `api/telegram.js`, без изменений `src/code.ts`, `dist/code.js`, `src/ui.html`, `src/ui-content.js` и `manifest.json`.
 - Быстрый запуск не должен зависеть от состояния открытого интерфейса.
 - UI должен передавать настройки в основную логику сообщением, а не дублировать правила обработки.

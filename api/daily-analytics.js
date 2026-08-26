@@ -1,8 +1,7 @@
 const {
   assertRequiredEnv,
-  createAnalyticsMessageOrDiagnostic,
-  sendTelegramMessage,
 } = require("../scripts/lib/analytics-report");
+const { deliverDailyAnalyticsReport } = require("../scripts/lib/daily-report-delivery");
 const { getNumberDiagnosticsDatabaseUrl, shouldDeleteNumberDiagnostics } = require("../scripts/lib/number-diagnostics-config");
 const { deleteNumberDiagnosticCases } = require("../scripts/lib/number-diagnostics-store");
 
@@ -38,15 +37,21 @@ module.exports = async function handler(request, response) {
       "TELEGRAM_CHAT_ID",
     ]);
 
-    const text = await createAnalyticsMessageOrDiagnostic("yesterday");
-
-    await sendTelegramMessage(text);
+    const delivery = await deliverDailyAnalyticsReport(
+      { source: "vercel_fallback" },
+      process.env
+    );
 
     if (shouldDeleteNumberDiagnostics() && getNumberDiagnosticsDatabaseUrl(process.env)) {
       await deleteNumberDiagnosticCases(process.env);
     }
 
-    sendJson(response, 200, { ok: true, period: "yesterday" });
+    sendJson(response, 200, {
+      delivery: delivery.status,
+      ok: true,
+      period: "yesterday",
+      reportDate: delivery.reportDate,
+    });
   } catch (error) {
     console.error(error);
     sendJson(response, 500, { ok: false, error: "daily_report_failed" });
