@@ -563,7 +563,10 @@ Vercel Queues получает доступ автоматически чере�
 POSTHOG_PERSONAL_API_KEY
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
+NUMBER_DIAGNOSTICS_DATABASE_URL
 ```
+
+`NUMBER_DIAGNOSTICS_DATABASE_URL` нужен резервному запуску, чтобы строка с количеством числовых случаев совпадала с основным отчётом Vercel. Workflow перед отправкой устанавливает рабочие библиотеки через `npm ci --omit=dev --ignore-scripts`; без этого модуль временного хранилища числовой диагностики не загрузится.
 
 Персональные ключи PostHog, Telegram-токен и остальные секреты нельзя хранить в репозитории, документации или сообщениях чата. Публичный `POSTHOG_PROJECT_TOKEN`, который разрешает только запись событий в конкретный проект, не является персональным ключом и может быть закреплён в коде пересылки.
 
@@ -648,7 +651,8 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteMyCommands
 2. Перейти в `Actions`.
 3. Выбрать workflow `Daily analytics report`.
 4. Нажать `Run workflow`.
-5. Проверить сообщение в Telegram.
+5. Дождаться зелёного статуса шага `Send report`.
+6. Проверить сообщение в Telegram.
 
 Этот workflow запускается только вручную и не дублирует ежедневное расписание Vercel.
 
