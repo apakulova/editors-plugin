@@ -17,7 +17,7 @@ const COMMAND_OPEN_RELEASE_ANNOUNCEMENT = "open-release-announcement";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
 const NUMBER_DIAGNOSTICS_CAPTURE_PATH = "/api/number-diagnostics";
-const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 4;
+const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 5;
 const NUMBER_DIAGNOSTICS_END_AT_MS = Date.parse("2026-09-19T00:00:00+03:00");
 const NUMBER_DIAGNOSTICS_QUEUE_KEY = "numberDiagnosticsQueue";
 const NUMBER_DIAGNOSTICS_MAX_QUEUED_REPORTS = 10;
@@ -1878,18 +1878,19 @@ function createDiagnosticNumberContextNeighbors(children, index, usedIndex = nul
                 else if (getExactContextMarker(text) !== null || usedAsEvidence) {
                     role = "evidence";
                 }
-                neighbors.push({
+                const diagnosticNeighbor = {
                     direction: direction === -1 ? "left" : "right",
                     role,
                     text,
                     usedAsEvidence,
-                });
-                if (!isAllowedNumberContextSeparator(text)) {
+                };
+                neighbors.push(diagnosticNeighbor);
+                if (isNumberDiagnosticContextAnchor(diagnosticNeighbor)) {
                     break;
                 }
             }
         }
-        return neighbors.slice(0, 4);
+        return neighbors.slice(0, 8);
     }
     catch (error) {
         console.error("[Чистовик] Failed to build diagnostic number neighbors", error);
@@ -2078,6 +2079,14 @@ function isPotentialNumberDiagnosticContextText(input) {
         return false;
     }
 }
+function isNumberDiagnosticContextAnchor(neighbor) {
+    try {
+        return neighbor.usedAsEvidence || isPotentialNumberDiagnosticContextText(neighbor.text);
+    }
+    catch (_a) {
+        return false;
+    }
+}
 function getNumberDiagnosticLayoutInfos(textNodes, scopeByNodeId = new Map()) {
     var _a, _b, _c;
     try {
@@ -2201,7 +2210,7 @@ function findSpatialIdentifierDiagnosticNeighbors(target, layoutInfos) {
                 high = middle;
             }
         }
-        const nearest = new Map();
+        const candidates = [];
         for (let index = low; index < layoutInfos.length; index += 1) {
             const candidate = layoutInfos[index];
             if (getRectCenterY(candidate.box) > targetCenterY + maximumCenterDistance) {
@@ -2216,26 +2225,40 @@ function findSpatialIdentifierDiagnosticNeighbors(target, layoutInfos) {
             const relation = getNumberDiagnosticHorizontalRelation(target.box, candidate.box);
             const ancestorDistance = getNumberDiagnosticCommonAncestorDistance(target, candidate);
             const role = getSpatialIdentifierContextRole(target.text, candidate.text);
-            if (relation === null || relation.gap > 720 || ancestorDistance === null || ancestorDistance > 4 || role === null) {
+            if (relation === null || relation.gap > 720 || ancestorDistance === null || ancestorDistance > 4) {
                 continue;
             }
-            const score = ancestorDistance * 1000 + relation.gap;
-            const current = nearest.get(relation.direction);
-            if (current === undefined || score < current.score) {
-                nearest.set(relation.direction, {
-                    neighbor: {
-                        direction: relation.direction,
-                        role,
-                        text: candidate.text,
-                        usedAsEvidence: role === "protection" || isPotentialNumberDiagnosticContextLabel(candidate.text),
-                    },
-                    score,
-                });
-            }
+            candidates.push({ ancestorDistance, info: candidate, relation, role });
         }
-        return ["left", "right"]
-            .map((direction) => { var _a, _b; return (_b = (_a = nearest.get(direction)) === null || _a === void 0 ? void 0 : _a.neighbor) !== null && _b !== void 0 ? _b : null; })
-            .filter((neighbor) => neighbor !== null);
+        const result = [];
+        for (const direction of ["left", "right"]) {
+            const anchor = candidates
+                .filter((candidate) => candidate.relation.direction === direction && candidate.role !== null)
+                .sort((first, second) => (first.ancestorDistance * 1000 + first.relation.gap) -
+                (second.ancestorDistance * 1000 + second.relation.gap))[0];
+            if (anchor === undefined || anchor.role === null) {
+                continue;
+            }
+            const intermediate = candidates
+                .filter((candidate) => candidate.relation.direction === direction &&
+                candidate.role === null &&
+                candidate.relation.gap < anchor.relation.gap)
+                .sort((first, second) => first.relation.gap - second.relation.gap)
+                .slice(0, 3)
+                .map((candidate) => ({
+                direction,
+                role: "context",
+                text: candidate.info.text,
+                usedAsEvidence: false,
+            }));
+            result.push(...intermediate, {
+                direction,
+                role: anchor.role,
+                text: anchor.info.text,
+                usedAsEvidence: anchor.role === "protection" || isPotentialNumberDiagnosticContextLabel(anchor.info.text),
+            });
+        }
+        return result;
     }
     catch (error) {
         console.error("[Чистовик] Failed to find spatial diagnostic number neighbors", error);
@@ -2243,12 +2266,13 @@ function findSpatialIdentifierDiagnosticNeighbors(target, layoutInfos) {
     }
 }
 function buildNumberDiagnosticLayerContexts(textNodes, diagnosticContextTextNodes = textNodes, diagnosticContextScopeByNodeId = new Map()) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     try {
         const contexts = new Map();
         const needsSpatialDiagnosticContext = textNodes.some((textNode) => {
             try {
-                return !isTextNodeRemoved(textNode) && isStandaloneNumberDiagnosticLayer(textNode.characters);
+                return (!isTextNodeRemoved(textNode) &&
+                    getNumberDiagnosticMissingContextDirections(textNode.characters).size > 0);
             }
             catch (_a) {
                 return false;
@@ -2268,33 +2292,40 @@ function buildNumberDiagnosticLayerContexts(textNodes, diagnosticContextTextNode
                     continue;
                 }
                 let context = buildNumberLayerContextForNode(textNode, parentSnapshotCache, visibleChildrenCache, childIndexCache);
-                if (context !== null && !context.protectedByNeighbor && isStandaloneNumberDiagnosticLayer(textNode.characters)) {
+                const standaloneLayer = isStandaloneNumberDiagnosticLayer(textNode.characters);
+                const missingContextDirections = getNumberDiagnosticMissingContextDirections(textNode.characters);
+                if (context !== null && !context.protectedByNeighbor && standaloneLayer) {
                     const protectiveNeighbors = context.diagnosticNeighbors.filter((neighbor) => neighbor.role === "protection" && isExactProtectiveContextLabel(neighbor.text));
                     if (protectiveNeighbors.length === 1) {
                         const protectiveText = protectiveNeighbors[0].text.trim().replace(/:$/, "").trim().toLowerCase();
                         context = Object.assign(Object.assign({}, context), { diagnosticNeighbors: context.diagnosticNeighbors.map((neighbor) => neighbor === protectiveNeighbors[0] ? Object.assign(Object.assign({}, neighbor), { usedAsEvidence: true }) : neighbor), protectedAsPhoneByNeighbor: protectiveText === "телефон", protectedByNeighbor: true });
                     }
                 }
-                if (isStandaloneNumberDiagnosticLayer(textNode.characters)) {
+                if (missingContextDirections.size > 0) {
                     const targetLayout = layoutInfoById.get(textNode.id);
-                    const hasUsedNeighbor = (context === null || context === void 0 ? void 0 : context.diagnosticNeighbors.some((neighbor) => neighbor.usedAsEvidence)) === true;
-                    if (targetLayout !== undefined && !hasUsedNeighbor) {
-                        const spatialNeighbors = findSpatialIdentifierDiagnosticNeighbors(targetLayout, layoutInfos);
+                    if (targetLayout !== undefined) {
+                        const existingDirections = new Set(((_a = context === null || context === void 0 ? void 0 : context.diagnosticNeighbors) !== null && _a !== void 0 ? _a : [])
+                            .filter((neighbor) => isNumberDiagnosticContextAnchor(neighbor) &&
+                            missingContextDirections.has(neighbor.direction))
+                            .map((neighbor) => neighbor.direction));
+                        const spatialNeighbors = findSpatialIdentifierDiagnosticNeighbors(targetLayout, layoutInfos)
+                            .filter((neighbor) => missingContextDirections.has(neighbor.direction) &&
+                            !existingDirections.has(neighbor.direction));
                         if (spatialNeighbors.length > 0) {
                             const protectedNeighbor = spatialNeighbors.find((neighbor) => neighbor.role === "protection");
                             const diagnosticNeighbors = [
-                                ...((_a = context === null || context === void 0 ? void 0 : context.diagnosticNeighbors) !== null && _a !== void 0 ? _a : []).filter((neighbor) => !spatialNeighbors.some((spatial) => spatial.direction === neighbor.direction && spatial.text === neighbor.text)),
+                                ...((_b = context === null || context === void 0 ? void 0 : context.diagnosticNeighbors) !== null && _b !== void 0 ? _b : []).filter((neighbor) => !spatialNeighbors.some((spatial) => spatial.direction === neighbor.direction && spatial.text === neighbor.text)),
                                 ...spatialNeighbors,
                             ];
                             context = {
                                 diagnosticNeighbors,
-                                evidenceAfter: (_b = context === null || context === void 0 ? void 0 : context.evidenceAfter) !== null && _b !== void 0 ? _b : null,
-                                evidenceBefore: (_c = context === null || context === void 0 ? void 0 : context.evidenceBefore) !== null && _c !== void 0 ? _c : null,
+                                evidenceAfter: (_c = context === null || context === void 0 ? void 0 : context.evidenceAfter) !== null && _c !== void 0 ? _c : null,
+                                evidenceBefore: (_d = context === null || context === void 0 ? void 0 : context.evidenceBefore) !== null && _d !== void 0 ? _d : null,
                                 protectedAsPhoneByNeighbor: (context === null || context === void 0 ? void 0 : context.protectedAsPhoneByNeighbor) === true ||
                                     (protectedNeighbor === null || protectedNeighbor === void 0 ? void 0 : protectedNeighbor.text.trim().replace(/:$/, "").trim().toLowerCase()) === "телефон",
                                 protectedByNeighbor: (context === null || context === void 0 ? void 0 : context.protectedByNeighbor) === true || protectedNeighbor !== undefined,
-                                standalonePhonePrefix: (_d = context === null || context === void 0 ? void 0 : context.standalonePhonePrefix) !== null && _d !== void 0 ? _d : false,
-                                snapshotKey: (_e = context === null || context === void 0 ? void 0 : context.snapshotKey) !== null && _e !== void 0 ? _e : `diagnostic-layout:${textNode.id}`,
+                                standalonePhonePrefix: (_e = context === null || context === void 0 ? void 0 : context.standalonePhonePrefix) !== null && _e !== void 0 ? _e : false,
+                                snapshotKey: (_f = context === null || context === void 0 ? void 0 : context.snapshotKey) !== null && _f !== void 0 ? _f : `diagnostic-layout:${textNode.id}`,
                             };
                         }
                     }
@@ -6103,6 +6134,30 @@ function isStandaloneNumberDiagnosticLayer(input) {
         return false;
     }
 }
+function getNumberDiagnosticMissingContextDirections(input, onlyToken = null) {
+    try {
+        const wordPattern = new RegExp(`[${LETTERS}]{4,}`, "g");
+        const words = [];
+        let wordMatch;
+        while ((wordMatch = wordPattern.exec(input)) !== null) {
+            words.push({ start: wordMatch.index, end: wordMatch.index + wordMatch[0].length });
+        }
+        const directions = new Set();
+        const tokens = onlyToken === null ? collectNumberDiagnosticTokens(input) : [onlyToken];
+        for (const token of tokens) {
+            if (!words.some((word) => word.end <= token.start)) {
+                directions.add("left");
+            }
+            if (!words.some((word) => word.start >= token.end)) {
+                directions.add("right");
+            }
+        }
+        return directions;
+    }
+    catch (_a) {
+        return new Set();
+    }
+}
 function getNumberDiagnosticLocalWindow(input, token) {
     if (token === null) {
         return "";
@@ -6341,19 +6396,24 @@ function getNumberDiagnosticContextChangeReason(code) {
         : "Изменён текст рядом с числом; числовое правило не применялось";
 }
 function createNumberDiagnosticCases(beforeText, afterText, numberLayerContext, beforeDevelopmentMarkerIndexes = [], afterDevelopmentMarkerIndexes = []) {
-    var _a;
     try {
         const diagnosticBeforeText = normalizeDevelopmentMarkersForNumberDiagnostics(beforeText, beforeDevelopmentMarkerIndexes);
         const diagnosticAfterText = normalizeDevelopmentMarkersForNumberDiagnostics(afterText, afterDevelopmentMarkerIndexes);
         const beforeTokens = collectNumberDiagnosticTokens(diagnosticBeforeText);
         const afterTokens = collectNumberDiagnosticTokens(diagnosticAfterText);
         const pairs = pairNumberDiagnosticTokens(beforeTokens, afterTokens);
-        const includeNeighbors = isStandaloneNumberDiagnosticLayer(diagnosticBeforeText);
-        const neighbors = includeNeighbors ? (_a = numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.diagnosticNeighbors) !== null && _a !== void 0 ? _a : [] : [];
-        const layerMode = neighbors.length > 0 ? "multiple" : "single";
         return pairs.map(({ after, before }) => {
+            var _a;
             const sourceToken = before !== null && before !== void 0 ? before : after;
             const sourceText = before === null ? diagnosticAfterText : diagnosticBeforeText;
+            const missingContextDirections = getNumberDiagnosticMissingContextDirections(sourceText, sourceToken);
+            const availableNeighbors = (_a = numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.diagnosticNeighbors) !== null && _a !== void 0 ? _a : [];
+            const anchoredDirections = new Set(availableNeighbors
+                .filter(isNumberDiagnosticContextAnchor)
+                .map((neighbor) => neighbor.direction));
+            const neighbors = availableNeighbors.filter((neighbor) => (neighbor.usedAsEvidence || missingContextDirections.has(neighbor.direction)) &&
+                (isNumberDiagnosticContextAnchor(neighbor) || anchoredDirections.has(neighbor.direction)));
+            const layerMode = neighbors.length > 0 ? "multiple" : "single";
             const evidence = getNumberDiagnosticEvidence(sourceText, sourceToken, numberLayerContext);
             const numberBefore = getNumberDiagnosticRepresentation(diagnosticBeforeText, before, numberLayerContext);
             const numberAfter = getNumberDiagnosticRepresentation(diagnosticAfterText, after, numberLayerContext);

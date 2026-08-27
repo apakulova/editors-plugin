@@ -16,7 +16,7 @@ const COMMAND_OPEN_RELEASE_ANNOUNCEMENT = "open-release-announcement";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
 const NUMBER_DIAGNOSTICS_CAPTURE_PATH = "/api/number-diagnostics";
-const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 4;
+const NUMBER_DIAGNOSTICS_SCHEMA_VERSION = 5;
 const NUMBER_DIAGNOSTICS_END_AT_MS = Date.parse("2026-09-19T00:00:00+03:00");
 const NUMBER_DIAGNOSTICS_QUEUE_KEY = "numberDiagnosticsQueue";
 const NUMBER_DIAGNOSTICS_MAX_QUEUED_REPORTS = 10;
@@ -2779,20 +2779,21 @@ function createDiagnosticNumberContextNeighbors(
           role = "evidence";
         }
 
-        neighbors.push({
+        const diagnosticNeighbor: NumberDiagnosticNeighbor = {
           direction: direction === -1 ? "left" : "right",
           role,
           text,
           usedAsEvidence,
-        });
+        };
+        neighbors.push(diagnosticNeighbor);
 
-        if (!isAllowedNumberContextSeparator(text)) {
+        if (isNumberDiagnosticContextAnchor(diagnosticNeighbor)) {
           break;
         }
       }
     }
 
-    return neighbors.slice(0, 4);
+    return neighbors.slice(0, 8);
   } catch (error) {
     console.error("[Чистовик] Failed to build diagnostic number neighbors", error);
     return [];
@@ -3032,6 +3033,14 @@ function isPotentialNumberDiagnosticContextText(input: string): boolean {
   }
 }
 
+function isNumberDiagnosticContextAnchor(neighbor: NumberDiagnosticNeighbor): boolean {
+  try {
+    return neighbor.usedAsEvidence || isPotentialNumberDiagnosticContextText(neighbor.text);
+  } catch {
+    return false;
+  }
+}
+
 function getNumberDiagnosticLayoutInfos(
   textNodes: TextNode[],
   scopeByNodeId: Map<string, string> = new Map<string, string>()
@@ -3191,7 +3200,12 @@ function findSpatialIdentifierDiagnosticNeighbors(
       }
     }
 
-    const nearest = new Map<"left" | "right", { neighbor: NumberDiagnosticNeighbor; score: number }>();
+    const candidates: Array<{
+      ancestorDistance: number;
+      info: NumberDiagnosticLayoutInfo;
+      relation: { direction: "left" | "right"; gap: number };
+      role: NumberDiagnosticNeighborRole | null;
+    }> = [];
 
     for (let index = low; index < layoutInfos.length; index += 1) {
       const candidate = layoutInfos[index];
@@ -3212,30 +3226,56 @@ function findSpatialIdentifierDiagnosticNeighbors(
       const ancestorDistance = getNumberDiagnosticCommonAncestorDistance(target, candidate);
       const role = getSpatialIdentifierContextRole(target.text, candidate.text);
 
-      if (relation === null || relation.gap > 720 || ancestorDistance === null || ancestorDistance > 4 || role === null) {
+      if (relation === null || relation.gap > 720 || ancestorDistance === null || ancestorDistance > 4) {
         continue;
       }
 
-      const score = ancestorDistance * 1000 + relation.gap;
-      const current = nearest.get(relation.direction);
-
-      if (current === undefined || score < current.score) {
-        nearest.set(relation.direction, {
-          neighbor: {
-            direction: relation.direction,
-            role,
-            text: candidate.text,
-            usedAsEvidence:
-              role === "protection" || isPotentialNumberDiagnosticContextLabel(candidate.text),
-          },
-          score,
-        });
-      }
+      candidates.push({ ancestorDistance, info: candidate, relation, role });
     }
 
-    return (["left", "right"] as const)
-      .map((direction) => nearest.get(direction)?.neighbor ?? null)
-      .filter((neighbor): neighbor is NumberDiagnosticNeighbor => neighbor !== null);
+    const result: NumberDiagnosticNeighbor[] = [];
+
+    for (const direction of ["left", "right"] as const) {
+      const anchor = candidates
+        .filter((candidate) => candidate.relation.direction === direction && candidate.role !== null)
+        .sort((first, second) =>
+          (first.ancestorDistance * 1000 + first.relation.gap) -
+          (second.ancestorDistance * 1000 + second.relation.gap)
+        )[0];
+
+      if (anchor === undefined || anchor.role === null) {
+        continue;
+      }
+
+      const intermediate = candidates
+        .filter(
+          (candidate) =>
+            candidate.relation.direction === direction &&
+            candidate.role === null &&
+            candidate.relation.gap < anchor.relation.gap
+        )
+        .sort((first, second) => first.relation.gap - second.relation.gap)
+        .slice(0, 3)
+        .map<NumberDiagnosticNeighbor>((candidate) => ({
+          direction,
+          role: "context",
+          text: candidate.info.text,
+          usedAsEvidence: false,
+        }));
+
+      result.push(
+        ...intermediate,
+        {
+          direction,
+          role: anchor.role,
+          text: anchor.info.text,
+          usedAsEvidence:
+            anchor.role === "protection" || isPotentialNumberDiagnosticContextLabel(anchor.info.text),
+        }
+      );
+    }
+
+    return result;
   } catch (error) {
     console.error("[Чистовик] Failed to find spatial diagnostic number neighbors", error);
     return [];
@@ -3251,7 +3291,10 @@ function buildNumberDiagnosticLayerContexts(
     const contexts = new Map<string, NumberLayerContext>();
     const needsSpatialDiagnosticContext = textNodes.some((textNode) => {
       try {
-        return !isTextNodeRemoved(textNode) && isStandaloneNumberDiagnosticLayer(textNode.characters);
+        return (
+          !isTextNodeRemoved(textNode) &&
+          getNumberDiagnosticMissingContextDirections(textNode.characters).size > 0
+        );
       } catch {
         return false;
       }
@@ -3274,8 +3317,10 @@ function buildNumberDiagnosticLayerContexts(
         }
 
         let context = buildNumberLayerContextForNode(textNode, parentSnapshotCache, visibleChildrenCache, childIndexCache);
+        const standaloneLayer = isStandaloneNumberDiagnosticLayer(textNode.characters);
+        const missingContextDirections = getNumberDiagnosticMissingContextDirections(textNode.characters);
 
-        if (context !== null && !context.protectedByNeighbor && isStandaloneNumberDiagnosticLayer(textNode.characters)) {
+        if (context !== null && !context.protectedByNeighbor && standaloneLayer) {
           const protectiveNeighbors = context.diagnosticNeighbors.filter(
             (neighbor) => neighbor.role === "protection" && isExactProtectiveContextLabel(neighbor.text)
           );
@@ -3293,12 +3338,25 @@ function buildNumberDiagnosticLayerContexts(
           }
         }
 
-        if (isStandaloneNumberDiagnosticLayer(textNode.characters)) {
+        if (missingContextDirections.size > 0) {
           const targetLayout = layoutInfoById.get(textNode.id);
-          const hasUsedNeighbor = context?.diagnosticNeighbors.some((neighbor) => neighbor.usedAsEvidence) === true;
 
-          if (targetLayout !== undefined && !hasUsedNeighbor) {
-            const spatialNeighbors = findSpatialIdentifierDiagnosticNeighbors(targetLayout, layoutInfos);
+          if (targetLayout !== undefined) {
+            const existingDirections = new Set(
+              (context?.diagnosticNeighbors ?? [])
+                .filter(
+                  (neighbor) =>
+                    isNumberDiagnosticContextAnchor(neighbor) &&
+                    missingContextDirections.has(neighbor.direction)
+                )
+                .map((neighbor) => neighbor.direction)
+            );
+            const spatialNeighbors = findSpatialIdentifierDiagnosticNeighbors(targetLayout, layoutInfos)
+              .filter(
+                (neighbor) =>
+                  missingContextDirections.has(neighbor.direction) &&
+                  !existingDirections.has(neighbor.direction)
+              );
 
             if (spatialNeighbors.length > 0) {
               const protectedNeighbor = spatialNeighbors.find((neighbor) => neighbor.role === "protection");
@@ -8186,6 +8244,38 @@ function isStandaloneNumberDiagnosticLayer(input: string): boolean {
   }
 }
 
+function getNumberDiagnosticMissingContextDirections(
+  input: string,
+  onlyToken: NumberDiagnosticToken | null = null
+): Set<"left" | "right"> {
+  try {
+    const wordPattern = new RegExp(`[${LETTERS}]{4,}`, "g");
+    const words: Array<{ end: number; start: number }> = [];
+    let wordMatch: RegExpExecArray | null;
+
+    while ((wordMatch = wordPattern.exec(input)) !== null) {
+      words.push({ start: wordMatch.index, end: wordMatch.index + wordMatch[0].length });
+    }
+
+    const directions = new Set<"left" | "right">();
+    const tokens = onlyToken === null ? collectNumberDiagnosticTokens(input) : [onlyToken];
+
+    for (const token of tokens) {
+      if (!words.some((word) => word.end <= token.start)) {
+        directions.add("left");
+      }
+
+      if (!words.some((word) => word.start >= token.end)) {
+        directions.add("right");
+      }
+    }
+
+    return directions;
+  } catch {
+    return new Set<"left" | "right">();
+  }
+}
+
 function getNumberDiagnosticLocalWindow(input: string, token: NumberDiagnosticToken | null): string {
   if (token === null) {
     return "";
@@ -8535,13 +8625,22 @@ function createNumberDiagnosticCases(
     const beforeTokens = collectNumberDiagnosticTokens(diagnosticBeforeText);
     const afterTokens = collectNumberDiagnosticTokens(diagnosticAfterText);
     const pairs = pairNumberDiagnosticTokens(beforeTokens, afterTokens);
-    const includeNeighbors = isStandaloneNumberDiagnosticLayer(diagnosticBeforeText);
-    const neighbors = includeNeighbors ? numberLayerContext?.diagnosticNeighbors ?? [] : [];
-    const layerMode: NumberDiagnosticLayerMode = neighbors.length > 0 ? "multiple" : "single";
-
     return pairs.map(({ after, before }) => {
       const sourceToken = before ?? after as NumberDiagnosticToken;
       const sourceText = before === null ? diagnosticAfterText : diagnosticBeforeText;
+      const missingContextDirections = getNumberDiagnosticMissingContextDirections(sourceText, sourceToken);
+      const availableNeighbors = numberLayerContext?.diagnosticNeighbors ?? [];
+      const anchoredDirections = new Set(
+        availableNeighbors
+          .filter(isNumberDiagnosticContextAnchor)
+          .map((neighbor) => neighbor.direction)
+      );
+      const neighbors = availableNeighbors.filter(
+        (neighbor) =>
+          (neighbor.usedAsEvidence || missingContextDirections.has(neighbor.direction)) &&
+          (isNumberDiagnosticContextAnchor(neighbor) || anchoredDirections.has(neighbor.direction))
+      );
+      const layerMode: NumberDiagnosticLayerMode = neighbors.length > 0 ? "multiple" : "single";
       const evidence = getNumberDiagnosticEvidence(sourceText, sourceToken, numberLayerContext);
       const numberBefore = getNumberDiagnosticRepresentation(diagnosticBeforeText, before, numberLayerContext);
       const numberAfter = getNumberDiagnosticRepresentation(diagnosticAfterText, after, numberLayerContext);

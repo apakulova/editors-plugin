@@ -261,6 +261,9 @@
   function createCaseCard(item) {
     const card = document.createElement("article");
     card.className = "case-card";
+    const visibleNeighbors = Array.isArray(item.neighbors)
+      ? item.neighbors.filter((neighbor) => neighbor && neighbor.role !== "separator")
+      : [];
 
     const header = document.createElement("header");
     header.className = "case-card-header";
@@ -277,7 +280,7 @@
     badge.textContent = changedOnlyNearby ? "Изменён текст рядом" : STATUS_LABELS[item.status] || item.status;
     const layout = document.createElement("span");
     layout.className = "case-layout";
-    layout.textContent = item.layer_mode === "multiple" ? "Несколько слоёв" : "Один слой";
+    layout.textContent = visibleNeighbors.length > 0 ? "Несколько слоёв" : "Один слой";
     const time = document.createElement("time");
     time.className = "case-time";
     time.dateTime = item.captured_at;
@@ -295,18 +298,32 @@
 
     card.append(header, comparison);
 
-    const visibleNeighbors = Array.isArray(item.neighbors)
-      ? item.neighbors.filter((neighbor) => neighbor.role !== "separator")
-      : [];
+    const recordedDirections = new Set(
+      visibleNeighbors
+        .filter(isMeaningfulNumberDiagnosticNeighbor)
+        .map((neighbor) => neighbor.direction)
+    );
+    const missingDirections = getMissingContextDirections(item)
+      .filter((direction) => !recordedDirections.has(direction));
 
-    if (visibleNeighbors.length > 0 || isStandaloneContextCase(item)) {
+    if (visibleNeighbors.length > 0 || missingDirections.length > 0 || isStandaloneContextCase(item)) {
       const neighbors = document.createElement("div");
       neighbors.className = "neighbor-strip";
 
-      if (visibleNeighbors.length > 0) {
-        visibleNeighbors.forEach((neighbor) => neighbors.append(createNeighborContext(item, neighbor)));
+      (["left", "right"]).forEach((direction) => {
+        const directionalNeighbors = visibleNeighbors.filter((neighbor) => neighbor.direction === direction);
+
+        if (directionalNeighbors.length > 0) {
+          neighbors.append(createNeighborContext(item, directionalNeighbors));
+        }
+      });
+
+      if (missingDirections.length === 2 && visibleNeighbors.length === 0) {
+        neighbors.append(createMissingNeighborContext(null, item.diagnostics_schema_version || 1));
       } else {
-        neighbors.append(createMissingNeighborContext());
+        missingDirections.forEach((direction) =>
+          neighbors.append(createMissingNeighborContext(direction, item.diagnostics_schema_version || 1))
+        );
       }
 
       card.append(neighbors);
@@ -413,31 +430,91 @@
     return !/[A-Za-zА-Яа-яЁё]{4,}/.test(caseItem.before_text || "");
   }
 
-  function createNeighborContext(caseItem, neighbor) {
+  function isMeaningfulNumberDiagnosticNeighbor(neighbor) {
+    if (neighbor.usedAsEvidence) {
+      return true;
+    }
+
+    const text = String(neighbor.text || "").trim();
+    return text.length > 0 && !/^[\s+\-−–—\d.,/:()]+$/.test(text);
+  }
+
+  function getMissingContextDirections(caseItem) {
+    const text = caseItem.before_text || "";
+    const number = caseItem.number_before || "";
+    let start = number ? text.indexOf(number) : -1;
+    let length = number.length;
+
+    if (start === -1) {
+      const digits = number.replace(/\D/g, "");
+      start = digits ? text.indexOf(digits) : -1;
+      length = digits.length;
+    }
+
+    if (start === -1) {
+      return isStandaloneContextCase(caseItem) ? ["left", "right"] : [];
+    }
+
+    const end = start + length;
+    const words = [];
+    const pattern = /[A-Za-zА-Яа-яЁё]{4,}/g;
+    let match;
+
+    while ((match = pattern.exec(text)) !== null) {
+      words.push({ start: match.index, end: match.index + match[0].length });
+    }
+
+    const directions = [];
+
+    if (!words.some((word) => word.end <= start)) {
+      directions.push("left");
+    }
+
+    if (!words.some((word) => word.start >= end)) {
+      directions.push("right");
+    }
+
+    return directions;
+  }
+
+  function createNeighborContext(caseItem, neighbors) {
     const item = document.createElement("div");
-    item.className = neighbor.usedAsEvidence ? "neighbor-item is-evidence" : "neighbor-item";
+    const usedAsEvidence = neighbors.some((neighbor) => neighbor.usedAsEvidence);
+    item.className = usedAsEvidence ? "neighbor-item is-evidence" : "neighbor-item";
     const label = document.createElement("span");
     label.className = "detail-label";
-    label.textContent = neighbor.usedAsEvidence ? "Контекст решения" : "Соседний слой для проверки";
+    label.textContent = usedAsEvidence ? "Контекст решения" : "Соседние слои для проверки";
     const text = document.createElement("p");
-    const parts = neighbor.direction === "left"
-      ? [neighbor.text, caseItem.number_before]
-      : [caseItem.number_before, neighbor.text];
-    appendTextWithSpaces(text, parts[0]);
-    text.append(document.createTextNode(" · "));
-    appendTextWithSpaces(text, parts[1]);
+    const direction = neighbors[0]?.direction;
+    const neighborTexts = neighbors.map((neighbor) => neighbor.text);
+    const parts = direction === "left"
+      ? [...neighborTexts].reverse().concat(caseItem.number_before)
+      : [caseItem.number_before].concat(neighborTexts);
+    parts.forEach((part, index) => {
+      if (index > 0) {
+        text.append(document.createTextNode(" · "));
+      }
+
+      appendTextWithSpaces(text, part);
+    });
     item.append(label, text);
     return item;
   }
 
-  function createMissingNeighborContext() {
+  function createMissingNeighborContext(direction, schemaVersion) {
     const item = document.createElement("div");
     item.className = "neighbor-item is-missing";
     const label = document.createElement("span");
     label.className = "detail-label";
-    label.textContent = "Контекст отдельного слоя";
+    label.textContent = direction === "left"
+      ? "Контекст перед числом"
+      : direction === "right"
+        ? "Контекст после числа"
+        : "Контекст отдельного слоя";
     const text = document.createElement("p");
-    text.textContent = "Соседний текстовый слой не найден";
+    text.textContent = schemaVersion >= 5
+      ? "Соседний текстовый слой не найден"
+      : "Соседний текстовый слой не был записан этой сборкой";
     item.append(label, text);
     return item;
   }

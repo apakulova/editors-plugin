@@ -1,9 +1,9 @@
 {
   "ok": true,
   "summary": {
-    "all": 7,
+    "all": 9,
     "changed": 3,
-    "skipped_policy": 3,
+    "skipped_policy": 5,
     "already_correct": 1,
     "review": 0
   },
@@ -27,8 +27,51 @@
     "to": "2026-09-18",
     "page": 1,
     "limit": 50,
-    "total": 7,
+    "total": 9,
     "items": [
+      {
+        "id": "demo-two-sided-context",
+        "captured_at": "2026-08-27T14:45:00.000Z",
+        "run_id": "demo-run-two-sided-context",
+        "plugin_release": "2026-08-27",
+        "diagnostics_schema_version": 5,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "skipped_policy",
+        "number_kind": "Число без количественного признака",
+        "reason": "Признак количества не найден",
+        "number_before": "+0",
+        "number_after": "+0",
+        "before_text": "+0",
+        "after_text": "+0",
+        "layer_mode": "multiple",
+        "neighbors": [
+          { "direction": "left", "role": "context", "text": "1", "usedAsEvidence": false },
+          { "direction": "left", "role": "context", "text": "Баллы всего", "usedAsEvidence": false },
+          { "direction": "right", "role": "context", "text": "2", "usedAsEvidence": false },
+          { "direction": "right", "role": "context", "text": "изменение за день", "usedAsEvidence": false }
+        ],
+        "rule_codes": []
+      },
+      {
+        "id": "demo-trailing-context",
+        "captured_at": "2026-08-27T14:42:00.000Z",
+        "run_id": "demo-run-trailing-context",
+        "plugin_release": "2026-08-27",
+        "diagnostics_schema_version": 5,
+        "number_rules_version": "numbers-2026-08-25-v1",
+        "status": "skipped_policy",
+        "number_kind": "Число без количественного признака",
+        "reason": "Признак количества не найден",
+        "number_before": "5",
+        "number_after": "5",
+        "before_text": "Каждый раз 5",
+        "after_text": "Каждый раз 5",
+        "layer_mode": "multiple",
+        "neighbors": [
+          { "direction": "right", "role": "context", "text": "дней подряд", "usedAsEvidence": false }
+        ],
+        "rule_codes": []
+      },
       {
         "id": "demo-nearby-change",
         "captured_at": "2026-08-26T15:35:00.000Z",
@@ -77,12 +120,14 @@
         "status": "skipped_policy",
         "number_kind": "Число без количественного признака",
         "reason": "Признак количества не найден",
-        "number_before": "29143",
-        "number_after": "29143",
-        "before_text": "29143",
-        "after_text": "29143",
-        "layer_mode": "single",
-        "neighbors": [],
+        "number_before": "+0",
+        "number_after": "+0",
+        "before_text": "+0",
+        "after_text": "+0",
+        "layer_mode": "multiple",
+        "neighbors": [
+          { "direction": "left", "role": "context", "text": "1", "usedAsEvidence": false }
+        ],
         "rule_codes": []
       },
       {

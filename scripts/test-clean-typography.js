@@ -461,6 +461,69 @@ assert.strictEqual(idRowNeighbors.length, 1);
 assert.strictEqual(idRowNeighbors[0].direction, "left");
 assert.strictEqual(idRowNeighbors[0].text, "ID");
 
+const twoSidedAutoLayoutNeighbors = createDiagnosticNumberContextNeighbors(
+  [
+    createDiagnosticTextNode("left-anchor", "Баллы всего"),
+    createDiagnosticTextNode("left-intermediate-number", "1"),
+    createDiagnosticTextNode("delta-value", "+0"),
+    createDiagnosticTextNode("right-anchor", "изменение за день"),
+  ],
+  2
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(twoSidedAutoLayoutNeighbors.map((neighbor) => [neighbor.direction, neighbor.text]))),
+  [
+    ["left", "1"],
+    ["left", "Баллы всего"],
+    ["right", "изменение за день"],
+  ]
+);
+const twoSidedAutoLayoutCases = createNumberDiagnosticCases(
+  "+0",
+  "+0",
+  {
+    diagnosticNeighbors: twoSidedAutoLayoutNeighbors,
+    evidenceAfter: null,
+    evidenceBefore: null,
+    protectedAsPhoneByNeighbor: false,
+    protectedByNeighbor: false,
+    standalonePhonePrefix: false,
+    snapshotKey: "test-two-sided-auto-layout-context",
+  }
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(twoSidedAutoLayoutCases[0].neighbors.map((neighbor) => [neighbor.direction, neighbor.text]))),
+  [
+    ["left", "1"],
+    ["left", "Баллы всего"],
+    ["right", "изменение за день"],
+  ]
+);
+assert.strictEqual(twoSidedAutoLayoutCases[0].layerMode, "multiple");
+
+const numericOnlyAutoLayoutNeighbors = createDiagnosticNumberContextNeighbors(
+  [
+    createDiagnosticTextNode("numeric-only-neighbor", "1"),
+    createDiagnosticTextNode("numeric-only-value", "+0"),
+  ],
+  1
+);
+const numericOnlyAutoLayoutCases = createNumberDiagnosticCases(
+  "+0",
+  "+0",
+  {
+    diagnosticNeighbors: numericOnlyAutoLayoutNeighbors,
+    evidenceAfter: null,
+    evidenceBefore: null,
+    protectedAsPhoneByNeighbor: false,
+    protectedByNeighbor: false,
+    standalonePhonePrefix: false,
+    snapshotKey: "test-numeric-only-auto-layout-context",
+  }
+);
+assert.strictEqual(numericOnlyAutoLayoutCases[0].neighbors.length, 0);
+assert.strictEqual(numericOnlyAutoLayoutCases[0].layerMode, "single");
+
 const diagnosticRoot = {
   id: "diagnostic-root",
   layoutMode: "VERTICAL",
@@ -606,6 +669,92 @@ const selectedTextOnlyContext = buildNumberDiagnosticLayerContexts(
   [genericContextValue]
 ).get(genericContextValue.id);
 assert.strictEqual(selectedTextOnlyContext, undefined);
+
+const trailingNumberText = createProcessTextNodeMock(
+  "diagnostic-trailing-number",
+  "Каждый раз 5",
+  { height: 20, width: 100, x: 40, y: 220 },
+  null
+);
+const trailingNumberRightContext = createProcessTextNodeMock(
+  "diagnostic-trailing-number-right-context",
+  "дней подряд",
+  { height: 20, width: 90, x: 160, y: 220 },
+  null
+);
+const trailingNumberUnusedLeftContext = createProcessTextNodeMock(
+  "diagnostic-trailing-number-unused-left-context",
+  "Чужой текст",
+  { height: 20, width: 100, x: -80, y: 220 },
+  null
+);
+trailingNumberText.parent = {
+  ...accountValueWrapper,
+  children: [trailingNumberText],
+  id: "diagnostic-trailing-number-wrapper",
+};
+trailingNumberRightContext.parent = {
+  ...accountLabelWrapper,
+  children: [trailingNumberRightContext],
+  id: "diagnostic-trailing-number-right-context-wrapper",
+};
+trailingNumberUnusedLeftContext.parent = {
+  ...accountLabelWrapper,
+  children: [trailingNumberUnusedLeftContext],
+  id: "diagnostic-trailing-number-unused-left-context-wrapper",
+};
+const trailingNumberContext = buildNumberDiagnosticLayerContexts(
+  [trailingNumberText],
+  [trailingNumberUnusedLeftContext, trailingNumberText, trailingNumberRightContext]
+).get(trailingNumberText.id);
+assert(trailingNumberContext);
+assert.strictEqual(trailingNumberContext.diagnosticNeighbors.length, 1);
+assert.strictEqual(trailingNumberContext.diagnosticNeighbors[0].direction, "right");
+assert.strictEqual(trailingNumberContext.diagnosticNeighbors[0].text, "дней подряд");
+const trailingNumberCases = createNumberDiagnosticCases(
+  trailingNumberText.characters,
+  trailingNumberText.characters,
+  trailingNumberContext
+);
+assert.strictEqual(trailingNumberCases.length, 1);
+assert.strictEqual(trailingNumberCases[0].beforeText, "Каждый раз 5");
+assert.strictEqual(trailingNumberCases[0].neighbors.length, 1);
+assert.strictEqual(trailingNumberCases[0].neighbors[0].text, "дней подряд");
+assert.strictEqual(trailingNumberCases[0].layerMode, "multiple");
+
+const twoSidedSpatialNodes = [
+  createProcessTextNodeMock("spatial-left-anchor", "Баллы всего", { height: 20, width: 100, x: 40, y: 260 }, null),
+  createProcessTextNodeMock("spatial-left-number", "1", { height: 20, width: 10, x: 170, y: 260 }, null),
+  createProcessTextNodeMock("spatial-delta", "+0", { height: 20, width: 30, x: 200, y: 260 }, null),
+  createProcessTextNodeMock("spatial-right-number", "2", { height: 20, width: 10, x: 250, y: 260 }, null),
+  createProcessTextNodeMock("spatial-right-anchor", "изменение за день", { height: 20, width: 130, x: 290, y: 260 }, null),
+];
+twoSidedSpatialNodes.forEach((node) => {
+  node.parent = {
+    ...accountLabelWrapper,
+    children: [node],
+    id: `${node.id}-wrapper`,
+  };
+});
+const twoSidedSpatialContext = buildNumberDiagnosticLayerContexts(
+  [twoSidedSpatialNodes[2]],
+  twoSidedSpatialNodes
+).get(twoSidedSpatialNodes[2].id);
+assert(twoSidedSpatialContext);
+const twoSidedSpatialCases = createNumberDiagnosticCases(
+  twoSidedSpatialNodes[2].characters,
+  twoSidedSpatialNodes[2].characters,
+  twoSidedSpatialContext
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(twoSidedSpatialCases[0].neighbors.map((neighbor) => [neighbor.direction, neighbor.text]))),
+  [
+    ["left", "1"],
+    ["left", "Баллы всего"],
+    ["right", "2"],
+    ["right", "изменение за день"],
+  ]
+);
 
 const legacyQueuedEvent = {
   attempts: 1,
