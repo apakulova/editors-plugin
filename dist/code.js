@@ -13,6 +13,7 @@ const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
 const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
+const COMMAND_OPEN_RELEASE_ANNOUNCEMENT = "open-release-announcement";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
 const NUMBER_DIAGNOSTICS_CAPTURE_PATH = "/api/number-diagnostics";
@@ -197,6 +198,10 @@ let numberDiagnosticsQueueOperation = Promise.resolve();
 let typographRunPromise = null;
 async function run() {
     try {
+        if (figma.command === COMMAND_OPEN_RELEASE_ANNOUNCEMENT) {
+            openReleaseAnnouncementUI();
+            return;
+        }
         if (figma.command === COMMAND_OPEN_SETTINGS) {
             openSettingsUI();
             return;
@@ -211,6 +216,10 @@ async function run() {
             report: createStartupErrorReport("quick_run"),
         }, "quick_run", true);
     }
+}
+function openReleaseAnnouncementUI() {
+    showPluginUI();
+    figma.ui.postMessage({ type: "show-release-announcement" });
 }
 function openSettingsUI() {
     try {

@@ -1,6 +1,7 @@
 const assert = require("assert");
 const fs = require("fs");
 const vm = require("vm");
+const releaseAnnouncements = require("../src/release-announcements.js");
 
 const NBSP = "\u00A0";
 const NB_HYPHEN = "\u2011";
@@ -41,6 +42,65 @@ assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="re
 assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="report-critical\.png"/, "The critical illustration must be bundled into the UI");
 assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="startup-error\.png"/, "The startup illustration must be bundled into the UI");
 assert.match(uiSource, /src: url\("data:font\/woff2;base64,[^"]+"\)/, "The text-layer icon font must be bundled into the UI");
+
+const releaseAnnouncementMenuIndex = manifest.menu.findIndex((item) => item.command === "open-release-announcement");
+assert.strictEqual(
+  compiledSource.includes('figma.ui.postMessage({ type: "show-release-announcement" })'),
+  true,
+  "The release announcement command must open its screen"
+);
+assert.strictEqual(uiSource.includes('id="releaseAnnouncementShell"'), true, "The release announcement screen must be bundled into the UI");
+assert.strictEqual(
+  uiSource.includes('if (!releaseAnnouncementShell.querySelector(".release-announcement"))'),
+  true,
+  "A stale recent announcement command must fall back to the typograph screen"
+);
+
+if (releaseAnnouncements.activeId === null) {
+  assert.strictEqual(releaseAnnouncementMenuIndex, -1, "An inactive release announcement must be absent from the plugin menu");
+  assert.strictEqual(
+    uiSource.includes('<article class="release-announcement">'),
+    false,
+    "An inactive release announcement must not be bundled into the UI"
+  );
+  assert.notDeepStrictEqual(manifest.menu[manifest.menu.length - 1], { separator: true }, "An inactive announcement must not leave a trailing separator");
+} else {
+  const activeReleaseAnnouncement = releaseAnnouncements.items[releaseAnnouncements.activeId];
+
+  assert.ok(activeReleaseAnnouncement, "The active release announcement id must point to an archived item");
+  assert.notStrictEqual(releaseAnnouncementMenuIndex, -1, "The active release announcement must be present in the plugin menu");
+  assert.deepStrictEqual(
+    manifest.menu[releaseAnnouncementMenuIndex - 1],
+    { separator: true },
+    "The release announcement must be separated from the regular plugin commands"
+  );
+  assert.strictEqual(
+    manifest.menu[releaseAnnouncementMenuIndex].name,
+    activeReleaseAnnouncement.menuName,
+    "The release announcement menu text must match its source"
+  );
+  assert.strictEqual(uiSource.includes(activeReleaseAnnouncement.titleHtml), true, "The release announcement title must match its source");
+
+  activeReleaseAnnouncement.paragraphsHtml.forEach((paragraph) => {
+    assert.strictEqual(uiSource.includes(paragraph), true, "Every release announcement paragraph must match its source");
+  });
+
+  assert.match(
+    uiSource,
+    new RegExp(`src="data:image\\/png;base64,[^"]+" data-inline-asset="${activeReleaseAnnouncement.imageAsset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`),
+    "The release announcement illustration must be bundled into the UI"
+  );
+
+  activeReleaseAnnouncement.actions.forEach((action) => {
+    assert.strictEqual(
+      uiSource.includes(
+        `class="${action.appearance}" type="button" data-announcement-action="${action.action}">${action.labelHtml}</button>`
+      ),
+      true,
+      "Every release announcement action must match its source"
+    );
+  });
+}
 
 const source = compiledSource.replace(
   "void run();",

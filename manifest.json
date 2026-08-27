@@ -4,14 +4,31 @@
   "api": "1.0.0",
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["https://chistovik-plugin.vercel.app"],
+    "allowedDomains": [
+      "https://chistovik-plugin.vercel.app"
+    ],
     "reasoning": "Плагин отправляет техническую аналитику, а до 18 сентября 2026 года — диагностические фрагменты с числами до и после обработки для внутреннего бета-теста."
   },
   "main": "dist/code.js",
   "ui": "src/ui.html",
   "menu": [
-    { "name": "Запустить типограф", "command": "run-chistovik" },
-    { "name": "⭐ Продвинутые фичи", "command": "open-settings" }
+    {
+      "name": "Запустить типограф",
+      "command": "run-chistovik"
+    },
+    {
+      "name": "⭐ Продвинутые фичи",
+      "command": "open-settings"
+    },
+    {
+      "separator": true
+    },
+    {
+      "name": "⚠️ Не все числа делятся на разряды →",
+      "command": "open-release-announcement"
+    }
   ],
-  "editorType": ["figma"]
+  "editorType": [
+    "figma"
+  ]
 }

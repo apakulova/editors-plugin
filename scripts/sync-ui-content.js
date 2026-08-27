@@ -1,9 +1,67 @@
 const fs = require("fs");
 const path = require("path");
 const content = require("../src/ui-content.js");
+const releaseAnnouncements = require("../src/release-announcements.js");
 
 const rootDir = path.resolve(__dirname, "..");
+const manifestPath = path.join(rootDir, "manifest.json");
 const uiPath = path.join(rootDir, "src", "ui.html");
+const releaseAnnouncementCommand = "open-release-announcement";
+
+function getActiveReleaseAnnouncement() {
+  if (releaseAnnouncements.activeId === null) {
+    return null;
+  }
+
+  const announcement = releaseAnnouncements.items[releaseAnnouncements.activeId];
+
+  if (!announcement) {
+    throw new Error(`Не найдено активное сообщение выпуска: ${releaseAnnouncements.activeId}`);
+  }
+
+  if (!Array.isArray(announcement.paragraphsHtml) || announcement.paragraphsHtml.length === 0) {
+    throw new Error("У сообщения выпуска должен быть хотя бы один абзац");
+  }
+
+  if (!Array.isArray(announcement.actions) || announcement.actions.length < 1 || announcement.actions.length > 2) {
+    throw new Error("У сообщения выпуска должна быть одна или две кнопки");
+  }
+
+  if (!announcement.actions.some((action) => action.action === "back-to-typograph")) {
+    throw new Error("У сообщения выпуска должна быть кнопка возврата к типографу");
+  }
+
+  const supportedActions = new Set(["back-to-typograph", "show-rules"]);
+  const supportedAppearances = new Set(["primary", "secondary"]);
+
+  announcement.actions.forEach((action) => {
+    if (!supportedActions.has(action.action)) {
+      throw new Error(`Неизвестное действие кнопки сообщения выпуска: ${action.action}`);
+    }
+
+    if (!supportedAppearances.has(action.appearance)) {
+      throw new Error(`Неизвестный вид кнопки сообщения выпуска: ${action.appearance}`);
+    }
+  });
+
+  if (announcement.actions.length === 2) {
+    const appearances = new Set(announcement.actions.map((action) => action.appearance));
+
+    if (!appearances.has("primary") || !appearances.has("secondary")) {
+      throw new Error("Две кнопки сообщения выпуска должны состоять из основной и вторичной");
+    }
+  }
+
+  const imagePath = path.join(rootDir, "assets", announcement.imageAsset);
+
+  if (!fs.existsSync(imagePath)) {
+    throw new Error(`Не найдена иллюстрация сообщения выпуска: ${announcement.imageAsset}`);
+  }
+
+  return announcement;
+}
+
+const activeReleaseAnnouncement = getActiveReleaseAnnouncement();
 
 function createDataUrl(filePath) {
   const extension = path.extname(filePath).toLowerCase();
@@ -158,6 +216,63 @@ function renderActions() {
 </button>`;
 }
 
+function renderReleaseAnnouncement() {
+  if (activeReleaseAnnouncement === null) {
+    return '<span hidden></span>';
+  }
+
+  const paragraphs = activeReleaseAnnouncement.paragraphsHtml
+    .map((paragraph) => `<p>${paragraph}</p>`)
+    .join("\n");
+  const actions = activeReleaseAnnouncement.actions
+    .map(
+      (action) =>
+        `<button class="${action.appearance}" type="button" data-announcement-action="${action.action}">${action.labelHtml}</button>`
+    )
+    .join("\n");
+
+  return `<article class="release-announcement">
+  <div class="release-announcement-content">
+    <img class="release-announcement-illustration" src="" data-inline-asset="${activeReleaseAnnouncement.imageAsset}" alt="" />
+    <h1 class="release-announcement-title">${activeReleaseAnnouncement.titleHtml}</h1>
+    <div class="release-announcement-summary">
+${indent(paragraphs, 6)}
+    </div>
+  </div>
+  <footer class="release-announcement-actions">
+${indent(actions, 4)}
+  </footer>
+</article>`;
+}
+
+function syncManifestMenu() {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const menu = [];
+
+  for (const item of manifest.menu || []) {
+    if (item.command === releaseAnnouncementCommand) {
+      if (menu.length > 0 && menu[menu.length - 1].separator === true) {
+        menu.pop();
+      }
+
+      continue;
+    }
+
+    menu.push(item);
+  }
+
+  if (activeReleaseAnnouncement !== null) {
+    menu.push({ separator: true });
+    menu.push({
+      name: activeReleaseAnnouncement.menuName,
+      command: releaseAnnouncementCommand,
+    });
+  }
+
+  manifest.menu = menu;
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 function replaceBlock(html, key, block) {
   const start = `<!-- chistovik-content:${key}:start -->`;
   const end = `<!-- chistovik-content:${key}:end -->`;
@@ -182,6 +297,7 @@ function syncUIContent() {
   html = replaceBlock(html, "rules", renderRules());
   html = replaceBlock(html, "about", renderAbout());
   html = replaceBlock(html, "actions", renderActions());
+  html = replaceBlock(html, "release-announcement", renderReleaseAnnouncement());
   html = html.replace(
     /(<img class="report-status-icon" id="reportStatusIcon") src="[^"]*"(?: data-inline-asset="report-warning\.png")?/,
     '$1 src=""'
@@ -189,6 +305,7 @@ function syncUIContent() {
   html = inlineUIAssets(html);
 
   fs.writeFileSync(uiPath, html);
+  syncManifestMenu();
 }
 
 syncUIContent();

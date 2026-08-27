@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Превью сообщения — Чистовик</title>
+    <style>
+      :root {
+        --accent: #065c5b;
+        --accent-hover: #054a49;
+        --canvas: #eef0f2;
+        --surface: #ffffff;
+        --surface-active: #f0f4f3;
+        --border: #dbdbd9;
+        --border-accent: rgba(6, 92, 91, 0.18);
+        --text: #141414;
+        --text-secondary: #757575;
+        --shadow: 0 22px 60px rgba(20, 20, 20, 0.16);
+        color-scheme: light;
+        font-family: Manrope, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        background:
+          radial-gradient(circle at 50% -10%, rgba(6, 92, 91, 0.09), transparent 34%),
+          var(--canvas);
+        color: var(--text);
+        margin: 0;
+        min-height: 100vh;
+        padding: 32px 20px 48px;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .preview {
+        display: grid;
+        gap: 14px;
+        justify-items: center;
+        margin: 0 auto;
+        max-width: 760px;
+      }
+
+      .preview-note {
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 16px;
+        margin: 0;
+        text-align: center;
+      }
+
+      .window-frame {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        width: 360px;
+      }
+
+      .window-bar {
+        align-items: center;
+        border-bottom: 1px solid var(--border);
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 18px minmax(0, 1fr) 20px;
+        height: 40px;
+        padding: 0 16px;
+      }
+
+      .window-logo {
+        border-radius: 4px;
+        display: block;
+        height: 18px;
+        width: 18px;
+      }
+
+      .window-name {
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 16px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .window-close {
+        height: 20px;
+        position: relative;
+        width: 20px;
+      }
+
+      .window-close::before,
+      .window-close::after {
+        background: var(--text);
+        content: "";
+        height: 1.5px;
+        left: 2px;
+        position: absolute;
+        top: 9px;
+        width: 16px;
+      }
+
+      .window-close::before {
+        transform: rotate(45deg);
+      }
+
+      .window-close::after {
+        transform: rotate(-45deg);
+      }
+
+      .window {
+        background: var(--surface);
+        height: 372px;
+        overflow: hidden;
+      }
+
+      .announcement {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 20px 16px 16px;
+      }
+
+      .announcement-content {
+        align-items: center;
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        justify-content: center;
+        min-height: 0;
+        text-align: center;
+      }
+
+      .announcement-illustration {
+        display: block;
+        height: auto;
+        margin-bottom: 12px;
+        width: 140px;
+      }
+
+      .announcement-title {
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 20px;
+        margin: 0 0 6px;
+        max-width: 300px;
+      }
+
+      .announcement-summary {
+        color: var(--text-secondary);
+        display: grid;
+        font-size: 12px;
+        gap: 8px;
+        line-height: 16px;
+        margin: 0;
+        max-width: 304px;
+      }
+
+      .announcement-summary p {
+        margin: 0;
+      }
+
+      .announcement-summary strong {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .announcement-actions {
+        display: grid;
+        flex: 0 0 auto;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .button {
+        appearance: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        height: 40px;
+        line-height: 18px;
+        padding: 0 14px;
+        width: 100%;
+      }
+
+      .button:focus-visible {
+        outline: 2px solid rgba(6, 92, 91, 0.35);
+        outline-offset: 2px;
+      }
+
+      .button-primary {
+        background: var(--accent);
+        border: 0;
+        color: #ffffff;
+      }
+
+      .button-primary:hover {
+        background: var(--accent-hover);
+      }
+
+      .button-secondary {
+        background: var(--surface-active);
+        border: 1px solid var(--border-accent);
+        color: var(--text);
+      }
+
+      .button-secondary:hover {
+        border-color: var(--accent);
+      }
+
+      @media (max-width: 420px) {
+        body {
+          padding: 20px 12px 36px;
+        }
+
+        .window-frame {
+          width: min(100%, 360px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="preview">
+      <p class="preview-note">Новая иллюстрация · экран сообщения с&nbsp;одной кнопкой</p>
+
+      <div class="window-frame">
+        <header class="window-bar" aria-label="Шапка окна Figma">
+          <img class="window-logo" src="../assets/plugin-icon.svg" alt="" />
+          <div class="window-name">Чистовик</div>
+          <div class="window-close" aria-hidden="true"></div>
+        </header>
+
+        <section class="window" aria-label="Сообщение плагина Чистовик">
+          <article class="announcement">
+            <div class="announcement-content">
+              <img class="announcement-illustration" src="../assets/announcements/number-grouping-v3.png" alt="" />
+              <h1 class="announcement-title">Чистовик больше не&nbsp;делит все числа по&nbsp;разрядам</h1>
+              <div class="announcement-summary">
+                <p>Пробел теперь ставится только у&nbsp;чисел рядом с&nbsp;валютой, процентом или единицами измерения. В&nbsp;остальных случаях&nbsp;— решение за&nbsp;редактором.</p>
+                <p>Здесь поменяется:&nbsp;<strong>10000&nbsp;₽</strong>&nbsp;→&nbsp;<strong>10&nbsp;000&nbsp;₽</strong><br />Тут без правок: <strong>Разыграем 20000&nbsp;пылесосов</strong></p>
+              </div>
+            </div>
+
+            <footer class="announcement-actions">
+              <button class="button button-primary" type="button">Вернуться к&nbsp;типографу</button>
+            </footer>
+          </article>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
