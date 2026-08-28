@@ -17,7 +17,11 @@ const {
 } = require("./lib/number-diagnostics-config");
 const { createCsv, formatDecisionContext } = require("../api/number-diagnostics-export");
 const { formatNumberDiagnosticCasesLine } = require("./lib/analytics-report");
-const { createCaseFilters, normalizeSeenAfter } = require("./lib/number-diagnostics-store");
+const {
+  createCaseFilters,
+  getSeenAfterThreshold,
+  normalizeSeenAfter,
+} = require("./lib/number-diagnostics-store");
 
 const authEnv = {
   NUMBER_DIAGNOSTICS_PASSWORD: "test-password-for-report",
@@ -39,10 +43,25 @@ assert.strictEqual(isSessionAuthorized(request, authEnv, new Date(now.getTime() 
 assert.strictEqual(isNumberDiagnosticsCollectionOpen(new Date("2026-09-18T20:59:59.999Z")), true);
 assert.strictEqual(isNumberDiagnosticsCollectionOpen(NUMBER_DIAGNOSTICS_END_AT), false);
 assert.strictEqual(normalizeSeenAfter("2026-08-27T12:34:56.789Z"), "2026-08-27T12:34:56.789Z");
+assert.strictEqual(
+  normalizeSeenAfter("2026-08-27T12:34:56.789123Z"),
+  "2026-08-27T12:34:56.789123Z",
+  "Visit watermark must preserve PostgreSQL microseconds"
+);
 assert.strictEqual(normalizeSeenAfter("not-a-date"), null);
+assert.strictEqual(
+  getSeenAfterThreshold("2026-08-27T12:34:56.789Z"),
+  "2026-08-27T12:34:56.789999Z",
+  "Legacy millisecond watermark must exclude the already seen database row"
+);
+assert.strictEqual(
+  getSeenAfterThreshold("2026-08-27T12:34:56.789123Z"),
+  "2026-08-27T12:34:56.789123Z",
+  "Precise watermark must remain unchanged"
+);
 const newCasesFilters = createCaseFilters({ newOnly: "1", seenAfter: "2026-08-27T12:34:56.789Z" });
 assert(newCasesFilters.conditions.some((condition) => condition.includes("created_at >")));
-assert(newCasesFilters.params.includes("2026-08-27T12:34:56.789Z"));
+assert(newCasesFilters.params.includes("2026-08-27T12:34:56.789999Z"));
 const firstVisitFilters = createCaseFilters({ newOnly: "1" });
 assert(firstVisitFilters.conditions.includes("FALSE"));
 const telegramLine = formatNumberDiagnosticCasesLine(
@@ -146,7 +165,9 @@ assert(pageScript.includes("Все случаи с числами"));
 assert(pageScript.includes("Новых с прошлого визита"));
 assert(pageScript.includes("chistovik-number-diagnostics-visit-watermark"));
 assert(pageScript.includes('params.set("newOnly", "1")'));
+assert.strictEqual(pageScript.includes("date.toISOString()"), false);
 assert(reportApi.includes("getNumberDiagnosticVisitSummary"));
+assert(fs.readFileSync("scripts/lib/number-diagnostics-store.js", "utf8").includes("SS.US"));
 assert(page.includes("Выгрузить все случаи"));
 assert(page.includes("Показать неразрывные пробелы"));
 assert(page.includes('id="spacesToggle" type="checkbox" checked'));

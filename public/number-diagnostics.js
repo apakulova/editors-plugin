@@ -51,7 +51,7 @@
     try {
       const value = window.localStorage.getItem(VISIT_WATERMARK_KEY);
       const date = value ? new Date(value) : null;
-      return date !== null && Number.isFinite(date.getTime()) ? date.toISOString() : null;
+      return date !== null && Number.isFinite(date.getTime()) ? value : null;
     } catch {
       return null;
     }
@@ -62,7 +62,7 @@
       const date = value ? new Date(value) : null;
 
       if (date !== null && Number.isFinite(date.getTime())) {
-        window.localStorage.setItem(VISIT_WATERMARK_KEY, date.toISOString());
+        window.localStorage.setItem(VISIT_WATERMARK_KEY, value);
       }
     } catch {
       // Без локального хранилища отчёт продолжает работать, но не запоминает визит.

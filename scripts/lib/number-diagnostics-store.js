@@ -123,8 +123,22 @@ function normalizeSeenAfter(value) {
     return null;
   }
 
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  const normalized = value.trim();
+  const date = new Date(normalized);
+  return Number.isFinite(date.getTime()) ? normalized : null;
+}
+
+function getSeenAfterThreshold(value) {
+  const normalized = normalizeSeenAfter(value);
+
+  if (normalized === null) {
+    return null;
+  }
+
+  return normalized.replace(
+    /(\.\d{3})(Z|[+-]\d{2}:\d{2})$/,
+    (_match, milliseconds, zone) => `${milliseconds}999${zone}`
+  );
 }
 
 function createCaseFilters(query = {}) {
@@ -158,7 +172,7 @@ function createCaseFilters(query = {}) {
     conditions.push(`(before_text ILIKE $${params.length} OR after_text ILIKE $${params.length} OR number_before ILIKE $${params.length} OR number_after ILIKE $${params.length})`);
   }
 
-  const seenAfter = normalizeSeenAfter(query.seenAfter);
+  const seenAfter = getSeenAfterThreshold(query.seenAfter);
 
   if (query.newOnly === "1") {
     if (seenAfter === null) {
@@ -174,11 +188,14 @@ function createCaseFilters(query = {}) {
 
 async function getNumberDiagnosticVisitSummary(query = {}, env = process.env) {
   const sql = await ensureNumberDiagnosticsSchema(env);
-  const seenAfter = normalizeSeenAfter(query.seenAfter);
+  const seenAfter = getSeenAfterThreshold(query.seenAfter);
   const rows = await sql.query(
     `
       SELECT
-        max(created_at) AS watermark,
+        to_char(
+          max(created_at) AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+        ) AS watermark,
         count(*) FILTER (
           WHERE $1::timestamptz IS NOT NULL AND created_at > $1::timestamptz
         )::int AS new_count
@@ -186,13 +203,11 @@ async function getNumberDiagnosticVisitSummary(query = {}, env = process.env) {
     `,
     [seenAfter]
   );
-  const watermarkDate = rows[0]?.watermark ? new Date(rows[0].watermark) : null;
+  const watermark = normalizeSeenAfter(rows[0]?.watermark);
 
   return {
     newCount: seenAfter === null ? 0 : Number(rows[0]?.new_count) || 0,
-    watermark: watermarkDate !== null && Number.isFinite(watermarkDate.getTime())
-      ? watermarkDate.toISOString()
-      : null,
+    watermark,
   };
 }
 
@@ -302,6 +317,7 @@ module.exports = {
   getNumberDiagnosticFilterOptions,
   getNumberDiagnosticSummary,
   getNumberDiagnosticVisitSummary,
+  getSeenAfterThreshold,
   insertNumberDiagnosticCases,
   normalizeSeenAfter,
 };
