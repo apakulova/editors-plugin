@@ -5,10 +5,12 @@
     all: "Все случаи с числами",
     already_correct: "Уже было правильно",
     changed: "Изменено типографом",
+    new: "Новых с прошлого визита",
     review: "Требует проверки",
     skipped_policy: "Оставлено по правилу",
   };
-  const STATUS_ORDER = ["all", "changed", "skipped_policy", "already_correct", "review"];
+  const STATUS_ORDER = ["new", "all", "changed", "skipped_policy", "already_correct", "review"];
+  const VISIT_WATERMARK_KEY = "chistovik-number-diagnostics-visit-watermark";
   const RULE_LABELS = {
     number_decimal_comma: "Десятичная запятая",
     number_context_change: "Текст рядом с числом",
@@ -32,8 +34,9 @@
     items: [],
     limit: 50,
     page: 1,
-    summary: { all: 0, already_correct: 0, changed: 0, review: 0, skipped_policy: 0 },
+    summary: { all: 0, already_correct: 0, changed: 0, new: 0, review: 0, skipped_policy: 0 },
     total: 0,
+    visitBaseline: readVisitWatermark(),
     visibleSpaces: true,
   };
   const elements = {};
@@ -42,6 +45,28 @@
 
   function getElement(id) {
     return document.getElementById(id);
+  }
+
+  function readVisitWatermark() {
+    try {
+      const value = window.localStorage.getItem(VISIT_WATERMARK_KEY);
+      const date = value ? new Date(value) : null;
+      return date !== null && Number.isFinite(date.getTime()) ? date.toISOString() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeVisitWatermark(value) {
+    try {
+      const date = value ? new Date(value) : null;
+
+      if (date !== null && Number.isFinite(date.getTime())) {
+        window.localStorage.setItem(VISIT_WATERMARK_KEY, date.toISOString());
+      }
+    } catch {
+      // Без локального хранилища отчёт продолжает работать, но не запоминает визит.
+    }
   }
 
   function initializeElements() {
@@ -59,10 +84,20 @@
     const params = new URLSearchParams();
 
     Object.entries(filters).forEach(([key, value]) => {
+      if (key === "status" && value === "new") {
+        params.set("newOnly", "1");
+        return;
+      }
+
       if (value) {
         params.set(key, value);
       }
     });
+
+    if (state.visitBaseline) {
+      params.set("seenAfter", state.visitBaseline);
+    }
+
     params.set("page", String(page));
     params.set("limit", String(state.limit));
     return params;
@@ -152,6 +187,17 @@
     const response = await fetch("/number-diagnostics-demo.json", { cache: "no-store" });
     const payload = await response.json();
     const allItems = payload.cases.items;
+    const latestCapturedAt = allItems.reduce((latest, item) => {
+      const capturedAt = new Date(item.captured_at).getTime();
+      return Number.isFinite(capturedAt) ? Math.max(latest, capturedAt) : latest;
+    }, 0);
+    const visitBaselineTime = state.visitBaseline ? new Date(state.visitBaseline).getTime() : null;
+    payload.visit = {
+      newCount: visitBaselineTime === null || !Number.isFinite(visitBaselineTime)
+        ? 0
+        : allItems.filter((item) => new Date(item.captured_at).getTime() > visitBaselineTime).length,
+      watermark: latestCapturedAt > 0 ? new Date(latestCapturedAt).toISOString() : null,
+    };
     const fromTime = new Date(`${state.filters.from}T00:00:00+03:00`).getTime();
     const toTime = new Date(`${state.filters.to}T23:59:59.999+03:00`).getTime();
     const items = allItems.filter((item) => {
@@ -160,10 +206,15 @@
       return (
         capturedAt >= fromTime &&
         capturedAt <= toTime &&
-        (!state.filters.status || item.status === state.filters.status) &&
+        (!state.filters.status || state.filters.status === "new" || item.status === state.filters.status) &&
         (!state.filters.reason || item.reason === state.filters.reason) &&
         (!state.filters.rule || item.rule_codes.includes(state.filters.rule)) &&
         (!state.filters.layerMode || item.layer_mode === state.filters.layerMode) &&
+        (state.filters.status !== "new" || (
+          visitBaselineTime !== null &&
+          Number.isFinite(visitBaselineTime) &&
+          capturedAt > visitBaselineTime
+        )) &&
         (!search || `${item.before_text} ${item.after_text} ${item.number_before} ${item.number_after}`.toLowerCase().includes(search))
       );
     });
@@ -180,9 +231,13 @@
         ? await loadDemoData()
         : await requestJson(`/api/number-diagnostics?${buildQuery(state.filters, state.page)}`, { method: "GET" });
 
-      state.summary = payload.summary;
+      state.summary = {
+        ...payload.summary,
+        new: Number(payload.visit?.newCount) || 0,
+      };
       state.total = payload.cases.total;
       state.items = append ? state.items.concat(payload.cases.items) : payload.cases.items;
+      writeVisitWatermark(payload.visit?.watermark);
       renderSummary();
       renderFilterOptions(payload.filters);
       renderCases();
@@ -208,7 +263,9 @@
       button.className = "summary-card";
       button.dataset.status = status;
       button.classList.toggle("is-active", (state.filters.status || "all") === status);
-      count.textContent = formatNumber(state.summary[status] || 0);
+      count.textContent = status === "new"
+        ? `+${formatNumber(state.summary.new || 0)} ⭐`
+        : formatNumber(state.summary[status] || 0);
       label.textContent = STATUS_LABELS[status];
       button.append(count, label);
       button.addEventListener("click", () => {

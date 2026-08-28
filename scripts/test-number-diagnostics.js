@@ -17,6 +17,7 @@ const {
 } = require("./lib/number-diagnostics-config");
 const { createCsv, formatDecisionContext } = require("../api/number-diagnostics-export");
 const { formatNumberDiagnosticCasesLine } = require("./lib/analytics-report");
+const { createCaseFilters, normalizeSeenAfter } = require("./lib/number-diagnostics-store");
 
 const authEnv = {
   NUMBER_DIAGNOSTICS_PASSWORD: "test-password-for-report",
@@ -37,6 +38,13 @@ assert.strictEqual(isSessionAuthorized(request, authEnv, new Date(now.getTime() 
 assert.strictEqual(isSessionAuthorized(request, authEnv, new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)), false);
 assert.strictEqual(isNumberDiagnosticsCollectionOpen(new Date("2026-09-18T20:59:59.999Z")), true);
 assert.strictEqual(isNumberDiagnosticsCollectionOpen(NUMBER_DIAGNOSTICS_END_AT), false);
+assert.strictEqual(normalizeSeenAfter("2026-08-27T12:34:56.789Z"), "2026-08-27T12:34:56.789Z");
+assert.strictEqual(normalizeSeenAfter("not-a-date"), null);
+const newCasesFilters = createCaseFilters({ newOnly: "1", seenAfter: "2026-08-27T12:34:56.789Z" });
+assert(newCasesFilters.conditions.some((condition) => condition.includes("created_at >")));
+assert(newCasesFilters.params.includes("2026-08-27T12:34:56.789Z"));
+const firstVisitFilters = createCaseFilters({ newOnly: "1" });
+assert(firstVisitFilters.conditions.includes("FALSE"));
 const telegramLine = formatNumberDiagnosticCasesLine(
   {
     start: new Date("2026-08-25T21:00:00.000Z"),
@@ -129,10 +137,16 @@ assert(csv.includes("Сборка диагностики"));
 
 const page = fs.readFileSync("public/number-diagnostics.html", "utf8");
 const pageScript = fs.readFileSync("public/number-diagnostics.js", "utf8");
+const pageStyles = fs.readFileSync("public/number-diagnostics.css", "utf8");
+const reportApi = fs.readFileSync("api/number-diagnostics.js", "utf8");
 const favicon = fs.readFileSync("public/favicon.png");
 const vercelConfig = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
 assert(page.includes("Все случаи с числами") === false, "Summary labels are rendered from the page script");
 assert(pageScript.includes("Все случаи с числами"));
+assert(pageScript.includes("Новых с прошлого визита"));
+assert(pageScript.includes("chistovik-number-diagnostics-visit-watermark"));
+assert(pageScript.includes('params.set("newOnly", "1")'));
+assert(reportApi.includes("getNumberDiagnosticVisitSummary"));
 assert(page.includes("Выгрузить все случаи"));
 assert(page.includes("Показать неразрывные пробелы"));
 assert(page.includes('id="spacesToggle" type="checkbox" checked'));
@@ -147,7 +161,8 @@ assert(pageScript.includes("isMeaningfulNumberDiagnosticNeighbor"));
 assert(pageScript.includes('neighbor.role !== "separator"'));
 assert.strictEqual(pageScript.includes("getChangedRanges"), true);
 assert.strictEqual(pageScript.includes('document.createElement("mark")'), true);
-assert.strictEqual(fs.readFileSync("public/number-diagnostics.css", "utf8").includes(".comparison-text .nbsp-marker"), true);
+assert.strictEqual(pageStyles.includes(".comparison-text .nbsp-marker"), true);
+assert(pageStyles.includes("repeat(6, minmax(140px, 1fr))"));
 assert.strictEqual(pageScript.includes('number_context_nbsp: "Пробел рядом с числом"'), true);
 assert.strictEqual(pageScript.includes('"Изменён текст рядом"'), true);
 assert.strictEqual(page.includes("space-legend"), false);

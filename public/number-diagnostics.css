@@ -216,7 +216,7 @@ h2 {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  grid-template-columns: repeat(6, minmax(140px, 1fr));
   gap: 10px;
   margin-bottom: 22px;
 }
@@ -270,6 +270,15 @@ h2 {
 
 .summary-card[data-status="review"] {
   background: var(--danger-soft);
+}
+
+.summary-card[data-status="new"] {
+  border-color: #b8ddd5;
+  background: linear-gradient(135deg, #91ceff 0%, #b9f2c8 100%);
+}
+
+.summary-card[data-status="new"]:hover {
+  border-color: #83c5b7;
 }
 
 .toolbar {

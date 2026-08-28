@@ -50,6 +50,7 @@ async function ensureNumberDiagnosticsSchema(env = process.env) {
     await sql.query("ALTER TABLE number_diagnostic_cases ADD COLUMN IF NOT EXISTS diagnostics_schema_version integer NOT NULL DEFAULT 1");
     await sql.query("ALTER TABLE number_diagnostic_cases ADD COLUMN IF NOT EXISTS number_rules_version text NOT NULL DEFAULT 'numbers-2026-08-25-v1'");
     await sql.query("CREATE INDEX IF NOT EXISTS number_diagnostic_cases_captured_at_idx ON number_diagnostic_cases (captured_at DESC)");
+    await sql.query("CREATE INDEX IF NOT EXISTS number_diagnostic_cases_created_at_idx ON number_diagnostic_cases (created_at DESC)");
     await sql.query("CREATE INDEX IF NOT EXISTS number_diagnostic_cases_status_idx ON number_diagnostic_cases (status, captured_at DESC)");
     return sql;
   })().catch((error) => {
@@ -117,6 +118,15 @@ function normalizeDateBoundary(value, fallback) {
   return value;
 }
 
+function normalizeSeenAfter(value) {
+  if (typeof value !== "string" || value.length < 20 || value.length > 40) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 function createCaseFilters(query = {}) {
   const from = normalizeDateBoundary(query.from, "2026-08-25");
   const to = normalizeDateBoundary(query.to, "2026-09-18");
@@ -148,7 +158,42 @@ function createCaseFilters(query = {}) {
     conditions.push(`(before_text ILIKE $${params.length} OR after_text ILIKE $${params.length} OR number_before ILIKE $${params.length} OR number_after ILIKE $${params.length})`);
   }
 
+  const seenAfter = normalizeSeenAfter(query.seenAfter);
+
+  if (query.newOnly === "1") {
+    if (seenAfter === null) {
+      conditions.push("FALSE");
+    } else {
+      params.push(seenAfter);
+      conditions.push(`created_at > $${params.length}::timestamptz`);
+    }
+  }
+
   return { conditions, from, params, to };
+}
+
+async function getNumberDiagnosticVisitSummary(query = {}, env = process.env) {
+  const sql = await ensureNumberDiagnosticsSchema(env);
+  const seenAfter = normalizeSeenAfter(query.seenAfter);
+  const rows = await sql.query(
+    `
+      SELECT
+        max(created_at) AS watermark,
+        count(*) FILTER (
+          WHERE $1::timestamptz IS NOT NULL AND created_at > $1::timestamptz
+        )::int AS new_count
+      FROM number_diagnostic_cases
+    `,
+    [seenAfter]
+  );
+  const watermarkDate = rows[0]?.watermark ? new Date(rows[0].watermark) : null;
+
+  return {
+    newCount: seenAfter === null ? 0 : Number(rows[0]?.new_count) || 0,
+    watermark: watermarkDate !== null && Number.isFinite(watermarkDate.getTime())
+      ? watermarkDate.toISOString()
+      : null,
+  };
 }
 
 async function getNumberDiagnosticSummary(query = {}, env = process.env) {
@@ -256,5 +301,7 @@ module.exports = {
   getNumberDiagnosticCases,
   getNumberDiagnosticFilterOptions,
   getNumberDiagnosticSummary,
+  getNumberDiagnosticVisitSummary,
   insertNumberDiagnosticCases,
+  normalizeSeenAfter,
 };

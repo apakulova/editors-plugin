@@ -8,6 +8,7 @@ const {
   getNumberDiagnosticCases,
   getNumberDiagnosticFilterOptions,
   getNumberDiagnosticSummary,
+  getNumberDiagnosticVisitSummary,
   insertNumberDiagnosticCases,
 } = require("../scripts/lib/number-diagnostics-store");
 
@@ -96,12 +97,13 @@ module.exports = async function handler(request, response) {
 
   try {
     const query = getQuery(request);
-    const [cases, summary, filters] = await Promise.all([
+    const [cases, summary, filters, visit] = await Promise.all([
       getNumberDiagnosticCases(query),
       getNumberDiagnosticSummary(query),
       getNumberDiagnosticFilterOptions(query),
+      getNumberDiagnosticVisitSummary(query),
     ]);
-    sendJson(response, 200, { cases, filters, ok: true, summary });
+    sendJson(response, 200, { cases, filters, ok: true, summary, visit });
   } catch (error) {
     console.error("[number-diagnostics] Read failure", error?.code || error?.name || "unknown");
     sendJson(response, 503, { ok: false, error: "report_unavailable" });
