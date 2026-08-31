@@ -1438,6 +1438,15 @@ expectClean("Что?? Да!! Правда!?", "Что? Да! Правда?!");
 expectClean("!?!!", "!?!");
 expectClean("?!?", "?!?");
 expectClean("?!?!", "?!?!");
+expectClean("слово : значение", "слово: значение");
+
+for (const smiley of [":)", ";)", ":-)", ";-)"]) {
+  expectClean(`посмеялся${smiley}`, `посмеялся${smiley}`);
+  expectClean(`посмеялся ${smiley}`, `посмеялся ${smiley}`);
+  expectClean(`я ${smiley}`, `я ${smiley}`);
+  expectDevelopmentIdempotent(`я ${smiley}`, `я ${smiley}`);
+}
+
 expectClean("5 1000 - 1000", "5 1000 - 1000");
 
 for (let length = 1; length <= 10; length += 1) {

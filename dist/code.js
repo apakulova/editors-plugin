@@ -5403,13 +5403,35 @@ function cleanupSpaces(input, ruleAnalyticsCollector = null) {
             .map((line) => line.replace(/^[ \t\u00A0]+|[ \t\u00A0]+$/g, ""))
             .join("\n"));
         text = applyTypographyRule(ruleAnalyticsCollector, "space_collapse", text, (value) => value.replace(/[ \t\u00A0]{2,}/g, " "));
-        text = applyTypographyRule(ruleAnalyticsCollector, "space_before_punctuation", text, (value) => value.replace(/[ \t\u00A0]+([.…:;,?!»)\]])/g, "$1"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "space_before_punctuation", text, removeSpacesBeforePunctuation);
         text = applyTypographyRule(ruleAnalyticsCollector, "space_after_opening_punctuation", text, (value) => value.replace(/([«(\[])[ \t\u00A0]+/g, "$1"));
         text = applyTypographyRule(ruleAnalyticsCollector, "space_percent", text, (value) => value.replace(/(\d)[ \t\u00A0]+%/g, "$1%"));
         return applyTypographyRule(ruleAnalyticsCollector, "space_tilde", text, (value) => value.replace(/~[ \t\u00A0]+(?=[A-Za-zА-Яа-яЁё\d])/g, "~"));
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean spaces", error);
+        throw error;
+    }
+}
+function removeSpacesBeforePunctuation(input) {
+    try {
+        return input.replace(/[ \t\u00A0]+([.…:;,?!»)\]])/g, (match, punctuation, offset, fullText) => isSupportedSmileyAt(fullText, offset + match.length - punctuation.length) ? match : punctuation);
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to remove spaces before punctuation", error);
+        throw error;
+    }
+}
+function isSupportedSmileyAt(input, index) {
+    try {
+        const punctuation = input[index];
+        if (punctuation !== ":" && punctuation !== ";") {
+            return false;
+        }
+        return input[index + 1] === ")" || (input[index + 1] === "-" && input[index + 2] === ")");
+    }
+    catch (error) {
+        console.error("[Чистовик] Failed to recognize smiley", error);
         throw error;
     }
 }
@@ -5428,7 +5450,7 @@ function cleanupQuotesAndPunctuation(input, ruleAnalyticsCollector = null) {
         text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_repeated_marks", text, (value) => value.replace(/!{2,}/g, "!").replace(/\?{2,}/g, "?"));
         text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_question_exclamation_order", text, (value) => value.replace(/(^|[^!?])!\?(?![!?])/g, "$1?!"));
         text = applyTypographyRule(ruleAnalyticsCollector, "quote_punctuation_outside", text, (value) => value.replace(/([.,;:])([»“"'])/g, "$2$1"));
-        return applyTypographyRule(ruleAnalyticsCollector, "space_before_punctuation", text, (value) => value.replace(/[ \t\u00A0]+([.,;:?!…])/g, "$1"));
+        return applyTypographyRule(ruleAnalyticsCollector, "space_before_punctuation", text, removeSpacesBeforePunctuation);
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean quotes and punctuation", error);
@@ -7835,7 +7857,7 @@ function applyShortWordNonBreakingSpaces(input) {
         while (text !== previous) {
             previous = text;
             shortWordPattern.lastIndex = 0;
-            text = text.replace(shortWordPattern, `$1$2${NBSP}`);
+            text = text.replace(shortWordPattern, (match, prefix, word, offset, fullText) => isSupportedSmileyAt(fullText, offset + match.length) ? match : `${prefix}${word}${NBSP}`);
         }
         return restoreSpacesAfterMeasurementUnits(text);
     }

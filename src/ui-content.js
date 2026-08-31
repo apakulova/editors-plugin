@@ -126,6 +126,7 @@ module.exports = {
         "Без двойных пробелов",
         "Без пробелов в&nbsp;начале и&nbsp;конце строки",
         "Без лишних пробелов перед знаками препинания: <span class=\"rule-example\">. , : ; ? ! » ) ]</span>",
+        "Пробел перед смайликами сохраняется таким, как его поставил автор: <span class=\"rule-example\">посмеялся:)</span> или <span class=\"rule-example\">посмеялся :-)</span>",
         "Без лишних пробелов после открывающих знаков: <span class=\"rule-example\">« ( [</span>",
         "Проценты без пробела: <span class=\"rule-example\">50%</span>",
         "Тильда без пробела: <span class=\"rule-example\">~100</span>",
