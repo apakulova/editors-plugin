@@ -32,6 +32,7 @@ assert.deepStrictEqual(
 assert.strictEqual(uiSource.includes('id="rulesScrollIndicator"'), true, "Scrollable rules must have a persistent indicator");
 assert.strictEqual(uiSource.includes("updatePersistentScrollIndicator"), true, "Scrollable UI areas must share the persistent indicator logic");
 assert.strictEqual(uiSource.includes("persistent-scroll-thumb"), true, "The persistent scroll indicator must use the shared thumb style");
+assert.match(uiSource, /\.tabs\s*\{[^}]*z-index:\s*1;/s, "The active tab underline must stay above scrolled content");
 assert.strictEqual(uiSource.includes('id="errorReportShell"'), true, "The agreed error report must be part of the working plugin UI");
 assert.strictEqual(uiSource.includes('type === "show-error-report"'), true, "The working UI must accept real error reports");
 assert.strictEqual(uiSource.includes("Не всё удалось обработать"), true, "The safe failure title must keep the agreed text");
