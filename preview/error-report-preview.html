@@ -910,7 +910,7 @@
           .join("");
 
         resultList.querySelectorAll(".result-item").forEach((item) => {
-          item.addEventListener("click", () => selectIssue(Number(item.dataset.index)));
+          item.addEventListener("click", () => selectIssue(Number(item.dataset.index), true));
         });
 
         selectIssue(Math.min(selectedIssueIndex, issues.length - 1), true);

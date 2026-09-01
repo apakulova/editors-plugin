@@ -935,7 +935,7 @@
           if (event.target.closest(".expand-toggle")) {
             return;
           }
-          selectIssue(index);
+          selectIssue(index, true);
         });
 
         item.addEventListener("keydown", (event) => {
@@ -944,7 +944,7 @@
           }
 
           event.preventDefault();
-          selectIssue(index);
+          selectIssue(index, true);
         });
       });
 
@@ -980,7 +980,7 @@
       errorReportScroll.addEventListener("scroll", updateErrorScrollIndicator);
 
       errorResultItems.forEach((item, index) => {
-        item.addEventListener("click", () => selectErrorIssue(index));
+        item.addEventListener("click", () => selectErrorIssue(index, true));
       });
 
       errorPreviousIssue.addEventListener("click", () => {

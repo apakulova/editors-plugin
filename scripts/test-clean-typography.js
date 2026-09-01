@@ -69,6 +69,11 @@ assert.strictEqual(
   true,
   "Long error-report paths must remove leading segments first"
 );
+assert.strictEqual(
+  uiSource.includes('item.addEventListener("click", () => selectProblemLayer(index, true))'),
+  true,
+  "Clicking a problem layer must scroll its row fully into view"
+);
 const reportScrollContentIndex = uiSource.indexOf('<div class="report-scroll" id="reportScroll">');
 const reportScrollIndicatorIndex = uiSource.indexOf('<div class="report-scroll-indicator"', reportScrollContentIndex);
 const fixedReportFooterIndex = uiSource.indexOf('<footer class="report-footer" id="reportFooter">', reportScrollContentIndex);
