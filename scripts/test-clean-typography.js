@@ -39,6 +39,35 @@ assert.strictEqual(uiSource.includes("Не всё удалось обработ�
 assert.strictEqual(uiSource.includes("Типограф остановил работу"), true, "The critical failure title must keep the agreed text");
 assert.strictEqual(uiSource.includes("Не удалось запустить типограф"), true, "The startup failure title must keep the agreed text");
 assert.strictEqual(uiSource.includes("Вернуться к типографу"), true, "The settings error report must keep the agreed return action");
+assert.match(
+  uiSource,
+  /\.error-report\s*\{[^}]*grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto;/s,
+  "The error report footer must have its own fixed grid row"
+);
+assert.match(
+  uiSource,
+  /\.report-footer\s*\{[^}]*padding:\s*10px 16px 16px;[^}]*position:\s*relative;/s,
+  "The fixed error report footer must keep the agreed white safe space"
+);
+assert.strictEqual(
+  uiSource.includes(".report-footer.with-scroll-gradient::before"),
+  true,
+  "The fixed error report footer must expose the agreed scroll gradient"
+);
+assert.strictEqual(
+  uiSource.includes('reportFooter.classList.toggle("with-scroll-gradient", hasHiddenContentBelow)'),
+  true,
+  "The footer gradient must react to hidden content below the viewport"
+);
+const reportScrollContentIndex = uiSource.indexOf('<div class="report-scroll" id="reportScroll">');
+const reportScrollIndicatorIndex = uiSource.indexOf('<div class="report-scroll-indicator"', reportScrollContentIndex);
+const fixedReportFooterIndex = uiSource.indexOf('<footer class="report-footer" id="reportFooter">', reportScrollContentIndex);
+assert.ok(
+  reportScrollContentIndex !== -1
+    && reportScrollIndicatorIndex > reportScrollContentIndex
+    && fixedReportFooterIndex > reportScrollIndicatorIndex,
+  "The error report footer must stay outside the scrollable list"
+);
 assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="report-warning\.png"/, "The warning illustration must be bundled into the UI");
 assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="report-critical\.png"/, "The critical illustration must be bundled into the UI");
 assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="startup-error\.png"/, "The startup illustration must be bundled into the UI");

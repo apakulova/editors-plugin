@@ -49,6 +49,17 @@
         font: inherit;
       }
 
+      .preview-grid {
+        align-items: start;
+        display: grid;
+        gap: 24px;
+        grid-template-columns: repeat(2, 360px);
+      }
+
+      .preview-column {
+        min-width: 0;
+      }
+
       .window-frame {
         background: var(--surface);
         border: 1px solid var(--border);
@@ -118,8 +129,15 @@
 
       .report {
         display: grid;
-        grid-template-rows: auto auto auto minmax(0, 1fr);
         min-height: 0;
+      }
+
+      .nbsp-report {
+        grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      }
+
+      .error-report {
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
       }
 
       .report-intro {
@@ -143,6 +161,14 @@
         display: block;
         height: 56px;
         width: auto;
+      }
+
+      .error-report .report-status-icon-frame {
+        height: 38px;
+      }
+
+      .error-report .report-status-icon {
+        height: 38px;
       }
 
       .report-intro-copy {
@@ -284,7 +310,9 @@
 
       .result-item {
         align-content: start;
+        appearance: none;
         background: transparent;
+        border: 0;
         color: inherit;
         cursor: pointer;
         display: grid;
@@ -396,6 +424,29 @@
         white-space: nowrap;
       }
 
+      .layer-name {
+        color: var(--text-secondary);
+        font-size: 11px;
+        line-height: 15px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .layer-actions {
+        align-items: center;
+        display: inline-flex;
+        gap: 8px;
+        white-space: nowrap;
+      }
+
+      .space-count {
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 400;
+        line-height: 15px;
+      }
+
       .expand-toggle {
         align-items: center;
         appearance: none;
@@ -414,6 +465,10 @@
 
       .result-item.active.has-overflow .expand-toggle {
         display: inline-flex;
+      }
+
+      .result-item.active.has-overflow .space-count {
+        display: none;
       }
 
       .expand-toggle:focus-visible {
@@ -438,8 +493,35 @@
       }
 
       .report-footer {
-        margin-top: auto;
-        padding: 12px 16px 16px;
+        background: var(--surface);
+        padding: 10px 16px 16px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .report-footer::before {
+        background: linear-gradient(
+          to top,
+          rgba(255, 255, 255, 1) 0%,
+          rgba(255, 255, 255, 0.9) 24%,
+          rgba(255, 255, 255, 0.66) 48%,
+          rgba(255, 255, 255, 0.38) 68%,
+          rgba(255, 255, 255, 0.14) 86%,
+          rgba(255, 255, 255, 0) 100%
+        );
+        content: "";
+        height: 18px;
+        left: 0;
+        opacity: 0;
+        pointer-events: none;
+        position: absolute;
+        right: 0;
+        top: -18px;
+        transition: opacity 120ms ease;
+      }
+
+      .report-footer.with-scroll-gradient::before {
+        opacity: 1;
       }
 
       .primary {
@@ -461,11 +543,18 @@
         background: var(--accent-hover);
       }
 
+      @media (max-width: 780px) {
+        .preview-grid {
+          grid-template-columns: minmax(0, 360px);
+        }
+      }
+
       @media (max-width: 420px) {
         body {
           padding: 20px 12px 36px;
         }
 
+        .preview-grid,
         .window-frame {
           width: min(100%, 360px);
         }
@@ -473,15 +562,17 @@
     </style>
   </head>
   <body>
-    <main class="window-frame">
-      <header class="window-bar" aria-label="Шапка окна Figma">
-        <img class="window-logo" src="../assets/plugin-icon.svg" alt="" />
-        <div class="window-name">Чистовик</div>
-        <div class="window-close" aria-hidden="true"></div>
-      </header>
+    <main class="preview-grid">
+      <section class="preview-column" aria-label="Экран проверки удалённых неразрывных пробелов">
+        <div class="window-frame">
+          <header class="window-bar" aria-label="Шапка окна Figma">
+            <img class="window-logo" src="../assets/plugin-icon.svg" alt="" />
+            <div class="window-name">Чистовик</div>
+            <div class="window-close" aria-hidden="true"></div>
+          </header>
 
-      <section class="window" aria-label="Черновой экран отчёта Чистовика">
-        <div class="report">
+          <section class="window" aria-label="Черновой экран отчёта Чистовика">
+            <div class="report nbsp-report">
           <header class="report-intro">
             <span class="report-status-icon-frame" aria-hidden="true">
               <img class="report-status-icon" src="../assets/nbsp-review.png" alt="" />
@@ -505,17 +596,20 @@
           <div class="report-scroll-frame">
             <div class="report-scroll" id="reportScroll">
               <div class="result-list" id="resultList" aria-label="Изменённые неразрывные пробелы">
-                <div class="result-item active has-overflow" data-index="0" role="button" tabindex="0">
+                <div class="result-item active has-overflow" data-index="0" data-space-label="2 пробела" role="button" tabindex="0">
                   <span class="text-layer-icon" aria-hidden="true">Т</span>
                   <span class="result-item-content">
                     <span class="text-preview text-preview-collapsed">…вводных пояснений встречается это длинное<span class="removed-space-marker">▂</span>слово, которое помогает проверить отображение. Доступна новая<span class="removed-space-marker">▂</span>версия в<span class="nbsp-star-rule">*</span>приложении.</span>
                     <span class="text-preview text-preview-full">Тариф действует для новых пользователей до<span class="nbsp-star-rule">*</span>конца месяца. В<span class="nbsp-star-rule">*</span>подробном описании тарифа для новых клиентов после нескольких вводных пояснений встречается это длинное<span class="removed-space-marker">▂</span>слово, которое помогает проверить отображение. Доступна новая<span class="removed-space-marker">▂</span>версия в<span class="nbsp-star-rule">*</span>приложении.</span>
                     <span class="layer-meta">
                       <span class="layer-path" data-full-path="checkout / desktop / pricing / comparison / card / caption">checkout / desktop / pricing / comparison / card / caption</span>
-                      <button class="expand-toggle" type="button" aria-expanded="false">
-                        <span class="expand-toggle-label">Открыть целиком</span>
-                        <span class="expand-toggle-arrow" aria-hidden="true"></span>
-                      </button>
+                      <span class="layer-actions">
+                        <span class="space-count">2 пробела</span>
+                        <button class="expand-toggle" type="button" aria-expanded="false">
+                          <span class="expand-toggle-label">Открыть 2 пробела</span>
+                          <span class="expand-toggle-arrow" aria-hidden="true"></span>
+                        </button>
+                      </span>
                     </span>
                   </span>
                 </div>
@@ -526,6 +620,9 @@
                     <span class="text-preview text-preview-collapsed">Проверьте важную<span class="removed-space-marker">▂</span>информацию до<span class="nbsp-star-rule">*</span>публикации</span>
                     <span class="layer-meta">
                       <span class="layer-path" data-full-path="hero / subtitle">hero / subtitle</span>
+                      <span class="layer-actions">
+                        <span class="space-count">1 пробел</span>
+                      </span>
                     </span>
                   </span>
                 </div>
@@ -536,39 +633,150 @@
                     <span class="text-preview text-preview-collapsed">…Команда подготовила важную<span class="removed-space-marker">▂</span>инструкцию для участников, чтобы можно было начать работу на<span class="nbsp-star-rule">*</span>сайте без дополнительных вопросов.</span>
                     <span class="layer-meta">
                       <span class="layer-path" data-full-path="workspace / marketing / campaign / details / note">workspace / marketing / campaign / details / note</span>
+                      <span class="layer-actions">
+                        <span class="space-count">1 пробел</span>
+                      </span>
                     </span>
                   </span>
                 </div>
               </div>
 
-              <footer class="report-footer">
-                <button class="primary" id="backButton" type="button">Вернуться к типографу</button>
-              </footer>
             </div>
             <div class="scroll-indicator" id="scrollIndicator" hidden aria-hidden="true">
               <span class="scroll-thumb" id="scrollThumb"></span>
             </div>
           </div>
+          <footer class="report-footer" id="reportFooter">
+            <button class="primary" id="backButton" type="button">Вернуться к типографу</button>
+          </footer>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="preview-column" aria-label="Действующий экран проблемных слоёв">
+        <div class="window-frame">
+          <header class="window-bar" aria-label="Шапка окна Figma">
+            <img class="window-logo" src="../assets/plugin-icon.svg" alt="" />
+            <div class="window-name">Чистовик</div>
+            <div class="window-close" aria-hidden="true"></div>
+          </header>
+
+          <section class="window" aria-label="Не всё удалось обработать">
+            <div class="report error-report">
+              <header class="report-intro">
+                <span class="report-status-icon-frame" aria-hidden="true">
+                  <img class="report-status-icon" src="../assets/report-warning.png" alt="" />
+                </span>
+                <span class="report-intro-copy">
+                  <h1 class="report-title">Не всё удалось обработать</h1>
+                  <p class="report-summary">Эти слои нужно исправить вручную</p>
+                </span>
+              </header>
+
+              <div class="result-toolbar">
+                <span class="result-count">7&nbsp;слоёв пропущены <span class="result-layer-count">· 10&nbsp;успешно</span></span>
+                <div class="result-navigation">
+                  <button class="navigation-button previous" id="errorPreviousIssue" type="button" aria-label="Предыдущий слой"></button>
+                  <button class="navigation-button next" id="errorNextIssue" type="button" aria-label="Следующий слой"></button>
+                </div>
+              </div>
+
+              <div class="report-scroll-frame">
+                <div class="report-scroll" id="errorReportScroll">
+                  <div class="result-list" id="errorResultList" aria-label="Слои, требующие внимания">
+                    <button class="result-item active" data-error-index="0" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически по условиям выбранного тарифа</span>
+                        <span class="layer-name">pricing / card / caption</span>
+                      </span>
+                    </button>
+                    <button class="result-item" data-error-index="1" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Первый пункт списка, второй пункт и важное примечание</span>
+                        <span class="layer-name">checklist / item</span>
+                      </span>
+                    </button>
+                    <button class="result-item" data-error-index="2" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Заголовок карточки с подключённым библиотечным стилем</span>
+                        <span class="layer-name">library card / title</span>
+                      </span>
+                    </button>
+                    <button class="result-item" data-error-index="3" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Скидка 20% действует только до 15 мая — потом цена изменится</span>
+                        <span class="layer-name">promo / legal note</span>
+                      </span>
+                    </button>
+                    <button class="result-item" data-error-index="4" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Перейти к оформлению заказа и выбрать удобный способ оплаты</span>
+                        <span class="layer-name">checkout / actions / button label</span>
+                      </span>
+                    </button>
+                    <button class="result-item" data-error-index="5" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Доставка займёт от двух до четырёх рабочих дней</span>
+                        <span class="layer-name">cart / delivery / note</span>
+                      </span>
+                    </button>
+                    <button class="result-item" data-error-index="6" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Нажимая кнопку, вы соглашаетесь с условиями обработки данных</span>
+                        <span class="layer-name">form / legal / consent</span>
+                      </span>
+                    </button>
+                  </div>
+
+                </div>
+                <div class="scroll-indicator" id="errorScrollIndicator" hidden aria-hidden="true">
+                  <span class="scroll-thumb" id="errorScrollThumb"></span>
+                </div>
+              </div>
+              <footer class="report-footer" id="errorReportFooter">
+                <button class="primary" type="button">Вернуться к типографу</button>
+              </footer>
+            </div>
+          </section>
         </div>
       </section>
     </main>
 
     <script>
       const reportScroll = document.getElementById("reportScroll");
-      const resultItems = Array.from(document.querySelectorAll(".result-item"));
-      const expandToggles = Array.from(document.querySelectorAll(".expand-toggle"));
-      const layerPaths = Array.from(document.querySelectorAll(".layer-path"));
+      const resultItems = Array.from(document.querySelectorAll(".nbsp-report .result-item"));
+      const expandToggles = Array.from(document.querySelectorAll(".nbsp-report .expand-toggle"));
+      const layerPaths = Array.from(document.querySelectorAll(".nbsp-report .layer-path"));
       const previousIssue = document.getElementById("previousIssue");
       const nextIssue = document.getElementById("nextIssue");
       const scrollIndicator = document.getElementById("scrollIndicator");
       const scrollThumb = document.getElementById("scrollThumb");
+      const reportFooter = document.getElementById("reportFooter");
+      const errorReportScroll = document.getElementById("errorReportScroll");
+      const errorResultItems = Array.from(document.querySelectorAll(".error-report .result-item"));
+      const errorPreviousIssue = document.getElementById("errorPreviousIssue");
+      const errorNextIssue = document.getElementById("errorNextIssue");
+      const errorScrollIndicator = document.getElementById("errorScrollIndicator");
+      const errorScrollThumb = document.getElementById("errorScrollThumb");
+      const errorReportFooter = document.getElementById("errorReportFooter");
       let selectedIssueIndex = 0;
+      let selectedErrorIndex = 0;
 
       function updateScrollIndicator() {
         const viewportHeight = reportScroll.clientHeight;
         const contentHeight = reportScroll.scrollHeight;
         const canScroll = contentHeight > viewportHeight + 1;
+        const hasHiddenContentBelow = canScroll && reportScroll.scrollTop < contentHeight - viewportHeight - 1;
         scrollIndicator.hidden = !canScroll;
+        reportFooter.classList.toggle("with-scroll-gradient", hasHiddenContentBelow);
 
         if (!canScroll) {
           return;
@@ -590,6 +798,48 @@
         resultItems.forEach((item) => {
           item.style.setProperty("--active-line-length", `${item.offsetHeight}px`);
         });
+      }
+
+      function updateErrorScrollIndicator() {
+        const viewportHeight = errorReportScroll.clientHeight;
+        const contentHeight = errorReportScroll.scrollHeight;
+        const canScroll = contentHeight > viewportHeight + 1;
+        const hasHiddenContentBelow = canScroll && errorReportScroll.scrollTop < contentHeight - viewportHeight - 1;
+        errorScrollIndicator.hidden = !canScroll;
+        errorReportFooter.classList.toggle("with-scroll-gradient", hasHiddenContentBelow);
+
+        if (!canScroll) {
+          return;
+        }
+
+        const trackHeight = errorScrollIndicator.clientHeight;
+        const thumbHeight = Math.max(24, trackHeight * (viewportHeight / contentHeight));
+        const maximumThumbOffset = trackHeight - thumbHeight;
+        const maximumScrollOffset = contentHeight - viewportHeight;
+        const thumbOffset = maximumScrollOffset > 0
+          ? maximumThumbOffset * (errorReportScroll.scrollTop / maximumScrollOffset)
+          : 0;
+
+        errorScrollThumb.style.height = `${thumbHeight}px`;
+        errorScrollThumb.style.transform = `translateY(${thumbOffset}px)`;
+      }
+
+      function selectErrorIssue(index, shouldScroll = false) {
+        selectedErrorIndex = index;
+
+        errorResultItems.forEach((item, itemIndex) => {
+          item.classList.toggle("active", itemIndex === index);
+          item.style.setProperty("--active-line-length", `${item.offsetHeight}px`);
+        });
+
+        errorPreviousIssue.disabled = index === 0;
+        errorNextIssue.disabled = index === errorResultItems.length - 1;
+
+        if (shouldScroll) {
+          errorResultItems[index].scrollIntoView({ block: "nearest" });
+        }
+
+        window.requestAnimationFrame(updateErrorScrollIndicator);
       }
 
       function updateLayerPaths() {
@@ -623,7 +873,9 @@
 
         const expanded = item.classList.contains("expanded");
         toggle.setAttribute("aria-expanded", String(expanded));
-        toggle.querySelector(".expand-toggle-label").textContent = expanded ? "Свернуть" : "Открыть целиком";
+        toggle.querySelector(".expand-toggle-label").textContent = expanded
+          ? `Свернуть ${item.dataset.spaceLabel}`
+          : `Открыть ${item.dataset.spaceLabel}`;
       }
 
       function selectIssue(index, shouldScroll = false) {
@@ -700,17 +952,39 @@
       });
 
       reportScroll.addEventListener("scroll", updateScrollIndicator);
+      errorReportScroll.addEventListener("scroll", updateErrorScrollIndicator);
+
+      errorResultItems.forEach((item, index) => {
+        item.addEventListener("click", () => selectErrorIssue(index));
+      });
+
+      errorPreviousIssue.addEventListener("click", () => {
+        if (selectedErrorIndex > 0) {
+          selectErrorIssue(selectedErrorIndex - 1, true);
+        }
+      });
+
+      errorNextIssue.addEventListener("click", () => {
+        if (selectedErrorIndex < errorResultItems.length - 1) {
+          selectErrorIssue(selectedErrorIndex + 1, true);
+        }
+      });
+
       window.addEventListener("resize", () => {
         updateLayerPaths();
         updateItemHeights();
         updateScrollIndicator();
+        selectErrorIssue(selectedErrorIndex);
+        updateErrorScrollIndicator();
       });
 
       selectIssue(0);
+      selectErrorIssue(0);
       window.requestAnimationFrame(() => {
         updateLayerPaths();
         updateItemHeights();
         updateScrollIndicator();
+        updateErrorScrollIndicator();
       });
     </script>
   </body>

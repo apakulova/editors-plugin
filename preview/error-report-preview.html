@@ -174,7 +174,7 @@
 
       .report {
         display: grid;
-        grid-template-rows: auto auto minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
         min-height: 0;
       }
 
@@ -445,9 +445,34 @@
 
       .report-footer {
         background: var(--surface);
-        flex: 0 0 auto;
-        margin-top: auto;
-        padding: 12px 16px 16px;
+        padding: 10px 16px 16px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .report-footer::before {
+        background: linear-gradient(
+          to top,
+          rgba(255, 255, 255, 1) 0%,
+          rgba(255, 255, 255, 0.9) 24%,
+          rgba(255, 255, 255, 0.66) 48%,
+          rgba(255, 255, 255, 0.38) 68%,
+          rgba(255, 255, 255, 0.14) 86%,
+          rgba(255, 255, 255, 0) 100%
+        );
+        content: "";
+        height: 18px;
+        left: 0;
+        opacity: 0;
+        pointer-events: none;
+        position: absolute;
+        right: 0;
+        top: -18px;
+        transition: opacity 120ms ease;
+      }
+
+      .report-footer.with-scroll-gradient::before {
+        opacity: 1;
       }
 
       .startup-state {
@@ -574,15 +599,15 @@
             <div class="report-scroll-frame" id="reportScrollFrame">
               <div class="report-scroll" id="reportScroll">
                 <div class="result-list" id="resultList" aria-label="Слои, требующие внимания"></div>
-
-                <footer class="report-footer" id="reportFooter">
-                  <button class="primary" id="backButton" type="button">Вернуться к типографу</button>
-                </footer>
               </div>
               <div class="scroll-indicator" id="scrollIndicator" hidden aria-hidden="true">
                 <span class="scroll-thumb" id="scrollThumb"></span>
               </div>
             </div>
+
+            <footer class="report-footer" id="reportFooter">
+              <button class="primary" id="backButton" type="button">Вернуться к типографу</button>
+            </footer>
 
             <section class="startup-state" id="startupState" hidden>
               <div class="startup-content">
@@ -771,8 +796,12 @@
         const viewportHeight = reportScroll.clientHeight;
         const contentHeight = reportScroll.scrollHeight;
         const canScroll = contentHeight > viewportHeight + 1;
+        const hasHiddenContentBelow = !reportFooter.hidden
+          && canScroll
+          && reportScroll.scrollTop < contentHeight - viewportHeight - 1;
 
         scrollIndicator.hidden = !canScroll;
+        reportFooter.classList.toggle("with-scroll-gradient", hasHiddenContentBelow);
 
         if (!canScroll) {
           return;
