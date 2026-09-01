@@ -75,9 +75,19 @@ assert.strictEqual(
   "Clicking a problem layer must scroll its row into view"
 );
 assert.strictEqual(
-  uiSource.includes('selectedItem?.scrollIntoView({ block: "center" })'),
+  uiSource.includes("function scrollProblemLayerIntoView(item)"),
+  true,
+  "The selected problem layer must use the fixed-footer-aware scroll helper"
+);
+assert.strictEqual(
+  uiSource.includes('const gradientHeight = reportFooter.classList.contains("with-scroll-gradient") ? 18 : 0'),
   true,
   "The selected problem layer must stay clear of the fixed footer gradient"
+);
+assert.strictEqual(
+  uiSource.includes('scrollIntoView({ block: "center" })'),
+  false,
+  "Selecting a problem layer must not jump it to the middle of the list"
 );
 const reportScrollContentIndex = uiSource.indexOf('<div class="report-scroll" id="reportScroll">');
 const reportScrollIndicatorIndex = uiSource.indexOf('<div class="report-scroll-indicator"', reportScrollContentIndex);

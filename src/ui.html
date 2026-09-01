@@ -1464,6 +1464,26 @@
         reportFooter.classList.toggle("with-scroll-gradient", hasHiddenContentBelow);
       }
 
+      function scrollProblemLayerIntoView(item) {
+        if (!item) {
+          return;
+        }
+
+        const viewportBounds = reportScroll.getBoundingClientRect();
+        const itemBounds = item.getBoundingClientRect();
+        const gradientHeight = reportFooter.classList.contains("with-scroll-gradient") ? 18 : 0;
+        const visibleBottom = viewportBounds.bottom - gradientHeight;
+        const visibleHeight = visibleBottom - viewportBounds.top;
+
+        if (itemBounds.height > visibleHeight) {
+          reportScroll.scrollTop += itemBounds.top - viewportBounds.top;
+        } else if (itemBounds.top < viewportBounds.top) {
+          reportScroll.scrollTop -= viewportBounds.top - itemBounds.top;
+        } else if (itemBounds.bottom > visibleBottom) {
+          reportScroll.scrollTop += itemBounds.bottom - visibleBottom;
+        }
+      }
+
       function formatLayerCount(count) {
         const lastTwoDigits = count % 100;
         const lastDigit = count % 10;
@@ -1570,7 +1590,7 @@
         const selectedItem = resultList.querySelector(`[data-index="${index}"]`);
 
         if (shouldScroll) {
-          selectedItem?.scrollIntoView({ block: "center" });
+          scrollProblemLayerIntoView(selectedItem);
           window.requestAnimationFrame(updateReportScrollIndicator);
         }
 

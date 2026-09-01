@@ -849,6 +849,26 @@
         });
       }
 
+      function scrollItemIntoView(item, viewport, footer) {
+        if (!item) {
+          return;
+        }
+
+        const viewportBounds = viewport.getBoundingClientRect();
+        const itemBounds = item.getBoundingClientRect();
+        const gradientHeight = footer.classList.contains("with-scroll-gradient") ? 18 : 0;
+        const visibleBottom = viewportBounds.bottom - gradientHeight;
+        const visibleHeight = visibleBottom - viewportBounds.top;
+
+        if (itemBounds.height > visibleHeight) {
+          viewport.scrollTop += itemBounds.top - viewportBounds.top;
+        } else if (itemBounds.top < viewportBounds.top) {
+          viewport.scrollTop -= viewportBounds.top - itemBounds.top;
+        } else if (itemBounds.bottom > visibleBottom) {
+          viewport.scrollTop += itemBounds.bottom - visibleBottom;
+        }
+      }
+
       function selectErrorIssue(index, shouldScroll = false) {
         selectedErrorIndex = index;
 
@@ -861,7 +881,7 @@
         errorNextIssue.disabled = index === errorResultItems.length - 1;
 
         if (shouldScroll) {
-          errorResultItems[index].scrollIntoView({ block: "center" });
+          scrollItemIntoView(errorResultItems[index], errorReportScroll, errorReportFooter);
         }
 
         window.requestAnimationFrame(updateErrorScrollIndicator);
@@ -920,7 +940,7 @@
         nextIssue.disabled = index === resultItems.length - 1;
 
         if (shouldScroll) {
-          resultItems[index].scrollIntoView({ block: "center" });
+          scrollItemIntoView(resultItems[index], reportScroll, reportFooter);
         }
 
         window.requestAnimationFrame(() => {
@@ -958,7 +978,7 @@
           window.requestAnimationFrame(() => {
             updateLayerPaths();
             updateItemHeights();
-            item.scrollIntoView({ block: "center" });
+            scrollItemIntoView(item, reportScroll, reportFooter);
             updateScrollIndicator();
           });
         });
