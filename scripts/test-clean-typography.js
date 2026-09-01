@@ -59,6 +59,16 @@ assert.strictEqual(
   true,
   "The footer gradient must react to hidden content below the viewport"
 );
+assert.strictEqual(
+  uiSource.includes("function updateProblemLayerPaths()"),
+  true,
+  "Long error-report paths must keep their informative ending"
+);
+assert.strictEqual(
+  uiSource.includes('path.textContent = `… / ${segments.slice(startIndex).join(" / ")}`'),
+  true,
+  "Long error-report paths must remove leading segments first"
+);
 const reportScrollContentIndex = uiSource.indexOf('<div class="report-scroll" id="reportScroll">');
 const reportScrollIndicatorIndex = uiSource.indexOf('<div class="report-scroll-indicator"', reportScrollContentIndex);
 const fixedReportFooterIndex = uiSource.indexOf('<footer class="report-footer" id="reportFooter">', reportScrollContentIndex);

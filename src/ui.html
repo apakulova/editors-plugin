@@ -1524,6 +1524,29 @@
         nextIssue.disabled = selectedProblemLayerIndex >= layers.length - 1;
       }
 
+      function updateProblemLayerPaths() {
+        Array.from(resultList.querySelectorAll(".layer-name")).forEach((path) => {
+          const fullPath = path.dataset.fullPath || path.textContent || "";
+          const segments = fullPath.split(" / ");
+          path.dataset.fullPath = fullPath;
+          path.textContent = fullPath;
+
+          if (path.scrollWidth <= path.clientWidth) {
+            return;
+          }
+
+          for (let startIndex = 1; startIndex < segments.length; startIndex += 1) {
+            path.textContent = `… / ${segments.slice(startIndex).join(" / ")}`;
+
+            if (path.scrollWidth <= path.clientWidth) {
+              return;
+            }
+          }
+
+          path.textContent = `… / ${segments[segments.length - 1]}`;
+        });
+      }
+
       function selectProblemLayer(index, shouldScroll = false, shouldSelectInFigma = true) {
         if (currentErrorReport === null) {
           return;
@@ -1576,6 +1599,7 @@
 
         const path = document.createElement("span");
         path.className = "layer-name";
+        path.dataset.fullPath = layer.nodePath;
         path.textContent = layer.nodePath;
 
         content.append(preview, path);
@@ -1635,7 +1659,10 @@
 
         selectedProblemLayerIndex = 0;
         selectProblemLayer(0, true);
-        window.requestAnimationFrame(updateReportScrollIndicator);
+        window.requestAnimationFrame(() => {
+          updateProblemLayerPaths();
+          updateReportScrollIndicator();
+        });
       }
 
       function showErrorReport(report) {
@@ -1722,7 +1749,10 @@
       rulesScroll.addEventListener("click", () => window.requestAnimationFrame(updateRulesScrollIndicator));
       reportScroll.addEventListener("scroll", updateReportScrollIndicator);
       window.addEventListener("resize", updateRulesScrollIndicator);
-      window.addEventListener("resize", updateReportScrollIndicator);
+      window.addEventListener("resize", () => {
+        updateProblemLayerPaths();
+        updateReportScrollIndicator();
+      });
 
       previousIssue.addEventListener("click", () => {
         selectProblemLayer(selectedProblemLayerIndex - 1, true);

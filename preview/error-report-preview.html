@@ -636,7 +636,7 @@
           issues: [
             {
               preview: "Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически по условиям выбранного тарифа",
-              layer: "pricing / card / caption",
+              layer: "checkout / desktop / pricing / comparison / card / caption",
             },
             {
               preview: "Первый пункт списка, второй пункт и важное примечание",
@@ -792,6 +792,29 @@
         nextIssue.disabled = selectedIssueIndex >= issues.length - 1;
       }
 
+      function updateLayerPaths() {
+        Array.from(resultList.querySelectorAll(".layer-name")).forEach((path) => {
+          const fullPath = path.dataset.fullPath || path.textContent || "";
+          const segments = fullPath.split(" / ");
+          path.dataset.fullPath = fullPath;
+          path.textContent = fullPath;
+
+          if (path.scrollWidth <= path.clientWidth) {
+            return;
+          }
+
+          for (let startIndex = 1; startIndex < segments.length; startIndex += 1) {
+            path.textContent = `… / ${segments.slice(startIndex).join(" / ")}`;
+
+            if (path.scrollWidth <= path.clientWidth) {
+              return;
+            }
+          }
+
+          path.textContent = `… / ${segments[segments.length - 1]}`;
+        });
+      }
+
       function updateScrollIndicator() {
         const viewportHeight = reportScroll.clientHeight;
         const contentHeight = reportScroll.scrollHeight;
@@ -891,7 +914,7 @@
         });
 
         selectIssue(Math.min(selectedIssueIndex, issues.length - 1), true);
-
+        window.requestAnimationFrame(updateLayerPaths);
       }
 
       function render() {
@@ -930,7 +953,10 @@
         }
 
         if (!isStartup) {
-          window.requestAnimationFrame(updateScrollIndicator);
+          window.requestAnimationFrame(() => {
+            updateLayerPaths();
+            updateScrollIndicator();
+          });
         }
       }
 
@@ -964,7 +990,10 @@
       });
 
       reportScroll.addEventListener("scroll", updateScrollIndicator);
-      window.addEventListener("resize", updateScrollIndicator);
+      window.addEventListener("resize", () => {
+        updateLayerPaths();
+        updateScrollIndicator();
+      });
 
       render();
     </script>
