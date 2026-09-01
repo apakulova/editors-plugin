@@ -861,7 +861,7 @@
         errorNextIssue.disabled = index === errorResultItems.length - 1;
 
         if (shouldScroll) {
-          errorResultItems[index].scrollIntoView({ block: "nearest" });
+          errorResultItems[index].scrollIntoView({ block: "center" });
         }
 
         window.requestAnimationFrame(updateErrorScrollIndicator);
@@ -920,7 +920,7 @@
         nextIssue.disabled = index === resultItems.length - 1;
 
         if (shouldScroll) {
-          resultItems[index].scrollIntoView({ block: "nearest" });
+          resultItems[index].scrollIntoView({ block: "center" });
         }
 
         window.requestAnimationFrame(() => {
@@ -958,7 +958,7 @@
           window.requestAnimationFrame(() => {
             updateLayerPaths();
             updateItemHeights();
-            item.scrollIntoView({ block: "nearest" });
+            item.scrollIntoView({ block: "center" });
             updateScrollIndicator();
           });
         });

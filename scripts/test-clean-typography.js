@@ -72,7 +72,12 @@ assert.strictEqual(
 assert.strictEqual(
   uiSource.includes('item.addEventListener("click", () => selectProblemLayer(index, true))'),
   true,
-  "Clicking a problem layer must scroll its row fully into view"
+  "Clicking a problem layer must scroll its row into view"
+);
+assert.strictEqual(
+  uiSource.includes('selectedItem?.scrollIntoView({ block: "center" })'),
+  true,
+  "The selected problem layer must stay clear of the fixed footer gradient"
 );
 const reportScrollContentIndex = uiSource.indexOf('<div class="report-scroll" id="reportScroll">');
 const reportScrollIndicatorIndex = uiSource.indexOf('<div class="report-scroll-indicator"', reportScrollContentIndex);
