@@ -52,7 +52,8 @@
       .preview-grid {
         align-items: start;
         display: grid;
-        width: 360px;
+        gap: 24px;
+        grid-template-columns: repeat(3, 360px);
       }
 
       .preview-column {
@@ -135,6 +136,10 @@
         grid-template-rows: auto auto minmax(0, 1fr) auto;
       }
 
+      .error-report {
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+      }
+
       .report-intro {
         align-items: center;
         border-bottom: 1px solid var(--border);
@@ -156,6 +161,14 @@
         display: block;
         height: 56px;
         width: auto;
+      }
+
+      .error-report .report-status-icon-frame {
+        height: 38px;
+      }
+
+      .error-report .report-status-icon {
+        height: 38px;
       }
 
       .report-intro-copy {
@@ -294,6 +307,14 @@
 
       .result-list {
         flex: 0 0 auto;
+      }
+
+      .result-group-title {
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 16px;
+        padding: 7px 16px 5px;
       }
 
       .result-item {
@@ -531,6 +552,18 @@
         background: var(--accent-hover);
       }
 
+      @media (max-width: 1160px) {
+        .preview-grid {
+          grid-template-columns: repeat(2, 360px);
+        }
+      }
+
+      @media (max-width: 780px) {
+        .preview-grid {
+          grid-template-columns: minmax(0, 360px);
+        }
+      }
+
       @media (max-width: 420px) {
         body {
           padding: 20px 12px 36px;
@@ -631,6 +664,181 @@
           <footer class="report-footer" id="reportFooter">
             <button class="primary" id="backButton" type="button">Вернуться к типографу</button>
           </footer>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="preview-column" aria-label="Экран Не всё удалось обработать">
+        <div class="window-frame">
+          <header class="window-bar" aria-label="Шапка окна Figma">
+            <img class="window-logo" src="../assets/plugin-icon.svg" alt="" />
+            <div class="window-name">Чистовик</div>
+            <div class="window-close" aria-hidden="true"></div>
+          </header>
+
+          <section class="window" aria-label="Не всё удалось обработать">
+            <div class="report error-report" data-error-report>
+              <header class="report-intro">
+                <span class="report-status-icon-frame" aria-hidden="true">
+                  <img class="report-status-icon" src="../assets/report-warning.png" alt="" />
+                </span>
+                <span class="report-intro-copy">
+                  <h1 class="report-title">Не всё удалось обработать</h1>
+                  <p class="report-summary">Эти слои нужно исправить вручную</p>
+                </span>
+              </header>
+
+              <div class="result-toolbar">
+                <span class="result-count">7&nbsp;слоёв пропущены <span class="result-layer-count">· 10&nbsp;успешно</span></span>
+                <div class="result-navigation">
+                  <button class="navigation-button previous error-previous" type="button" aria-label="Предыдущий проблемный слой"></button>
+                  <button class="navigation-button next error-next" type="button" aria-label="Следующий проблемный слой"></button>
+                </div>
+              </div>
+
+              <div class="report-scroll-frame">
+                <div class="report-scroll error-report-scroll">
+                  <div class="result-list" aria-label="Пропущенные слои">
+                    <button class="result-item active" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически</span>
+                        <span class="layer-name">checkout / desktop / pricing / comparison / card / caption</span>
+                      </span>
+                    </button>
+                    <button class="result-item" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Первый пункт списка, второй пункт и важное примечание</span>
+                        <span class="layer-name">checklist / item</span>
+                      </span>
+                    </button>
+                    <button class="result-item" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Заголовок карточки с подключённым библиотечным стилем</span>
+                        <span class="layer-name">library card / title</span>
+                      </span>
+                    </button>
+                    <button class="result-item" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Скидка 20% действует только до 15 мая — потом цена изменится</span>
+                        <span class="layer-name">promo / legal note</span>
+                      </span>
+                    </button>
+                    <button class="result-item" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Перейти к оформлению заказа и выбрать удобный способ оплаты</span>
+                        <span class="layer-name">checkout / actions / button label</span>
+                      </span>
+                    </button>
+                    <button class="result-item" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Доставка займёт от двух до четырёх рабочих дней</span>
+                        <span class="layer-name">cart / delivery / note</span>
+                      </span>
+                    </button>
+                    <button class="result-item" type="button">
+                      <span class="text-layer-icon" aria-hidden="true">Т</span>
+                      <span class="result-item-content">
+                        <span class="text-preview text-preview-collapsed">Нажимая кнопку, вы соглашаетесь с условиями обработки данных</span>
+                        <span class="layer-name">form / legal / consent</span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div class="scroll-indicator error-scroll-indicator" hidden aria-hidden="true">
+                  <span class="scroll-thumb error-scroll-thumb"></span>
+                </div>
+              </div>
+
+              <footer class="report-footer error-report-footer">
+                <button class="primary" type="button">Вернуться к типографу</button>
+              </footer>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="preview-column" aria-label="Экран Типограф остановил работу">
+        <div class="window-frame">
+          <header class="window-bar" aria-label="Шапка окна Figma">
+            <img class="window-logo" src="../assets/plugin-icon.svg" alt="" />
+            <div class="window-name">Чистовик</div>
+            <div class="window-close" aria-hidden="true"></div>
+          </header>
+
+          <section class="window" aria-label="Типограф остановил работу">
+            <div class="report error-report" data-error-report>
+              <header class="report-intro">
+                <span class="report-status-icon-frame" aria-hidden="true">
+                  <img class="report-status-icon" src="../assets/report-critical.png" alt="" />
+                </span>
+                <span class="report-intro-copy">
+                  <h1 class="report-title">Типограф остановил работу</h1>
+                  <p class="report-summary">У одного слоя могли сломаться стили</p>
+                </span>
+              </header>
+
+              <div class="result-toolbar">
+                <span class="result-count">4&nbsp;слоя нужно проверить <span class="result-layer-count">· 10&nbsp;успешно</span></span>
+                <div class="result-navigation">
+                  <button class="navigation-button previous error-previous" type="button" aria-label="Предыдущий критический слой"></button>
+                  <button class="navigation-button next error-next" type="button" aria-label="Следующий критический слой"></button>
+                </div>
+              </div>
+
+              <div class="report-scroll-frame">
+                <div class="report-scroll error-report-scroll">
+                  <div class="result-list" aria-label="Слои после критической остановки">
+                    <section class="result-group">
+                      <div class="result-group-title">Проверьте стили и связь с компонентами · 1</div>
+                      <button class="result-item active" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Скидка 20% действует только до 15 мая — потом цена изменится</span>
+                          <span class="layer-name">promo / legal note</span>
+                        </span>
+                      </button>
+                    </section>
+                    <section class="result-group">
+                      <div class="result-group-title">Не удалось обработать · 3</div>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Первый пункт списка, второй пункт и важное примечание</span>
+                          <span class="layer-name">checklist / item</span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Заголовок карточки с подключённым библиотечным стилем</span>
+                          <span class="layer-name">library card / title</span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически</span>
+                          <span class="layer-name">pricing / card / caption</span>
+                        </span>
+                      </button>
+                    </section>
+                  </div>
+                </div>
+                <div class="scroll-indicator error-scroll-indicator" hidden aria-hidden="true">
+                  <span class="scroll-thumb error-scroll-thumb"></span>
+                </div>
+              </div>
+
+              <footer class="report-footer error-report-footer">
+                <button class="primary" type="button">Вернуться к типографу</button>
+              </footer>
             </div>
           </section>
         </div>
@@ -763,6 +971,115 @@
         });
       }
 
+      function initializeErrorPreview(errorReport) {
+        const viewport = errorReport.querySelector(".error-report-scroll");
+        const footer = errorReport.querySelector(".error-report-footer");
+        const indicator = errorReport.querySelector(".error-scroll-indicator");
+        const thumb = errorReport.querySelector(".error-scroll-thumb");
+        const items = Array.from(errorReport.querySelectorAll(".result-item"));
+        const paths = Array.from(errorReport.querySelectorAll(".layer-name"));
+        const previous = errorReport.querySelector(".error-previous");
+        const next = errorReport.querySelector(".error-next");
+        let selectedIndex = 0;
+
+        function updatePaths() {
+          paths.forEach((path) => {
+            const fullPath = path.dataset.fullPath || path.textContent || "";
+            const segments = fullPath.split(" / ");
+            path.dataset.fullPath = fullPath;
+            path.textContent = fullPath;
+
+            if (path.scrollWidth <= path.clientWidth) {
+              return;
+            }
+
+            for (let startIndex = 1; startIndex < segments.length; startIndex += 1) {
+              path.textContent = `… / ${segments.slice(startIndex).join(" / ")}`;
+
+              if (path.scrollWidth <= path.clientWidth) {
+                return;
+              }
+            }
+
+            path.textContent = `… / ${segments[segments.length - 1]}`;
+          });
+        }
+
+        function updateIndicator() {
+          const viewportHeight = viewport.clientHeight;
+          const contentHeight = viewport.scrollHeight;
+          const canScroll = contentHeight > viewportHeight + 1;
+          const hasHiddenContentBelow = canScroll && viewport.scrollTop < contentHeight - viewportHeight - 1;
+          indicator.hidden = !canScroll;
+          footer.classList.toggle("with-scroll-gradient", hasHiddenContentBelow);
+
+          if (!canScroll) {
+            return;
+          }
+
+          const trackHeight = indicator.clientHeight;
+          const thumbHeight = Math.max(24, trackHeight * (viewportHeight / contentHeight));
+          const maximumThumbOffset = trackHeight - thumbHeight;
+          const maximumScrollOffset = contentHeight - viewportHeight;
+          const thumbOffset = maximumScrollOffset > 0
+            ? maximumThumbOffset * (viewport.scrollTop / maximumScrollOffset)
+            : 0;
+
+          thumb.style.height = `${thumbHeight}px`;
+          thumb.style.transform = `translateY(${thumbOffset}px)`;
+        }
+
+        function updateHeights() {
+          items.forEach((item) => {
+            item.style.setProperty("--active-line-length", `${item.offsetHeight}px`);
+          });
+        }
+
+        function selectErrorIssue(index, shouldScroll = false) {
+          selectedIndex = index;
+          items.forEach((item, itemIndex) => item.classList.toggle("active", itemIndex === index));
+          updateHeights();
+          previous.disabled = index === 0;
+          next.disabled = index === items.length - 1;
+
+          if (shouldScroll) {
+            scrollItemIntoView(items[index], viewport, footer);
+          }
+
+          window.requestAnimationFrame(updateIndicator);
+        }
+
+        items.forEach((item, index) => {
+          item.addEventListener("click", () => selectErrorIssue(index, true));
+        });
+
+        previous.addEventListener("click", () => {
+          if (selectedIndex > 0) {
+            selectErrorIssue(selectedIndex - 1, true);
+          }
+        });
+
+        next.addEventListener("click", () => {
+          if (selectedIndex < items.length - 1) {
+            selectErrorIssue(selectedIndex + 1, true);
+          }
+        });
+
+        viewport.addEventListener("scroll", updateIndicator);
+        selectErrorIssue(0);
+
+        return {
+          updateLayout() {
+            updatePaths();
+            updateHeights();
+            updateIndicator();
+          },
+        };
+      }
+
+      const errorPreviewControllers = Array.from(document.querySelectorAll("[data-error-report]"))
+        .map(initializeErrorPreview);
+
       resultItems.forEach((item, index) => {
         item.addEventListener("click", (event) => {
           if (event.target.closest(".expand-toggle")) {
@@ -815,6 +1132,7 @@
         updateLayerPaths();
         updateItemHeights();
         updateScrollIndicator();
+        errorPreviewControllers.forEach((controller) => controller.updateLayout());
       });
 
       selectIssue(0);
@@ -822,6 +1140,7 @@
         updateLayerPaths();
         updateItemHeights();
         updateScrollIndicator();
+        errorPreviewControllers.forEach((controller) => controller.updateLayout());
       });
     </script>
   </body>
