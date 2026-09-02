@@ -1,0 +1,56 @@
+name: Publish landing to GitHub Pages
+
+on:
+  push:
+    branches:
+      - codex/chistovik-landing
+    paths:
+      - "landing/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get current landing
+        uses: actions/checkout@v6
+        with:
+          ref: codex/chistovik-landing
+          path: current
+
+      - name: Get visual redesign
+        uses: actions/checkout@v6
+        with:
+          ref: codex/chistovik-landing-visual-redesign
+          path: redesign
+
+      - name: Prepare both landing versions
+        run: |
+          mkdir -p published/redesign
+          cp -R current/landing/. published/
+          cp -R redesign/landing/. published/redesign/
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload landing versions
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: published
+
+      - name: Publish landing
+        id: deployment
+        uses: actions/deploy-pages@v4

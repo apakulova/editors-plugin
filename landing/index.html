@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7f7f5">
+    <meta name="description" content="Чистовик — Figma-плагин, который приводит русскую типографику в порядок и бережно работает с существующим макетом.">
+    <title>Чистовик&nbsp;— типограф для Figma</title>
+    <link rel="icon" href="./plugin-icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css?v=20260808-44">
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Перейти к&nbsp;содержанию</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="#top" aria-label="Чистовик — в начало страницы">
+          <img src="./plugin-icon.svg" width="36" height="36" alt="">
+          <span>Чистовик</span>
+        </a>
+        <nav class="main-nav" aria-label="Основная навигация">
+          <a href="#demo">Как&nbsp;работает</a>
+          <a href="#scope">На&nbsp;всех уровнях</a>
+          <a href="#layout">Бережно к&nbsp;макету</a>
+          <a href="#modes">Два режима</a>
+          <a href="#problems">Легко исправить</a>
+        </nav>
+        <a class="button button-small" href="https://www.figma.com/community/plugin/1638816840468168578/internal-beta?fuid=1222813849743128503" target="_blank" rel="noreferrer">Попробовать в&nbsp;Figma</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero section" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-star">✱</span> Для UX‑редакторов</p>
+          <h1>Плагин для&nbsp;чистой типографики</h1>
+          <p class="hero-lead">Чистовик&nbsp;— плагин, который убирает висячие предлоги, ставит правильные тире, исправляет кавычки и&nbsp;другие мелочи</p>
+          <div class="hero-actions">
+            <a class="button" href="https://www.figma.com/community/plugin/1638816840468168578/internal-beta?fuid=1222813849743128503" target="_blank" rel="noreferrer">Попробовать в&nbsp;Figma</a>
+            <a class="text-link" href="#demo">Посмотреть, как всё работает <strong>↓</strong></a>
+          </div>
+        </div>
+
+        <figure class="hero-visual">
+          <img class="hero-image responsive-illustration" src="./hero.png" width="1653" height="1291" alt="Интерфейс Чистовика поверх выделенного текстового слоя в Figma">
+        </figure>
+      </section>
+
+      <section class="section demo-section" id="demo">
+        <div class="section-heading centered-heading">
+          <p class="eyebrow">Меньше рутины</p>
+          <h2>Финальный штрих перед разработкой</h2>
+          <p>Плагин бережно наведёт порядок в&nbsp;тексте, ориентируясь на&nbsp;традиции русской типографики. Что именно он&nbsp;меняет и&nbsp;как, можно проверить в&nbsp;любой момент: <strong class="inline-path">Чистовик&nbsp;→ Продвинутые фичи&nbsp;→ Правила</strong>.</p>
+        </div>
+
+        <div class="comparison-card">
+          <div class="comparison-grid">
+            <div class="comparison-visual comparison-before">
+              <p class="comparison-label">Было</p>
+              <p class="comparison-text">Включите песню группы<br>"Король и Шут" на<br>полную громкость - соседи оценят!!</p>
+            </div>
+            <span class="comparison-arrow" aria-hidden="true">→</span>
+            <div class="comparison-visual comparison-after">
+              <p class="comparison-label">Стало</p>
+              <p class="comparison-text">Включите песню группы<br><span class="changed-mark">«</span>Король и&nbsp;Шут<span class="changed-mark">»</span><br><span class="no-break">на<span class="changed-mark visible-space" role="img" aria-label="неразрывный пробел">⍽</span>полную</span> громкость <span class="changed-mark">—</span> соседи оценят<span class="changed-mark">!</span></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section scope-section" id="scope">
+        <div class="section-heading centered-heading">
+          <p class="eyebrow">Проверка там, где нужно</p>
+          <h2>Один слой, фрейм или&nbsp;вся страница</h2>
+          <p>Не&nbsp;обязательно запускать плагин для&nbsp;каждого элемента отдельно. Можно даже ничего не&nbsp;выбирать&nbsp;— тогда будут оттипографированы все тексты на&nbsp;странице.</p>
+        </div>
+
+        <div class="scope-examples">
+          <figure class="scope-example">
+            <div class="scope-visual" data-scope-visual="layer" aria-hidden="true">
+              <img class="scope-image" src="./scope-text.png" width="900" height="789" alt="" loading="lazy" decoding="async">
+            </div>
+            <figcaption class="scope-explanation"><strong>Слой.</strong> Когда нужно поправить один текст</figcaption>
+          </figure>
+          <figure class="scope-example">
+            <div class="scope-visual" data-scope-visual="frame" aria-hidden="true">
+              <img class="scope-image" src="./scope-frame.png" width="900" height="789" alt="" loading="lazy" decoding="async">
+            </div>
+            <figcaption class="scope-explanation"><strong>Фрейм.</strong> Если готов отдельный экран</figcaption>
+          </figure>
+          <figure class="scope-example">
+            <div class="scope-visual" data-scope-visual="page" aria-hidden="true">
+              <img class="scope-image" src="./scope-page.png" width="900" height="789" alt="" loading="lazy" decoding="async">
+            </div>
+            <figcaption class="scope-explanation"><strong>Страница.</strong> Чтобы проверить весь макет сразу</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section safety-section" id="layout">
+        <div class="section-heading centered-heading safety-heading">
+          <p class="eyebrow">Без лишней тревоги</p>
+          <h2>Не&nbsp;ломает макеты</h2>
+          <p>Плагин работает только внутри существующего слоя и&nbsp;учитывает дизайн‑систему&nbsp;— так что у&nbsp;вашего дизайнера не&nbsp;будет причин ругаться</p>
+        </div>
+
+        <div class="safety-grid">
+          <figure class="safety-figure safety-figure-image">
+            <img class="safety-illustration" src="./layout-safe.png" width="1900" height="1900" alt="Текстовый слой в Figma с сохранёнными стилями и сообщением об успешной обработке" loading="lazy" decoding="async">
+          </figure>
+
+          <ol class="safety-points">
+            <li>
+              <span class="safety-number">01</span>
+              <div><h3>Сохраняет связи с&nbsp;библиотекой</h3><p>Все компоненты, переменные, цветовые и&nbsp;текстовые стили будут на&nbsp;месте</p></div>
+            </li>
+            <li>
+              <span class="safety-number">02</span>
+              <div><h3>Следит за&nbsp;форматированием</h3><p>Жирность и&nbsp;подчёркивание текста не&nbsp;потеряется после обработки</p></div>
+            </li>
+            <li>
+              <span class="safety-number">03</span>
+              <div><h3>Не&nbsp;лезет в&nbsp;формулировки</h3><p>С&nbsp;ним вы&nbsp;не&nbsp;увидите СМС вместо смс и&nbsp;другие внезапные правки</p></div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- Секция «Правила» временно скрыта, но сохранена в коде.
+      <section class="section split-section reverse-on-mobile rules-section" id="rules">
+        <figure class="rules-figure" aria-label="Вкладка «Правила» в плагине Чистовик">
+          <div class="rules-image-frame">
+            <img class="rules-image" src="./rules.png" width="848" height="970" alt="" loading="lazy" decoding="async">
+          </div>
+        </figure>
+
+        <div class="section-copy">
+          <p class="eyebrow">Понятно, что&nbsp;и&nbsp;почему меняется</p>
+          <h2>Все правила&nbsp;— внутри плагина</h2>
+          <p>В&nbsp;любой момент можно посмотреть, что именно меняет Чистовик. Чтобы искать было проще, все правила разбиты по&nbsp;категориям. А&nbsp;ещё у&nbsp;каждого есть короткое объяснение и&nbsp;пример.</p>
+          <div class="path-line" aria-label="Путь к правилам"><span>Чистовик</span><i>→</i><span>⭐ Продвинутые фичи</span><i>→</i><span>Правила</span></div>
+        </div>
+      </section>
+      -->
+
+      <section class="section developer-wrap" id="modes">
+        <div class="section-heading centered-heading">
+          <p class="eyebrow">Под разные этапы работы</p>
+          <h2>Неразрывный пробел можно ставить по‑разному</h2>
+          <p>Режим выбирается в&nbsp;зависимости от&nbsp;ваших задач и&nbsp;договорённостей в&nbsp;команде</p>
+        </div>
+
+        <div class="mode-comparison">
+          <div><span><i class="mode-icon" aria-hidden="true">✦</i>Для красоты</span><strong>Скидка&nbsp;2&nbsp;000&nbsp;₽<br>до&nbsp;20&nbsp;сентября</strong><small>Ставятся готовые символы&nbsp;— можно копировать, вставлять в&nbsp;презентации и&nbsp;делать скриншоты</small></div>
+          <div><span><i class="mode-icon" aria-hidden="true">&lt;/&gt;</i>Для разработки</span><strong>Скидка&nbsp;2<em>*</em>000<em>*</em>₽<br>до<em>*</em>20<em>*</em>сентября</strong><small>Заметные звёздочки показывают места с&nbsp;неразрывными пробелами, чтобы их не&nbsp;потеряли при&nbsp;вёрстке</small></div>
+        </div>
+      </section>
+
+      <section class="section demo-section" id="problems">
+        <div class="section-heading centered-heading">
+          <p class="eyebrow">Легко исправить</p>
+          <h2>Не&nbsp;заставляет искать ошибку</h2>
+          <p>Если что‑то идёт не&nbsp;так, Чистовик не&nbsp;останавливается и&nbsp;исправляет всё, что может. Проблемные слои собираются в&nbsp;отдельном окне&nbsp;— по&nbsp;клику Figma сразу находит и&nbsp;выделяет нужный.</p>
+        </div>
+
+        <figure class="comparison-card edge-to-edge" aria-label="Проблемный слой и его расположение в макете Figma">
+          <img class="problem-image" src="./problems-horizontal.png?v=2" width="2282" height="1075" alt="" loading="lazy" decoding="async">
+        </figure>
+      </section>
+
+      <!-- Предыдущая вертикальная версия секции об ошибках. Оставлена в коде, чтобы её можно было вернуть.
+      <section class="section split-section problem-section" id="problems">
+        <div class="section-copy">
+          <p class="eyebrow">Легко исправить</p>
+          <h2>Всегда понятно, где&nbsp;ошибка</h2>
+          <p>Если что‑то идёт не&nbsp;так, Чистовик не&nbsp;останавливается&nbsp;— исправляет всё, что может, а&nbsp;проблемные слои собирает в&nbsp;отдельном окне. Достаточно нажать на&nbsp;строку, Figma сразу найдёт её&nbsp;и&nbsp;выделит в&nbsp;макете. Останется поправить текст вручную.</p>
+        </div>
+
+        <figure class="report-figure" aria-label="Окно с проблемными слоями в плагине Чистовик">
+          <div class="problem-image-frame">
+            <img class="problem-image" src="./problems.png" width="713" height="823" alt="" loading="lazy" decoding="async">
+          </div>
+        </figure>
+      </section>
+      -->
+
+      <section class="section faq-section" id="faq">
+        <div class="faq-heading">
+          <p class="eyebrow">Коротко о&nbsp;важном</p>
+          <h2>Возможно, вы&nbsp;хотели спросить</h2>
+        </div>
+
+        <div class="faq-list">
+          <details>
+            <summary>Чистовик работает только с&nbsp;русским текстом?<span aria-hidden="true">+</span></summary>
+            <p>Плагин основан на&nbsp;правилах для&nbsp;русского языка. Обработку иностранных текстов лучше не&nbsp;запускать&nbsp;— определять язык плагин не&nbsp;умеет, так что применит все правила без&nbsp;разбора, и&nbsp;результат получится некорректным.</p>
+          </details>
+          <details>
+            <summary>А&nbsp;проверяет орфографию и&nbsp;пунктуацию?<span aria-hidden="true">+</span></summary>
+            <p>Чистовик ставит правильные кавычки и&nbsp;тире, а&nbsp;ещё знает некоторые сокращения с&nbsp;точками и&nbsp;без. На&nbsp;этом всё.</p>
+          </details>
+          <details>
+            <summary>Сколько стоит Чистовик?<span aria-hidden="true">+</span></summary>
+            <p>Это бесплатно. Если вам очень помогает плагин, оставьте отзыв в&nbsp;Figma Community 😉</p>
+          </details>
+          <details>
+            <summary>Что у&nbsp;вас с&nbsp;конфиденциальностью?<span aria-hidden="true">+</span></summary>
+            <p>Чистовик не&nbsp;сохраняет ваш текст на&nbsp;сервере. Чистовик не&nbsp;знает, кто вы, и&nbsp;не&nbsp;хранит ваши личные данные. Единственное, что собирает Чистовик,&nbsp;— это анонимные данные о&nbsp;количестве запусков и&nbsp;случившихся ошибках.</p>
+          </details>
+          <details>
+            <summary>Как с&nbsp;вами связаться?<span aria-hidden="true">+</span></summary>
+            <p>Напишите в&nbsp;ТГ: <a href="https://t.me/akanna" target="_blank" rel="noreferrer">@akanna</a></p>
+          </details>
+        </div>
+      </section>
+
+      <section class="section final-section" id="author">
+        <div class="final-card">
+          <div class="author-copy">
+            <p class="eyebrow">Предыстория</p>
+            <h2>Сделано редактором <span class="changed-mark">для&nbsp;редакторов</span></h2>
+            <p>Меня зовут Акулова Аня, я&nbsp;UX‑редактор. Мне давно не&nbsp;хватало удобного типографа, поэтому я&nbsp;решила сделать свой&nbsp;— и&nbsp;собрала в&nbsp;нём всё, что сама использую в&nbsp;работе ✦</p>
+            <div class="hero-actions">
+              <a class="button button-light" href="https://annaakulova.ru/" target="_blank" rel="noreferrer">Познакомиться со&nbsp;мной <span aria-hidden="true">↗</span></a>
+              <a class="text-link light-link" href="https://t.me/akanna_notes" target="_blank" rel="noreferrer">Читать телеграм‑канал <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
+
+          <ol class="author-steps" aria-label="Как создавался Чистовик">
+            <li><span class="author-step-number">1</span><div><h3>Собрала десятки правил</h3><p>Кавычки, тире, пробелы и&nbsp;числа</p></div></li>
+            <li><span class="author-step-number">2</span><div><h3>Разобрала спорные случаи</h3><p>Например, сокращения и&nbsp;пересечения правил</p></div></li>
+            <li><span class="author-step-number">3</span><div><h3>Протестировала на&nbsp;реальных макетах</h3><p>От&nbsp;отдельных слоёв до&nbsp;экранов с&nbsp;компонентами</p></div></li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>©&nbsp;2026 Чистовик</span>
+      <div><a href="https://annaakulova.ru/" target="_blank" rel="noreferrer">annaakulova.ru ↗</a><a href="#top">Наверх ↑</a></div>
+    </footer>
+  </body>
+</html>
