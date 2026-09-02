@@ -52,8 +52,7 @@
       .preview-grid {
         align-items: start;
         display: grid;
-        gap: 24px;
-        grid-template-columns: repeat(2, 360px);
+        width: 360px;
       }
 
       .preview-column {
@@ -136,10 +135,6 @@
         grid-template-rows: auto auto minmax(0, 1fr) auto;
       }
 
-      .error-report {
-        grid-template-rows: auto auto minmax(0, 1fr) auto;
-      }
-
       .report-intro {
         align-items: center;
         border-bottom: 1px solid var(--border);
@@ -161,14 +156,6 @@
         display: block;
         height: 56px;
         width: auto;
-      }
-
-      .error-report .report-status-icon-frame {
-        height: 38px;
-      }
-
-      .error-report .report-status-icon {
-        height: 38px;
       }
 
       .report-intro-copy {
@@ -544,12 +531,6 @@
         background: var(--accent-hover);
       }
 
-      @media (max-width: 780px) {
-        .preview-grid {
-          grid-template-columns: minmax(0, 360px);
-        }
-      }
-
       @media (max-width: 420px) {
         body {
           padding: 20px 12px 36px;
@@ -655,100 +636,6 @@
         </div>
       </section>
 
-      <section class="preview-column" aria-label="Действующий экран проблемных слоёв">
-        <div class="window-frame">
-          <header class="window-bar" aria-label="Шапка окна Figma">
-            <img class="window-logo" src="../assets/plugin-icon.svg" alt="" />
-            <div class="window-name">Чистовик</div>
-            <div class="window-close" aria-hidden="true"></div>
-          </header>
-
-          <section class="window" aria-label="Не всё удалось обработать">
-            <div class="report error-report">
-              <header class="report-intro">
-                <span class="report-status-icon-frame" aria-hidden="true">
-                  <img class="report-status-icon" src="../assets/report-warning.png" alt="" />
-                </span>
-                <span class="report-intro-copy">
-                  <h1 class="report-title">Не всё удалось обработать</h1>
-                  <p class="report-summary">Эти слои нужно исправить вручную</p>
-                </span>
-              </header>
-
-              <div class="result-toolbar">
-                <span class="result-count">7&nbsp;слоёв пропущены <span class="result-layer-count">· 10&nbsp;успешно</span></span>
-                <div class="result-navigation">
-                  <button class="navigation-button previous" id="errorPreviousIssue" type="button" aria-label="Предыдущий слой"></button>
-                  <button class="navigation-button next" id="errorNextIssue" type="button" aria-label="Следующий слой"></button>
-                </div>
-              </div>
-
-              <div class="report-scroll-frame">
-                <div class="report-scroll" id="errorReportScroll">
-                  <div class="result-list" id="errorResultList" aria-label="Слои, требующие внимания">
-                    <button class="result-item active" data-error-index="0" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически по условиям выбранного тарифа</span>
-                        <span class="layer-name">checkout / desktop / pricing / comparison / card / caption</span>
-                      </span>
-                    </button>
-                    <button class="result-item" data-error-index="1" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Первый пункт списка, второй пункт и важное примечание</span>
-                        <span class="layer-name">checklist / item</span>
-                      </span>
-                    </button>
-                    <button class="result-item" data-error-index="2" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Заголовок карточки с подключённым библиотечным стилем</span>
-                        <span class="layer-name">library card / title</span>
-                      </span>
-                    </button>
-                    <button class="result-item" data-error-index="3" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Скидка 20% действует только до 15 мая — потом цена изменится</span>
-                        <span class="layer-name">promo / legal note</span>
-                      </span>
-                    </button>
-                    <button class="result-item" data-error-index="4" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Перейти к оформлению заказа и выбрать удобный способ оплаты</span>
-                        <span class="layer-name">checkout / actions / button label</span>
-                      </span>
-                    </button>
-                    <button class="result-item" data-error-index="5" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Доставка займёт от двух до четырёх рабочих дней</span>
-                        <span class="layer-name">cart / delivery / note</span>
-                      </span>
-                    </button>
-                    <button class="result-item" data-error-index="6" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Нажимая кнопку, вы соглашаетесь с условиями обработки данных</span>
-                        <span class="layer-name">form / legal / consent</span>
-                      </span>
-                    </button>
-                  </div>
-
-                </div>
-                <div class="scroll-indicator" id="errorScrollIndicator" hidden aria-hidden="true">
-                  <span class="scroll-thumb" id="errorScrollThumb"></span>
-                </div>
-              </div>
-              <footer class="report-footer" id="errorReportFooter">
-                <button class="primary" type="button">Вернуться к типографу</button>
-              </footer>
-            </div>
-          </section>
-        </div>
-      </section>
     </main>
 
     <script>
@@ -761,16 +648,7 @@
       const scrollIndicator = document.getElementById("scrollIndicator");
       const scrollThumb = document.getElementById("scrollThumb");
       const reportFooter = document.getElementById("reportFooter");
-      const errorReportScroll = document.getElementById("errorReportScroll");
-      const errorResultItems = Array.from(document.querySelectorAll(".error-report .result-item"));
-      const errorLayerPaths = Array.from(document.querySelectorAll(".error-report .layer-name"));
-      const errorPreviousIssue = document.getElementById("errorPreviousIssue");
-      const errorNextIssue = document.getElementById("errorNextIssue");
-      const errorScrollIndicator = document.getElementById("errorScrollIndicator");
-      const errorScrollThumb = document.getElementById("errorScrollThumb");
-      const errorReportFooter = document.getElementById("errorReportFooter");
       let selectedIssueIndex = 0;
-      let selectedErrorIndex = 0;
 
       function updateScrollIndicator() {
         const viewportHeight = reportScroll.clientHeight;
@@ -802,53 +680,6 @@
         });
       }
 
-      function updateErrorScrollIndicator() {
-        const viewportHeight = errorReportScroll.clientHeight;
-        const contentHeight = errorReportScroll.scrollHeight;
-        const canScroll = contentHeight > viewportHeight + 1;
-        const hasHiddenContentBelow = canScroll && errorReportScroll.scrollTop < contentHeight - viewportHeight - 1;
-        errorScrollIndicator.hidden = !canScroll;
-        errorReportFooter.classList.toggle("with-scroll-gradient", hasHiddenContentBelow);
-
-        if (!canScroll) {
-          return;
-        }
-
-        const trackHeight = errorScrollIndicator.clientHeight;
-        const thumbHeight = Math.max(24, trackHeight * (viewportHeight / contentHeight));
-        const maximumThumbOffset = trackHeight - thumbHeight;
-        const maximumScrollOffset = contentHeight - viewportHeight;
-        const thumbOffset = maximumScrollOffset > 0
-          ? maximumThumbOffset * (errorReportScroll.scrollTop / maximumScrollOffset)
-          : 0;
-
-        errorScrollThumb.style.height = `${thumbHeight}px`;
-        errorScrollThumb.style.transform = `translateY(${thumbOffset}px)`;
-      }
-
-      function updateErrorLayerPaths() {
-        errorLayerPaths.forEach((path) => {
-          const fullPath = path.dataset.fullPath || path.textContent || "";
-          const segments = fullPath.split(" / ");
-          path.dataset.fullPath = fullPath;
-          path.textContent = fullPath;
-
-          if (path.scrollWidth <= path.clientWidth) {
-            return;
-          }
-
-          for (let startIndex = 1; startIndex < segments.length; startIndex += 1) {
-            path.textContent = `… / ${segments.slice(startIndex).join(" / ")}`;
-
-            if (path.scrollWidth <= path.clientWidth) {
-              return;
-            }
-          }
-
-          path.textContent = `… / ${segments[segments.length - 1]}`;
-        });
-      }
-
       function scrollItemIntoView(item, viewport, footer) {
         if (!item) {
           return;
@@ -867,24 +698,6 @@
         } else if (itemBounds.bottom > visibleBottom) {
           viewport.scrollTop += itemBounds.bottom - visibleBottom;
         }
-      }
-
-      function selectErrorIssue(index, shouldScroll = false) {
-        selectedErrorIndex = index;
-
-        errorResultItems.forEach((item, itemIndex) => {
-          item.classList.toggle("active", itemIndex === index);
-          item.style.setProperty("--active-line-length", `${item.offsetHeight}px`);
-        });
-
-        errorPreviousIssue.disabled = index === 0;
-        errorNextIssue.disabled = index === errorResultItems.length - 1;
-
-        if (shouldScroll) {
-          scrollItemIntoView(errorResultItems[index], errorReportScroll, errorReportFooter);
-        }
-
-        window.requestAnimationFrame(updateErrorScrollIndicator);
       }
 
       function updateLayerPaths() {
@@ -997,41 +810,18 @@
       });
 
       reportScroll.addEventListener("scroll", updateScrollIndicator);
-      errorReportScroll.addEventListener("scroll", updateErrorScrollIndicator);
-
-      errorResultItems.forEach((item, index) => {
-        item.addEventListener("click", () => selectErrorIssue(index, true));
-      });
-
-      errorPreviousIssue.addEventListener("click", () => {
-        if (selectedErrorIndex > 0) {
-          selectErrorIssue(selectedErrorIndex - 1, true);
-        }
-      });
-
-      errorNextIssue.addEventListener("click", () => {
-        if (selectedErrorIndex < errorResultItems.length - 1) {
-          selectErrorIssue(selectedErrorIndex + 1, true);
-        }
-      });
 
       window.addEventListener("resize", () => {
         updateLayerPaths();
         updateItemHeights();
         updateScrollIndicator();
-        selectErrorIssue(selectedErrorIndex);
-        updateErrorLayerPaths();
-        updateErrorScrollIndicator();
       });
 
       selectIssue(0);
-      selectErrorIssue(0);
       window.requestAnimationFrame(() => {
         updateLayerPaths();
         updateItemHeights();
         updateScrollIndicator();
-        updateErrorLayerPaths();
-        updateErrorScrollIndicator();
       });
     </script>
   </body>

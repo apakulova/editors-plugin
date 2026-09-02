@@ -41,6 +41,11 @@ assert.strictEqual(uiSource.includes("Не удалось запустить т�
 assert.strictEqual(uiSource.includes("Вернуться к типографу"), true, "The settings error report must keep the agreed return action");
 assert.match(
   uiSource,
+  /const isCritical = report\.kind === "critical_failure";[\s\S]*reportTitle\.textContent = isCritical[\s\S]*reportFooter\.hidden = !showReturnButton;[\s\S]*renderProblemLayerList\(report\);/,
+  "Safe and critical failure reports must share the same list, footer, and navigation shell"
+);
+assert.match(
+  uiSource,
   /\.error-report\s*\{[^}]*grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto;/s,
   "The error report footer must have its own fixed grid row"
 );
