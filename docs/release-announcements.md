@@ -174,13 +174,14 @@ Figma не позволяет менять меню уже опубликова�
 - `Оставить отзыв`, основная зелёная, открывает `https://forms.gle/hrkShyDWdidogZj18`;
 - `Вернуться к типографу`, вторичная салатовая с границей.
 
-Текущая иллюстрация: `assets/announcements/feedback-needed.png`.
+Текущая иллюстрация: `assets/announcements/feedback-needed-v4.png`.
 
 Сохранённые варианты иллюстрации:
 
 - `assets/announcements/feedback-needed-v1.png` — первый вариант с красной кнопкой «Нужен отзыв»;
 - `assets/announcements/feedback-needed-v2.png` — второй вариант с карточкой отзыва, пятью звёздами и курсором;
-- `assets/announcements/feedback-needed.png` — текущий вариант с крупной карточкой отзыва, обрезанный по видимому рисунку.
+- `assets/announcements/feedback-needed.png` — третий вариант с крупной карточкой отзыва, обрезанный по видимому рисунку;
+- `assets/announcements/feedback-needed-v4.png` — текущий вариант с более крупными деталями карточки и кнопки.
 
 Архив `number-grouping-2026-08` и все его иллюстрации сохранены без изменений.
 

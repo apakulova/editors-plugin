@@ -10,7 +10,7 @@ module.exports = {
   items: {
     [ACTIVE_ANNOUNCEMENT_ID]: {
       menuName: "💬 Оставить отзыв →",
-      imageAsset: "announcements/feedback-needed.png",
+      imageAsset: "announcements/feedback-needed-v4.png",
       titleHtml: "Расскажите, как вам Чистовик",
       paragraphsHtml: [
         "Скоро плагин выйдет за&nbsp;пределы Авито. Перед этим хочу узнать у&nbsp;своих: что уже классно, а&nbsp;где ещё есть над чем поработать.",
