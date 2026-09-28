@@ -11,6 +11,8 @@ const ALLOWED_ANALYTICS_EVENTS = new Set([
   "plugin_run_completed",
   "plugin_run_failed",
   "channel_link_clicked",
+  "release_announcement_opened",
+  "support_link_clicked",
   "website_link_clicked",
 ]);
 const BASE_ANALYTICS_PROPERTIES = [
@@ -108,6 +110,8 @@ const FAILURE_PROPERTIES = [
 const EVENT_ANALYTICS_PROPERTIES = {
   settings_opened: new Set([...BASE_ANALYTICS_PROPERTIES, "source"]),
   channel_link_clicked: new Set([...BASE_ANALYTICS_PROPERTIES, "link", "source"]),
+  release_announcement_opened: new Set([...BASE_ANALYTICS_PROPERTIES, "announcement_id", "source"]),
+  support_link_clicked: new Set([...BASE_ANALYTICS_PROPERTIES, "link", "source"]),
   website_link_clicked: new Set([...BASE_ANALYTICS_PROPERTIES, "link", "source"]),
   plugin_run_started: new Set([...BASE_ANALYTICS_PROPERTIES, ...RUN_CONTEXT_PROPERTIES]),
   plugin_run_completed: new Set([
@@ -135,6 +139,7 @@ const BOOLEAN_ANALYTICS_PROPERTIES = new Set([
   "recolor_existing_asterisks",
 ]);
 const STRING_ANALYTICS_PROPERTIES = new Set([
+  "announcement_id",
   "error_category",
   "error_fingerprint",
   "error_location",
@@ -327,13 +332,14 @@ function validateAnalyticsStringProperty(key, value) {
   }
 
   const patterns = {
+    announcement_id: /^[a-z0-9-]+$/,
     error_category: /^[a-z0-9_]+$/,
     error_fingerprint: /^[a-z0-9]+$/,
     error_location: /^[A-Za-z0-9_./:-]+$/,
     error_name: /^[A-Za-z][A-Za-z0-9_]{0,99}$/,
     error_operation: /^[a-z0-9_]+$/,
     identity_type: /^(anonymous|identified)$/,
-    link: /^(channel|website)$/,
+    link: /^(channel|support|website)$/,
     mode: /^(default|beauty|development)$/,
     original_error_category: /^[a-z0-9_]+$/,
     original_error_fingerprint: /^[a-z0-9]+$/,
@@ -354,7 +360,7 @@ function validateAnalyticsStringProperty(key, value) {
     rule_slowest_code: /^[a-z0-9_]+$/,
     run_id: /^run_[a-z0-9_]+$/,
     selection_scope: /^(single_text|container|page|multi_selection)$/,
-    source: /^(settings|about_tab|quick_run)$/,
+    source: /^(settings|about_tab|menu|quick_run)$/,
     stage: /^[a-z0-9_]+$/,
   };
 

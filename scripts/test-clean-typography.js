@@ -21,8 +21,11 @@ assert.match(uiSource, /data-channel-link[^>]+href="https:\/\/t\.me\/akanna_note
 assert.doesNotMatch(uiSource, /<a[^>]+data-website-link/, "The removed website link must not remain in the UI");
 assert.match(uiSource, /data-support-link[^>]+href="https:\/\/pay\.cloudtips\.ru\/p\/445155fe"/, "The support link must open CloudTips");
 assert.strictEqual(uiSource.includes('type: "channel-link-clicked"'), true, "The Telegram link must notify the plugin code");
+assert.strictEqual(uiSource.includes('type: "support-link-clicked"'), true, "The support link must notify the plugin code");
 assert.strictEqual(uiSource.includes('type: "website-link-clicked"'), true, "The website link must notify the plugin code");
 assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("channel_link_clicked"'), true, "Telegram clicks must reach PostHog");
+assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("release_announcement_opened"'), true, "Release announcement openings must reach PostHog");
+assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("support_link_clicked"'), true, "Support clicks must reach PostHog");
 assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("website_link_clicked"'), true, "Website clicks must reach PostHog");
 assert.strictEqual(compiledSource.includes("phc_BkVcyxEX27UmgdY7RhHQkquqQVL49kHhL9qDPNsFYzcp"), false, "The PostHog project token must stay on the relay");
 assert.deepStrictEqual(
@@ -109,7 +112,11 @@ assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="re
 assert.match(uiSource, /src="data:image\/png;base64,[^"]+" data-inline-asset="startup-error\.png"/, "The startup illustration must be bundled into the UI");
 assert.match(uiSource, /src: url\("data:font\/woff2;base64,[^"]+"\)/, "The text-layer icon font must be bundled into the UI");
 
-const releaseAnnouncementMenuIndex = manifest.menu.findIndex((item) => item.command === "open-release-announcement");
+const releaseAnnouncementMenuIndex = manifest.menu.findIndex(
+  (item) => typeof item.command === "string" && (
+    item.command === "open-release-announcement" || item.command.startsWith("open-release-announcement:")
+  )
+);
 assert.strictEqual(
   compiledSource.includes('figma.ui.postMessage({ type: "show-release-announcement" })'),
   true,
@@ -135,6 +142,11 @@ if (releaseAnnouncements.activeId === null) {
 
   assert.ok(activeReleaseAnnouncement, "The active release announcement id must point to an archived item");
   assert.notStrictEqual(releaseAnnouncementMenuIndex, -1, "The active release announcement must be present in the plugin menu");
+  assert.strictEqual(
+    manifest.menu[releaseAnnouncementMenuIndex].command,
+    `open-release-announcement:${releaseAnnouncements.activeId}`,
+    "The release announcement command must carry the active announcement id"
+  );
   assert.deepStrictEqual(
     manifest.menu[releaseAnnouncementMenuIndex - 1],
     { separator: true },
@@ -352,7 +364,7 @@ assert.match(createAnalyticsEventId(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 assert.strictEqual(analyticsPayload.distinct_id, "anon_test");
 assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
-assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 14);
+assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 15);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
 assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-26");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);

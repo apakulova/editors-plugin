@@ -1380,6 +1380,7 @@
       const panels = Array.from(document.querySelectorAll("[data-panel]"));
       const actions = document.querySelector(".actions");
       const channelLinks = Array.from(document.querySelectorAll("[data-channel-link]"));
+      const supportLinks = Array.from(document.querySelectorAll("[data-support-link]"));
       const websiteLinks = Array.from(document.querySelectorAll("[data-website-link]"));
       const rulesScroll = document.getElementById("rulesScroll");
       const rulesScrollIndicator = document.getElementById("rulesScrollIndicator");
@@ -1873,6 +1874,19 @@
             {
               pluginMessage: {
                 type: "channel-link-clicked",
+              },
+            },
+            "*"
+          );
+        });
+      });
+
+      supportLinks.forEach((link) => {
+        link.addEventListener("click", () => {
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: "support-link-clicked",
               },
             },
             "*"

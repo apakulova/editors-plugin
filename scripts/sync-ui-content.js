@@ -6,7 +6,7 @@ const releaseAnnouncements = require("../src/release-announcements.js");
 const rootDir = path.resolve(__dirname, "..");
 const manifestPath = path.join(rootDir, "manifest.json");
 const uiPath = path.join(rootDir, "src", "ui.html");
-const releaseAnnouncementCommand = "open-release-announcement";
+const releaseAnnouncementCommandPrefix = "open-release-announcement";
 
 function getActiveReleaseAnnouncement() {
   if (releaseAnnouncements.activeId === null) {
@@ -274,7 +274,10 @@ function syncManifestMenu() {
   const menu = [];
 
   for (const item of manifest.menu || []) {
-    if (item.command === releaseAnnouncementCommand) {
+    if (
+      item.command === releaseAnnouncementCommandPrefix ||
+      item.command?.startsWith(`${releaseAnnouncementCommandPrefix}:`)
+    ) {
       if (menu.length > 0 && menu[menu.length - 1].separator === true) {
         menu.pop();
       }
@@ -289,7 +292,7 @@ function syncManifestMenu() {
     menu.push({ separator: true });
     menu.push({
       name: activeReleaseAnnouncement.menuName,
-      command: releaseAnnouncementCommand,
+      command: `${releaseAnnouncementCommandPrefix}:${releaseAnnouncements.activeId}`,
     });
   }
 

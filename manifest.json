@@ -25,7 +25,7 @@
     },
     {
       "name": "💬 Оставить отзыв →",
-      "command": "open-release-announcement"
+      "command": "open-release-announcement:feedback-2026-09"
     }
   ],
   "editorType": [

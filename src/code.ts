@@ -12,7 +12,7 @@ const EN_DASH = "\u2013";
 const EM_DASH = "\u2014";
 const MINUS = "\u2212";
 const COMMAND_OPEN_SETTINGS = "open-settings";
-const COMMAND_OPEN_RELEASE_ANNOUNCEMENT = "open-release-announcement";
+const COMMAND_OPEN_RELEASE_ANNOUNCEMENT_PREFIX = "open-release-announcement";
 const ANALYTICS_API_HOST = "https://chistovik-plugin.vercel.app";
 const ANALYTICS_CAPTURE_PATH = "/api/capture";
 const NUMBER_DIAGNOSTICS_CAPTURE_PATH = "/api/number-diagnostics";
@@ -24,7 +24,7 @@ const NUMBER_DIAGNOSTICS_MAX_CASES_PER_PAYLOAD = 50;
 const NUMBER_DIAGNOSTICS_MAX_PAYLOAD_BYTES = 440 * 1024;
 const NUMBER_DIAGNOSTICS_MAX_TEXT_LENGTH = 12_000;
 const NUMBER_RULES_VERSION = "numbers-2026-08-25-v1";
-const ANALYTICS_SCHEMA_VERSION = 14;
+const ANALYTICS_SCHEMA_VERSION = 15;
 const ANALYTICS_PLUGIN_RELEASE = "2026-08-26";
 const PERFORMANCE_MEASUREMENT_VERSION = 8;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
@@ -165,6 +165,8 @@ type AnalyticsEventName =
   | "plugin_run_completed"
   | "plugin_run_failed"
   | "channel_link_clicked"
+  | "release_announcement_opened"
+  | "support_link_clicked"
   | "website_link_clicked";
 type AnalyticsErrorStage =
   | "collect_nodes"
@@ -715,8 +717,14 @@ let typographRunPromise: Promise<void> | null = null;
 
 async function run(): Promise<void> {
   try {
-    if (figma.command === COMMAND_OPEN_RELEASE_ANNOUNCEMENT) {
-      openReleaseAnnouncementUI();
+    if (
+      figma.command === COMMAND_OPEN_RELEASE_ANNOUNCEMENT_PREFIX ||
+      figma.command.startsWith(`${COMMAND_OPEN_RELEASE_ANNOUNCEMENT_PREFIX}:`)
+    ) {
+      const announcementId = figma.command.startsWith(`${COMMAND_OPEN_RELEASE_ANNOUNCEMENT_PREFIX}:`)
+        ? figma.command.slice(COMMAND_OPEN_RELEASE_ANNOUNCEMENT_PREFIX.length + 1)
+        : "legacy";
+      openReleaseAnnouncementUI(announcementId);
       return;
     }
 
@@ -740,8 +748,12 @@ async function run(): Promise<void> {
   }
 }
 
-function openReleaseAnnouncementUI(): void {
+function openReleaseAnnouncementUI(announcementId: string): void {
   showPluginUI();
+  queueAnalyticsEvent("release_announcement_opened", {
+    announcement_id: announcementId,
+    source: "menu",
+  });
   figma.ui.postMessage({ type: "show-release-announcement" });
 }
 
@@ -780,6 +792,14 @@ function configurePluginUIMessageHandler(): void {
       if (message.type === "channel-link-clicked") {
         queueAnalyticsEvent("channel_link_clicked", {
           link: "channel",
+          source: "about_tab",
+        });
+        return;
+      }
+
+      if (message.type === "support-link-clicked") {
+        queueAnalyticsEvent("support_link_clicked", {
+          link: "support",
           source: "about_tab",
         });
         return;

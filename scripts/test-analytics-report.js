@@ -10,6 +10,7 @@ const {
   formatPointEditingReadinessMessage,
   formatWeeklyErrorsMessage,
   formatWeeklyPerformanceMessage,
+  getActiveReleaseAnnouncementReportLabel,
   getMoscowCompletedWeekRange,
   getMoscowReportRange,
   getPointEditingFullDays,
@@ -96,6 +97,7 @@ function createSummary(overrides = {}) {
       p90DurationMs: 1385,
     },
     channelLinkClicked: 0,
+    supportLinkClicked: 0,
     errorCategories: [
       { category: "font_unavailable", count: 4 },
       { category: "write_text_failed", count: 1 },
@@ -105,12 +107,14 @@ function createSummary(overrides = {}) {
     modeBeauty: 0,
     modeDefault: 28,
     modeDevelopment: 0,
+    numberDiagnosticCases: 0,
     performanceRuns: 20,
     pointEditingReadiness: {
       fullDays: 1,
       successfulRuns: 7,
     },
     p90DurationMs: 1800,
+    releaseAnnouncementOpened: 0,
     runsWithHiddenNodes: 0,
     runsWithLockedNodes: 0,
     runsWithRecoloredAsterisks: 0,
@@ -151,12 +155,35 @@ async function run() {
   assert(message.includes("18% от всех запусков"));
   assert(message.includes("основные причины — недоступен шрифт (4 из 5 ошибок), не удалось записать текст (1 из 5 ошибок)"));
   assert(message.includes("📍 Это на 346% больше среднего за последние 7 дней"));
-  assert(message.includes("обычное время обработки: 420 мс — без заметных изменений"));
-  assert(message.includes("90% обработок за 1,8 секунды — заметно хуже, на 30%"));
-  assert(message.includes("📍 Скорость примерно такая же, как в среднем за последние 7 дней"));
+  assert(message.includes(">Изменения чисел: 0 случаев</a>"));
+  assert(!message.includes("Производительность:"));
+  assert(!message.includes("обычное время обработки"));
+  assert(!message.includes("90% обработок"));
+  assert(!message.includes("📍 Скорость"));
+  assert(message.includes([
+    "— с перекраской звездочек: 0",
+    "",
+    "💬 Оставить отзыв: 0",
+    "",
+    "Открытия настроек: 0",
+  ].join("\n")));
+  assert(message.includes([
+    "Открытия настроек: 0",
+    "Переходы в канал: 0",
+    "Переходы к чаевым: 0",
+  ].join("\n")));
   assert(message.includes("открывается только с vpn"));
   assert(!message.includes("1 из 7"));
   assert(!message.includes("7 из 30"));
+  assert.strictEqual(
+    getActiveReleaseAnnouncementReportLabel({
+      activeId: "new-item",
+      items: {
+        "new-item": { menuName: "✨ Новый пункт →" },
+      },
+    }),
+    "✨ Новый пункт"
+  );
 
   const readyMessage = formatAnalyticsMessage(
     dateRange,
@@ -184,7 +211,7 @@ async function run() {
   assert(todayMessage.includes("Запуски типографа: 28"));
   assert(todayMessage.includes("📍 Плагин запускали на 12% больше среднего за последние 7 дней"));
   assert(todayMessage.includes("Ошибки:"));
-  assert(todayMessage.includes("Производительность:"));
+  assert(!todayMessage.includes("Производительность:"));
   assert(todayMessage.includes("основные причины — недоступен шрифт (4 из 5 ошибок), не удалось записать текст (1 из 5 ошибок)"));
 
   const oldMeasurementMessage = formatAnalyticsMessage(
@@ -217,8 +244,8 @@ async function run() {
     env
   );
 
-  assert(partialPerformanceMessage.includes("Производительность:"));
-  assert(partialPerformanceMessage.includes("обычное время обработки: 420 мс"));
+  assert(!partialPerformanceMessage.includes("Производительность:"));
+  assert(!partialPerformanceMessage.includes("обычное время обработки"));
   assert(!partialPerformanceMessage.includes("90% обработок"));
   assert(!partialPerformanceMessage.includes("пока недостаточно данных"));
 
@@ -229,6 +256,7 @@ async function run() {
       errorCategories: [],
       failedRuns: 0,
       medianDurationMs: 0,
+      numberDiagnosticCases: 0,
       p90DurationMs: 0,
       successfulRuns: 0,
       typographRuns: 0,
@@ -457,7 +485,7 @@ async function run() {
 
   await withMockedFetch(
     [
-      { results: [[3, 28, 20, 18, 5, 1, 420, 1800, 28, 0, 0, 13, 14, 1, 0, 0, 0, 0, 0, 0]] },
+      { results: [[3, 28, 20, 18, 5, 1, 420, 1800, 28, 0, 0, 13, 14, 1, 0, 0, 0, 0, 4, 0, 0, 2]] },
       { results: [[175, 7, 160, 400, 1385]] },
       { results: [["font_unavailable", 5]] },
       { results: [[18, 420, 1800]] },
@@ -470,9 +498,13 @@ async function run() {
       assert.strictEqual(summary.successfulRuns, 20);
       assert.strictEqual(summary.performanceRuns, 18);
       assert.strictEqual(summary.failedRuns, 5);
+      assert.strictEqual(summary.releaseAnnouncementOpened, 4);
       assert.strictEqual(summary.baseline.performanceRuns, 160);
       assert.strictEqual(summary.medianDurationMs, 420);
+      assert.strictEqual(summary.supportLinkClicked, 2);
       assert.strictEqual(summary.pointEditingReadiness.successfulRuns, 7);
+      assert(JSON.parse(calls[0].options.body).query.query.includes("event = 'support_link_clicked'"));
+      assert(JSON.parse(calls[0].options.body).query.query.includes("properties.announcement_id = 'feedback-2026-09'"));
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '8'")));
       assert(calls[0] && JSON.parse(calls[0].options.body).query.query.includes("coalesce(nullIf(toString(properties.run_id), ''), toString(uuid))"));
@@ -501,7 +533,7 @@ async function run() {
 
   await withMockedFetch(
     [
-      { results: [Array(20).fill(0)] },
+      { results: [Array(22).fill(0)] },
       { results: [[0, 0, 0, 0, 0]] },
       { results: [] },
       { results: [[0, 0, 0]] },
@@ -514,6 +546,7 @@ async function run() {
       assert(emptyMessage.includes("Плагин никто не запускал"));
       assert(!emptyMessage.includes("Запуски типографа: 0"));
       assert(!emptyMessage.includes("Ошибки:"));
+      assert(!emptyMessage.includes("Изменения чисел"));
       assert(!emptyMessage.includes("Не удалось собрать отчёт"));
     }
   );

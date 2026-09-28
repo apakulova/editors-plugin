@@ -86,6 +86,48 @@ async function run() {
   assert.strictEqual(validatedErrorLayerCounts.properties.safe_failure_text_layers_count, 2);
   assert.strictEqual(validatedErrorLayerCounts.properties.successful_text_layers_count, 10);
 
+  const validatedChannelClick = validateAnalyticsPayload(createPayload({
+    event: "channel_link_clicked",
+    properties: {
+      $geoip_disable: true,
+      $process_person_profile: false,
+      analytics_schema_version: 9,
+      identity_type: "anonymous",
+      link: "channel",
+      plugin_release: "2026-08-05",
+      source: "about_tab",
+    },
+  }));
+  assert.strictEqual(validatedChannelClick.properties.link, "channel");
+
+  const validatedReleaseAnnouncementOpen = validateAnalyticsPayload(createPayload({
+    event: "release_announcement_opened",
+    properties: {
+      $geoip_disable: true,
+      $process_person_profile: false,
+      analytics_schema_version: 9,
+      announcement_id: "feedback-2026-09",
+      identity_type: "anonymous",
+      plugin_release: "2026-08-05",
+      source: "menu",
+    },
+  }));
+  assert.strictEqual(validatedReleaseAnnouncementOpen.properties.announcement_id, "feedback-2026-09");
+
+  const validatedSupportClick = validateAnalyticsPayload(createPayload({
+    event: "support_link_clicked",
+    properties: {
+      $geoip_disable: true,
+      $process_person_profile: false,
+      analytics_schema_version: 9,
+      identity_type: "anonymous",
+      link: "support",
+      plugin_release: "2026-08-05",
+      source: "about_tab",
+    },
+  }));
+  assert.strictEqual(validatedSupportClick.properties.link, "support");
+
   const validatedRollbackDiagnostic = validateAnalyticsPayload(createPayload({
     event: "plugin_run_failed",
     properties: {

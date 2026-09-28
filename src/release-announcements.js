@@ -1,7 +1,12 @@
 const ACTIVE_ANNOUNCEMENT_ID = "feedback-2026-09";
 
+function getMenuAnalyticsLabel(menuName) {
+  return menuName.replace(/\s*→\s*$/, "").trim();
+}
+
 module.exports = {
   activeId: ACTIVE_ANNOUNCEMENT_ID,
+  getMenuAnalyticsLabel,
   items: {
     [ACTIVE_ANNOUNCEMENT_ID]: {
       menuName: "💬 Оставить отзыв →",

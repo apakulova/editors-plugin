@@ -1,4 +1,5 @@
 const MOSCOW_TIME_ZONE = "Europe/Moscow";
+const releaseAnnouncements = require("../../src/release-announcements.js");
 const { getNumberDiagnosticSummary } = require("./number-diagnostics-store");
 const { getNumberDiagnosticsDatabaseUrl } = require("./number-diagnostics-config");
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
@@ -38,8 +39,10 @@ const SUMMARY_COLUMNS = [
   "runsWithHiddenNodes",
   "runsWithLockedNodes",
   "runsWithRecoloredAsterisks",
+  "releaseAnnouncementOpened",
   "settingsOpened",
   "channelLinkClicked",
+  "supportLinkClicked",
 ];
 const BASELINE_COLUMNS = [
   "typographRuns",
@@ -267,9 +270,20 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function getActiveReleaseAnnouncementReportLabel(config = releaseAnnouncements) {
+  const announcement = config.activeId === null ? null : config.items?.[config.activeId];
+
+  if (!announcement || typeof announcement.menuName !== "string") {
+    return null;
+  }
+
+  return releaseAnnouncements.getMenuAnalyticsLabel(announcement.menuName);
+}
+
 function getAnalyticsQuery(start, end) {
   const startDateTime = escapeHogqlString(formatHogqlDateTime(start));
   const endDateTime = escapeHogqlString(formatHogqlDateTime(end));
+  const activeAnnouncementId = escapeHogqlString(releaseAnnouncements.activeId || "");
 
   return `
 SELECT
@@ -291,8 +305,10 @@ SELECT
   uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.process_hidden_nodes = true) AS runs_with_hidden_nodes,
   uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.process_locked_nodes = true) AS runs_with_locked_nodes,
   uniqExactIf(${RUN_DEDUPLICATION_EXPRESSION}, event = 'plugin_run_started' AND properties.recolor_existing_asterisks = true) AS runs_with_recolored_asterisks,
+  countIf(event = 'release_announcement_opened' AND properties.announcement_id = '${activeAnnouncementId}') AS release_announcement_opened,
   countIf(event = 'settings_opened') AS settings_opened,
-  countIf(event = 'channel_link_clicked') AS channel_link_clicked
+  countIf(event = 'channel_link_clicked') AS channel_link_clicked,
+  countIf(event = 'support_link_clicked') AS support_link_clicked
 FROM events
 WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
   AND timestamp < toDateTime('${endDateTime}', 'UTC')
@@ -301,7 +317,9 @@ WHERE timestamp >= toDateTime('${startDateTime}', 'UTC')
     'plugin_run_started',
     'plugin_run_completed',
     'plugin_run_failed',
-    'channel_link_clicked'
+    'release_announcement_opened',
+    'channel_link_clicked',
+    'support_link_clicked'
   )
   AND ifNull(properties.is_test_event, false) != true
 `;
@@ -725,32 +743,6 @@ function formatRunsInsight(currentRuns, averageDailyRuns) {
   return `📍 Плагин запускали на ${formatSignedPercent(change)} меньше среднего за последние 7 дней`;
 }
 
-function formatPerformanceComparison(currentValue, baselineValue, slowerWord, fasterWord) {
-  if (!Number.isFinite(currentValue) || currentValue <= 0 || !Number.isFinite(baselineValue) || baselineValue <= 0) {
-    return "данных пока мало для надёжного сравнения";
-  }
-
-  const change = (currentValue - baselineValue) / baselineValue;
-
-  if (Math.abs(change) < 0.1) {
-    return "без заметных изменений";
-  }
-
-  if (change > 0.25) {
-    return `заметно ${slowerWord}, на ${formatSignedPercent(change)}`;
-  }
-
-  if (change > 0) {
-    return `немного ${slowerWord}, на ${formatSignedPercent(change)}`;
-  }
-
-  if (change < -0.25) {
-    return `заметно ${fasterWord}, на ${formatSignedPercent(change)}`;
-  }
-
-  return `немного ${fasterWord}, на ${formatSignedPercent(change)}`;
-}
-
 function getRussianPlural(value, one, few, many) {
   const absolute = Math.abs(value) % 100;
   const lastDigit = absolute % 10;
@@ -828,24 +820,6 @@ function formatErrorsInsight(failedRate, baselineFailedRate) {
   return `📍 Это на ${formatSignedPercent(change)} меньше среднего за последние 7 дней`;
 }
 
-function formatPerformanceInsight(currentValue, baselineValue) {
-  if (!Number.isFinite(currentValue) || currentValue <= 0 || !Number.isFinite(baselineValue) || baselineValue <= 0) {
-    return null;
-  }
-
-  const change = (currentValue - baselineValue) / baselineValue;
-
-  if (Math.abs(change) < 0.1) {
-    return "📍 Скорость примерно такая же, как в среднем за последние 7 дней";
-  }
-
-  if (change > 0) {
-    return `📍 Скорость на ${formatSignedPercent(change)} медленнее средней за последние 7 дней`;
-  }
-
-  return `📍 Скорость на ${formatSignedPercent(change)} быстрее средней за последние 7 дней`;
-}
-
 function formatPointEditingReadinessMessage(readiness, phase = POINT_EDITING_PHASE) {
   if (phase !== "baseline") {
     return null;
@@ -869,11 +843,6 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
 
   if (summary.typographRuns === 0) {
     const emptyLines = [...headingLines, "", "Плагин никто не запускал"];
-    const numberDiagnosticsLine = formatNumberDiagnosticCasesLine(dateRange, summary.numberDiagnosticCases, env);
-
-    if (numberDiagnosticsLine !== null) {
-      emptyLines.push("", numberDiagnosticsLine);
-    }
 
     if (dashboardUrl) {
       emptyLines.push("", `<a href="${escapeHtml(dashboardUrl)}">Полный дашборд с графиками</a> (открывается только с vpn)`);
@@ -932,45 +901,6 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     lines.push("", numberDiagnosticsLine);
   }
 
-  const medianDuration = formatDuration(summary.medianDurationMs);
-  const p90Duration = formatDuration(summary.p90DurationMs);
-  const performanceLines = [];
-
-  if (medianDuration !== null && summary.performanceRuns > 0) {
-    performanceLines.push(
-      `— обычное время обработки: ${medianDuration} — ${formatPerformanceComparison(
-        summary.medianDurationMs,
-        summary.baseline?.medianDurationMs,
-        "медленнее",
-        "быстрее"
-      )}`
-    );
-  }
-
-  if (p90Duration !== null && summary.performanceRuns >= MIN_WEEKLY_PERFORMANCE_RUNS) {
-    performanceLines.push(
-      `— 90% обработок за ${p90Duration} — ${formatPerformanceComparison(
-        summary.p90DurationMs,
-        summary.baseline?.p90DurationMs,
-        "хуже",
-        "лучше"
-      )}`
-    );
-  }
-
-  if (performanceLines.length > 0) {
-    lines.push("", "Производительность:", ...performanceLines);
-
-    const performanceInsight =
-      summary.performanceRuns > 0 && (summary.baseline?.performanceRuns || 0) > 0
-        ? formatPerformanceInsight(summary.medianDurationMs, summary.baseline?.medianDurationMs)
-        : null;
-
-    if (performanceInsight) {
-      lines.push("", performanceInsight);
-    }
-  }
-
   lines.push(
     "",
     "Режимы:",
@@ -987,10 +917,20 @@ function formatAnalyticsMessage(dateRange, summary, env = process.env) {
     "Опции:",
     `— со скрытыми слоями: ${summary.runsWithHiddenNodes}`,
     `— со слоями с замочком: ${summary.runsWithLockedNodes}`,
-    `— с перекраской звездочек: ${summary.runsWithRecoloredAsterisks}`,
+    `— с перекраской звездочек: ${summary.runsWithRecoloredAsterisks}`
+  );
+
+  const releaseAnnouncementLabel = getActiveReleaseAnnouncementReportLabel();
+
+  if (releaseAnnouncementLabel !== null) {
+    lines.push("", `${releaseAnnouncementLabel}: ${summary.releaseAnnouncementOpened}`);
+  }
+
+  lines.push(
     "",
     `Открытия настроек: ${summary.settingsOpened}`,
-    `Переходы в канал: ${summary.channelLinkClicked}`
+    `Переходы в канал: ${summary.channelLinkClicked}`,
+    `Переходы к чаевым: ${summary.supportLinkClicked}`
   );
 
   if (dashboardUrl) {
@@ -1349,6 +1289,7 @@ module.exports = {
   fetchWeeklyPerformanceSummary,
   formatAnalyticsFailureMessage,
   formatAnalyticsMessage,
+  getActiveReleaseAnnouncementReportLabel,
   formatNumberDiagnosticCasesLine,
   formatPointEditingReadinessMessage,
   formatRussianDate,
