@@ -539,6 +539,8 @@ PostHog вернул неожиданный формат данных.
 - `scripts/lib/daily-report-delivery-store.js` — служебное состояние отправки по московской дате отчёта;
 - `api/daily-analytics.js` — ежедневный отчёт за вчера;
 - `api/telegram.js` — обработка команд `/today`, `/speed` и `/errors`;
+- `api/form-feedback.js` — защищённый приём нового ответа Google Формы и отправка уведомления в Telegram;
+- `scripts/google-form-feedback.gs` — исходник сценария Google Формы, который запускается после нового ответа;
 - `scripts/send-daily-analytics.js` — резервный ручной отчёт за вчера;
 - `scripts/configure-telegram-menu.js` — обновление меню команд;
 - `vercel.json` — расписание запасной попытки ежедневного отчёта и подключение закрытого обработчика к теме очереди `chistovik-analytics`;
@@ -558,6 +560,7 @@ POSTHOG_PERFORMANCE_DASHBOARD_URL=https://eu.posthog.com/project/184090/dashboar
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
 TELEGRAM_WEBHOOK_SECRET
+FORM_FEEDBACK_WEBHOOK_SECRET
 CRON_SECRET
 NUMBER_DIAGNOSTICS_DATABASE_URL
 NUMBER_DIAGNOSTICS_PASSWORD
@@ -583,6 +586,8 @@ NUMBER_DIAGNOSTICS_DATABASE_URL
 Workflow перед отправкой устанавливает рабочие библиотеки через `npm ci --omit=dev --ignore-scripts`; без этого модули временного хранилища и защищённой доставки не загрузятся.
 
 Персональные ключи PostHog, Telegram-токен и остальные секреты нельзя хранить в репозитории, документации или сообщениях чата. Публичный `POSTHOG_PROJECT_TOKEN`, который разрешает только запись событий в конкретный проект, не является персональным ключом и может быть закреплён в коде пересылки.
+
+`FORM_FEEDBACK_WEBHOOK_SECRET` хранится одновременно в Vercel и в закрытых свойствах сценария Google Формы. Он подтверждает, что новый отзыв пришёл от настроенного сценария, и не попадает в код формы или плагина.
 
 ### Как узнать `TELEGRAM_CHAT_ID`
 

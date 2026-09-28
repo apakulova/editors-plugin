@@ -139,9 +139,10 @@
 
       .announcement-illustration {
         display: block;
-        height: auto;
+        height: 120px;
         margin-bottom: 12px;
-        width: 140px;
+        object-fit: contain;
+        width: 120px;
       }
 
       .announcement-title {
@@ -179,14 +180,18 @@
       }
 
       .button {
+        align-items: center;
         appearance: none;
         border-radius: 8px;
         cursor: pointer;
+        display: flex;
         font-size: 14px;
         font-weight: 500;
         height: 40px;
+        justify-content: center;
         line-height: 18px;
         padding: 0 14px;
+        text-decoration: none;
         width: 100%;
       }
 
@@ -228,7 +233,7 @@
   </head>
   <body>
     <main class="preview">
-      <p class="preview-note">Новая иллюстрация · экран сообщения с&nbsp;одной кнопкой</p>
+      <p class="preview-note">Оставить отзыв</p>
 
       <div class="window-frame">
         <header class="window-bar" aria-label="Шапка окна Figma">
@@ -240,16 +245,17 @@
         <section class="window" aria-label="Сообщение плагина Чистовик">
           <article class="announcement">
             <div class="announcement-content">
-              <img class="announcement-illustration" src="../assets/announcements/number-grouping-v3.png" alt="" />
-              <h1 class="announcement-title">Чистовик больше не&nbsp;делит все числа по&nbsp;разрядам</h1>
+              <img class="announcement-illustration" src="../assets/announcements/feedback-needed.png" alt="" />
+              <h1 class="announcement-title">Расскажите, как вам Чистовик</h1>
               <div class="announcement-summary">
-                <p>Пробел теперь ставится только у&nbsp;чисел рядом с&nbsp;валютой, процентом или единицами измерения. В&nbsp;остальных случаях&nbsp;— решение за&nbsp;редактором.</p>
-                <p>Здесь поменяется:&nbsp;<strong>10000&nbsp;₽</strong>&nbsp;→&nbsp;<strong>10&nbsp;000&nbsp;₽</strong><br />Тут без правок: <strong>Разыграем 20000&nbsp;пылесосов</strong></p>
+                <p>Скоро плагин выйдет за&nbsp;пределы Авито. Перед этим хочу узнать у&nbsp;своих: что уже классно, а&nbsp;где ещё есть над чем поработать.</p>
+                <p>Хвалите, ругайте&nbsp;— что угодно, только чур честно!</p>
               </div>
             </div>
 
             <footer class="announcement-actions">
-              <button class="button button-primary" type="button">Вернуться к&nbsp;типографу</button>
+              <a class="button button-primary" href="https://forms.gle/hrkShyDWdidogZj18" target="_blank" rel="noreferrer">Оставить отзыв</a>
+              <button class="button button-secondary" type="button">Вернуться к&nbsp;типографу</button>
             </footer>
           </article>
         </section>

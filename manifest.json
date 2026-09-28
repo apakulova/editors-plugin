@@ -24,7 +24,7 @@
       "separator": true
     },
     {
-      "name": "⚠️ Не все числа делятся на разряды →",
+      "name": "💬 Оставить отзыв →",
       "command": "open-release-announcement"
     }
   ],

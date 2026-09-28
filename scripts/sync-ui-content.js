@@ -31,7 +31,7 @@ function getActiveReleaseAnnouncement() {
     throw new Error("У сообщения выпуска должна быть кнопка возврата к типографу");
   }
 
-  const supportedActions = new Set(["back-to-typograph", "show-rules"]);
+  const supportedActions = new Set(["back-to-typograph", "show-rules", "open-url"]);
   const supportedAppearances = new Set(["primary", "secondary"]);
 
   announcement.actions.forEach((action) => {
@@ -41,6 +41,20 @@ function getActiveReleaseAnnouncement() {
 
     if (!supportedAppearances.has(action.appearance)) {
       throw new Error(`Неизвестный вид кнопки сообщения выпуска: ${action.appearance}`);
+    }
+
+    if (action.action === "open-url") {
+      let url;
+
+      try {
+        url = new URL(action.url);
+      } catch {
+        throw new Error("У внешней кнопки сообщения выпуска должен быть корректный адрес");
+      }
+
+      if (url.protocol !== "https:") {
+        throw new Error("Внешняя кнопка сообщения выпуска должна вести на HTTPS-адрес");
+      }
     }
   });
 
@@ -52,10 +66,12 @@ function getActiveReleaseAnnouncement() {
     }
   }
 
-  const imagePath = path.join(rootDir, "assets", announcement.imageAsset);
+  if (announcement.imageAsset !== null) {
+    const imagePath = path.join(rootDir, "assets", announcement.imageAsset);
 
-  if (!fs.existsSync(imagePath)) {
-    throw new Error(`Не найдена иллюстрация сообщения выпуска: ${announcement.imageAsset}`);
+    if (!fs.existsSync(imagePath)) {
+      throw new Error(`Не найдена иллюстрация сообщения выпуска: ${announcement.imageAsset}`);
+    }
   }
 
   return announcement;
@@ -225,16 +241,21 @@ function renderReleaseAnnouncement() {
     .map((paragraph) => `<p>${paragraph}</p>`)
     .join("\n");
   const actions = activeReleaseAnnouncement.actions
-    .map(
-      (action) =>
-        `<button class="${action.appearance}" type="button" data-announcement-action="${action.action}">${action.labelHtml}</button>`
-    )
+    .map((action) => {
+      if (action.action === "open-url") {
+        return `<a class="${action.appearance}" href="${action.url}" target="_blank" rel="noreferrer">${action.labelHtml}</a>`;
+      }
+
+      return `<button class="${action.appearance}" type="button" data-announcement-action="${action.action}">${action.labelHtml}</button>`;
+    })
     .join("\n");
+  const illustration = activeReleaseAnnouncement.imageAsset
+    ? `<img class="release-announcement-illustration" src="" data-inline-asset="${activeReleaseAnnouncement.imageAsset}" alt="" />\n`
+    : "";
 
   return `<article class="release-announcement">
   <div class="release-announcement-content">
-    <img class="release-announcement-illustration" src="" data-inline-asset="${activeReleaseAnnouncement.imageAsset}" alt="" />
-    <h1 class="release-announcement-title">${activeReleaseAnnouncement.titleHtml}</h1>
+${indent(illustration, 4)}    <h1 class="release-announcement-title">${activeReleaseAnnouncement.titleHtml}</h1>
     <div class="release-announcement-summary">
 ${indent(paragraphs, 6)}
     </div>

@@ -150,17 +150,21 @@ if (releaseAnnouncements.activeId === null) {
     assert.strictEqual(uiSource.includes(paragraph), true, "Every release announcement paragraph must match its source");
   });
 
-  assert.match(
-    uiSource,
-    new RegExp(`src="data:image\\/png;base64,[^"]+" data-inline-asset="${activeReleaseAnnouncement.imageAsset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`),
-    "The release announcement illustration must be bundled into the UI"
-  );
+  if (activeReleaseAnnouncement.imageAsset) {
+    assert.match(
+      uiSource,
+      new RegExp(`src="data:image\\/png;base64,[^"]+" data-inline-asset="${activeReleaseAnnouncement.imageAsset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`),
+      "The release announcement illustration must be bundled into the UI"
+    );
+  }
 
   activeReleaseAnnouncement.actions.forEach((action) => {
+    const actionMarkup = action.action === "open-url"
+      ? `class="${action.appearance}" href="${action.url}" target="_blank" rel="noreferrer">${action.labelHtml}</a>`
+      : `class="${action.appearance}" type="button" data-announcement-action="${action.action}">${action.labelHtml}</button>`;
+
     assert.strictEqual(
-      uiSource.includes(
-        `class="${action.appearance}" type="button" data-announcement-action="${action.action}">${action.labelHtml}</button>`
-      ),
+      uiSource.includes(actionMarkup),
       true,
       "Every release announcement action must match its source"
     );
