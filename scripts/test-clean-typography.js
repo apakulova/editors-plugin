@@ -18,7 +18,8 @@ assert.strictEqual(compiledSource.includes("figma.createText("), false, "The plu
 assert.strictEqual(compiledSource.includes("typographRunInProgress"), false, "A repeated run must not end with a silent early return");
 assert.strictEqual(compiledSource.includes("MANUAL_ERROR_REPORT_TEST_KIND"), false, "Manual error report test mode must never remain in the build");
 assert.match(uiSource, /data-channel-link[^>]+href="https:\/\/t\.me\/akanna_notes"/, "The Telegram link must keep its analytics marker");
-assert.match(uiSource, /data-website-link[^>]+href="https:\/\/annaakulova\.ru\/"/, "The website link must have its own analytics marker");
+assert.doesNotMatch(uiSource, /<a[^>]+data-website-link/, "The removed website link must not remain in the UI");
+assert.match(uiSource, /data-support-link[^>]+href="https:\/\/pay\.cloudtips\.ru\/p\/445155fe"/, "The support link must open CloudTips");
 assert.strictEqual(uiSource.includes('type: "channel-link-clicked"'), true, "The Telegram link must notify the plugin code");
 assert.strictEqual(uiSource.includes('type: "website-link-clicked"'), true, "The website link must notify the plugin code");
 assert.strictEqual(compiledSource.includes('queueAnalyticsEvent("channel_link_clicked"'), true, "Telegram clicks must reach PostHog");

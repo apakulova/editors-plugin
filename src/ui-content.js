@@ -157,7 +157,9 @@ module.exports = {
       "Сохраняет цвета и&nbsp;стили внутри текста",
     ],
     noteTitle: "Сделано редактором для редакторов",
-    noteHtml: "Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;UX-редактор в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале «Аня учится пилить проекты». Буду рада знакомству 彡☆<br><br><a class=\"about-link\" data-website-link href=\"https://annaakulova.ru/\" target=\"_blank\" rel=\"noreferrer\">Сайт annaakulova.ru <strong>→</strong></a><br><a class=\"about-link\" data-channel-link href=\"https://t.me/akanna_notes\" target=\"_blank\" rel=\"noreferrer\">Телеграм-канал <strong>→</strong></a>",
+    noteHtml: "Автор плагина&nbsp;&mdash; Аня Акулова. Я&nbsp;UX-редактор в&nbsp;финтехе и&nbsp;делюсь своим опытом в&nbsp;канале <a class=\"about-link\" data-channel-link href=\"https://t.me/akanna_notes\" target=\"_blank\" rel=\"noreferrer\">«Аня учится пилить проекты»</a>. Буду рада знакомству 彡☆",
+    supportLinkHtml: "❤ Нравится плагин? Поддержать финансово <strong>→</strong>",
+    supportUrl: "https://pay.cloudtips.ru/p/445155fe",
   },
   actions: {
     runButton: "Запустить типограф",

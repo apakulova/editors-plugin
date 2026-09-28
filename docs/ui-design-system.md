@@ -65,7 +65,7 @@ font-family: Manrope, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans
 | Основной текст строки | `.text-preview` | 12px | 16px | 400 | `#141414` | Стоимость обслуживания… |
 | Мелкая вторичная подпись | `.about-note .about-text`, `.layer-name`, `.layer-path` | 11px | 15px | 400 | `#757575` | pricing / card / caption |
 | Мелкий пример | `.rule-example` | 11px | 15px | 700 | `#141414` | слово — слово |
-| Ссылка | `.about-link`, `.text-link` | наследует | наследует | 700 | `#065C5B` | Сайт annaakulova.ru → |
+| Ссылка | `.about-link`, `.text-link` | наследует | наследует | 700 | `#065C5B` | ❤ Нравится плагин? Поддержать финансово → |
 | Кнопка | `.primary`, `.secondary`, `.button` | 14px | 18px | 500 | зависит от вида | Вернуться к типографу |
 
 ## Ссылки

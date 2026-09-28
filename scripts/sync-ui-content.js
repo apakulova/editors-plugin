@@ -221,6 +221,9 @@ ${indent(bullets, 4)}
     </span>
     <span class="about-note-title">${content.about.noteTitle}</span>
     <p class="about-text">${content.about.noteHtml}</p>
+    <div class="about-support">
+      <a class="about-link" data-support-link href="${content.about.supportUrl}" target="_blank" rel="noreferrer">${content.about.supportLinkHtml}</a>
+    </div>
   </div>
 </div>`;
 }
