@@ -26,10 +26,10 @@ const NUMBER_DIAGNOSTICS_MAX_TEXT_LENGTH = 12_000;
 const NUMBER_RULES_VERSION = "numbers-2026-08-25-v1";
 const ANALYTICS_SCHEMA_VERSION = 15;
 const ANALYTICS_PLUGIN_RELEASE = "2026-08-26";
-const PERFORMANCE_MEASUREMENT_VERSION = 8;
+const PERFORMANCE_MEASUREMENT_VERSION = 9;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
 const DEFAULT_TEXT_WRITE_STRATEGY: TextWriteStrategy = "point";
-const RULE_ANALYTICS_VERSION = 3;
+const RULE_ANALYTICS_VERSION = 4;
 const ANALYTICS_ANONYMOUS_ID_KEY = "analyticsAnonymousId";
 const ANALYTICS_EVENT_QUEUE_KEY = "analyticsEventQueue";
 const ANALYTICS_CLOSE_GRACE_PERIOD_MS = 500;
@@ -46,7 +46,6 @@ const LETTERS = "A-Za-zА-Яа-яЁё";
 let unicodeMarkPattern: RegExp | null | undefined;
 let problemLayerSelectionRequestId = 0;
 const PERCENT_WORD_WHITELIST_PATTERN = "скидк(?:а|и|е|у|ой|ою)|кэшбэк(?:а|у|ом|е)?|кешбэк(?:а|у|ом|е)?|ставк(?:а|и|е|у|ой)|комисси(?:я|и|ю|ей)|доходност(?:ь|и|ью)|рассрочк(?:а|и|е|у|ой)|налог(?:а|у|ом|е)?|ндс";
-const DOTTED_ABBREVIATIONS = "тыс|мин|д|кв|г|гл|илл|ст|п|см|им|обл|кр|пос|пер|пр|просп|пл|бул|наб|ш|туп|оф|комн|мкр|уч|вл|влад|корп|эт|пгт|рис|стр|руб|коп";
 const QUANTITY_CURRENCY_SYMBOLS = "₽$€£¥₸₾₴₺֏₪₹₩₫฿₱";
 const QUANTITY_SCALE_PATTERN = "тыс\\.?|млн|млрд|трлн|тысяча|тысячи|тысяч|миллион|миллиона|миллионов|миллиард|миллиарда|миллиардов|триллион|триллиона|триллионов|квадриллион|квадриллиона|квадриллионов|квинтиллион|квинтиллиона|квинтиллионов|секстиллион|секстиллиона|секстиллионов|септиллион|септиллиона|септиллионов|октиллион|октиллиона|октиллионов|нониллион|нониллиона|нониллионов|дециллион|дециллиона|дециллионов";
 const QUANTITY_HORIZONTAL_SPACE_PATTERN = "[ \\t\\u00A0\\u2009\\u202F]";
@@ -71,7 +70,7 @@ const QUANTITY_MULTIWORD_FORMS = new Set([
   "квадратный миллиметр", "квадратных миллиметра", "квадратных миллиметров", "квадратный сантиметр", "квадратных сантиметра", "квадратных сантиметров", "квадратный метр", "квадратных метра", "квадратных метров", "квадратный километр", "квадратных километра", "квадратных километров",
   "кубический миллиметр", "кубических миллиметра", "кубических миллиметров", "кубический сантиметр", "кубических сантиметра", "кубических сантиметров", "кубический метр", "кубических метра", "кубических метров", "кубический километр", "кубических километра", "кубических километров",
   "градус Цельсия", "градуса Цельсия", "градусов Цельсия", "градус Фаренгейта", "градуса Фаренгейта", "градусов Фаренгейта", "мм рт. ст.", "миллиметр ртутного столба", "миллиметра ртутного столба", "миллиметров ртутного столба",
-  "кв. мм", "кв. см", "кв. м", "кв. км", "куб. мм", "куб. см", "куб. м", "куб. км", "руб./кв. м",
+  "кв. мм", "кв. см", "кв. м", "кв. км", "куб. мм", "куб. см", "куб. м", "куб. км",
 ]);
 const QUANTITY_MARKER_FORMS = new Set(
   (
@@ -80,8 +79,8 @@ const QUANTITY_MARKER_FORMS = new Set(
     "мкг мг г кг ц т мс с сек сек. мин мин. ч сут сут. нед нед. мес мес. Гц кГц МГц ГГц " +
     "° °C °С °F K мВ В кВ мА А кА мВт Вт кВт МВт ГВт Вт·ч кВт·ч МВт·ч Ом кОм МОм Дж кДж МДж кал ккал " +
     "Н кН МН Н·м кН·м Па кПа МПа бар мбар атм атм. бит байт КБ МБ ГБ ТБ Кбит Мбит Гбит пикс пикс. px dpi ppi lpi " +
-    "лм лк кд дБ моль ммоль моль/л ммоль/л об/мин об./мин. рад шт шт. ед ед. чел чел. экз экз. компл компл. упак упак. наб наб. пар пар. поз поз. мест мест. " +
-    "км/ч м/с кг/м³ руб./мес. руб./кв. м ₽/мес. ₽/м² Кбит/с Мбит/с Гбит/с шт./упак. чел./ч кв. мм кв. см кв. м кв. км куб. мм куб. см куб. м куб. км"
+    "лм лк кд дБ моль ммоль рад шт шт. ед ед. чел чел. экз экз. компл компл. упак упак. наб наб. пар пар. поз поз. мест мест. " +
+    "₽/мес. кв. мм кв. см кв. м кв. км куб. мм куб. см куб. м куб. км"
   ).split(" ")
 );
 QUANTITY_MARKER_FORMS.delete("кв.");
@@ -2764,6 +2763,56 @@ function markerHasUniqueNumberNeighbor(children: SceneNode[], markerIndex: numbe
   }
 }
 
+function isCrossLayerMoneyNumberCandidate(input: string): boolean {
+  try {
+    const number = "[+−-]?\\d+(?:[ \\t\\u00A0\\u2009\\u202F]\\d{3})*(?:[,.]\\d+)?";
+    return new RegExp(`^${number}(?:[ \\t\\u00A0]*[—–-][ \\t\\u00A0]*${number})?$`).test(input.trim());
+  } catch (error) {
+    console.error("[Чистовик] Failed to check cross-layer money number", error);
+    return false;
+  }
+}
+
+function hasUniqueCrossLayerMoneyNumberBefore(children: SceneNode[], index: number): boolean {
+  try {
+    const previousIndex = index - 1;
+
+    if (
+      previousIndex < 0 ||
+      children[previousIndex].type !== "TEXT" ||
+      !isSupportedNumberContextTextNode(children[previousIndex]) ||
+      !isCrossLayerMoneyNumberCandidate(children[previousIndex].characters)
+    ) {
+      return false;
+    }
+
+    const nextIndex = index + 1;
+    const hasNumberAfter =
+      nextIndex < children.length &&
+      children[nextIndex].type === "TEXT" &&
+      isSupportedNumberContextTextNode(children[nextIndex]) &&
+      isCrossLayerMoneyNumberCandidate(children[nextIndex].characters);
+
+    if (!hasNumberAfter) {
+      return true;
+    }
+
+    const current = children[index];
+    const followingAbbreviation = children[index + 2];
+
+    return (
+      current.type === "TEXT" &&
+      /^руб\.?$/i.test(current.characters.trim()) &&
+      followingAbbreviation?.type === "TEXT" &&
+      isSupportedNumberContextTextNode(followingAbbreviation) &&
+      /^коп\.?$/i.test(followingAbbreviation.characters.trim())
+    );
+  } catch (error) {
+    console.error("[Чистовик] Failed to check cross-layer money neighbor", error);
+    return false;
+  }
+}
+
 function createDiagnosticNumberContextNeighbors(
   children: SceneNode[],
   index: number,
@@ -2860,6 +2909,7 @@ function buildNumberLayerContextForNode(
       parentSnapshotCache?.set(parent.id, parentSnapshotKey);
     }
 
+    const needsExactMoneySnapshot = /^(?:руб|коп)\.?$/i.test(textNode.characters.trim());
     const localParticipants = children.slice(Math.max(0, index - 2), Math.min(children.length, index + 3)).map((child) => {
       if (child.type !== "TEXT") {
         return { id: child.id, text: `<${child.type}>` };
@@ -2867,7 +2917,7 @@ function buildNumberLayerContextForNode(
 
       const text = child.characters;
 
-      if (child.id === textNode.id || getExactContextMarker(text) !== null || isExactProtectiveContextLabel(text) || isAllowedNumberContextSeparator(text)) {
+      if (needsExactMoneySnapshot || child.id === textNode.id || getExactContextMarker(text) !== null || isExactProtectiveContextLabel(text) || isAllowedNumberContextSeparator(text)) {
         return { id: child.id, text };
       }
 
@@ -2878,12 +2928,14 @@ function buildNumberLayerContextForNode(
       diagnosticNeighbors: createDiagnosticNumberContextNeighbors(children, index),
       evidenceAfter: null,
       evidenceBefore: null,
+      moneyNumberBefore: false,
       protectedAsPhoneByNeighbor: false,
       protectedByNeighbor: false,
       standalonePhonePrefix: false,
       snapshotKey,
     };
     const trimmedText = textNode.characters.trim();
+    context.moneyNumberBefore = /^(?:руб|коп)\.?$/i.test(trimmedText) && hasUniqueCrossLayerMoneyNumberBefore(children, index);
     const rightIndex = getNumberNeighborIndex(children, index, 1);
 
     if (
@@ -2978,7 +3030,7 @@ function buildNumberLayerContexts(textNodes: TextNode[]): Map<string, NumberLaye
 
     for (const textNode of textNodes) {
       try {
-        if (isTextNodeRemoved(textNode) || !/\d{4}|\d+\.\d+|^\s*\+\s*7\s*$/.test(textNode.characters)) {
+        if (isTextNodeRemoved(textNode) || !/\d{4}|\d+\.\d+|^\s*\+\s*7\s*$|^\s*(?:руб|коп)\.?\s*$/i.test(textNode.characters)) {
           continue;
         }
 
@@ -3392,6 +3444,7 @@ function buildNumberDiagnosticLayerContexts(
                 diagnosticNeighbors,
                 evidenceAfter: context?.evidenceAfter ?? null,
                 evidenceBefore: context?.evidenceBefore ?? null,
+                moneyNumberBefore: context?.moneyNumberBefore ?? false,
                 protectedAsPhoneByNeighbor:
                   context?.protectedAsPhoneByNeighbor === true ||
                   protectedNeighbor?.text.trim().replace(/:$/, "").trim().toLowerCase() === "телефон",
@@ -7315,7 +7368,7 @@ function cleanTypographyForBeauty(input: string, ruleAnalyticsCollector: Typogra
     text = formatPhoneNumbers(text, ruleAnalyticsCollector, numberLayerContext);
     text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, moveLeadingCurrencySymbolsAfterQuantity);
     text = normalizeEditorialRanges(text, ruleAnalyticsCollector);
-    text = normalizeAbbreviations(text, ruleAnalyticsCollector);
+    text = normalizeAbbreviations(text, ruleAnalyticsCollector, numberLayerContext);
     text = applyNonBreakingSpaces(text, ruleAnalyticsCollector);
     text = normalizeMathAndSymbols(text, ruleAnalyticsCollector);
     text = applyTypographyRule(ruleAnalyticsCollector, "year_context", text, normalizeSpacedYears);
@@ -7703,7 +7756,9 @@ function cleanupDashesAndHyphens(input: string, ruleAnalyticsCollector: Typograp
         .replace(/([A-Za-zА-Яа-яЁё])[ \t\u00A0]+[-–][ \t\u00A0]+([A-Za-zА-Яа-яЁё])/g, `$1 ${EM_DASH} $2`)
     );
     return applyTypographyRule(ruleAnalyticsCollector, "hyphen_nonbreaking_words", text, (value) =>
-      value.replace(/([A-Za-zА-Яа-яЁё])-([A-Za-zА-Яа-яЁё])/g, `$1${NB_HYPHEN}$2`)
+      value.replace(/([A-Za-zА-Яа-яЁё])-([A-Za-zА-Яа-яЁё])/g, (match: string, _left: string, _right: string, offset: number, fullText: string) =>
+        isSlashSeparatedAbbreviationPart(fullText, offset, offset + match.length) ? match : match.replace("-", NB_HYPHEN)
+      )
     );
   } catch (error) {
     console.error("[Чистовик] Failed to clean dashes and hyphens", error);
@@ -8060,6 +8115,7 @@ interface NumberLayerContext {
   diagnosticNeighbors: NumberDiagnosticNeighbor[];
   evidenceAfter: QuantityEvidence | null;
   evidenceBefore: QuantityEvidence | null;
+  moneyNumberBefore: boolean;
   protectedAsPhoneByNeighbor: boolean;
   protectedByNeighbor: boolean;
   standalonePhonePrefix: boolean;
@@ -8787,7 +8843,7 @@ function getQuantityMarkerKind(marker: string): QuantityEvidenceKind | null {
       return "currency";
     }
 
-    if (QUANTITY_MULTIWORD_FORMS.has(normalized) || QUANTITY_MULTIWORD_FORMS.has(lower) || QUANTITY_MARKER_FORMS.has(normalized) || QUANTITY_MARKER_FORMS.has(lower) || QUANTITY_FULL_WORD_FORMS.has(lower)) {
+    if (/^(?:в|вт|квт|dpi|lpi)$/i.test(normalized) || QUANTITY_MULTIWORD_FORMS.has(normalized) || QUANTITY_MULTIWORD_FORMS.has(lower) || QUANTITY_MARKER_FORMS.has(normalized) || QUANTITY_MARKER_FORMS.has(lower) || QUANTITY_FULL_WORD_FORMS.has(lower)) {
       return "quantity";
     }
 
@@ -8886,7 +8942,7 @@ function getQuantityEvidenceAfter(fullText: string, end: number): QuantityEviden
         return null;
       }
 
-      if (normalized === "с" && /^[ \t\u00A0\u2009\u202F]+[A-Za-zА-Яа-яЁё]/.test(remainder)) {
+      if (normalized.toLowerCase() === "с" && /^[ \t\u00A0\u2009\u202F]+[A-Za-zА-Яа-яЁё]/.test(remainder)) {
         return null;
       }
 
@@ -9195,9 +9251,38 @@ function formatQuantitativeMathExpressions(input: string): string {
   }
 }
 
+function separateAttachedMeasurementUnits(input: string, numberLayerContext: NumberLayerContext | null): string {
+  const pattern = new RegExp(`(^|[^${LETTERS}\\d_.,])(\\d+(?:[.,]\\d+)?)(кВт|Вт|dpi|lpi|км|кг|мм|см|мл|с|м|г|л|В)(?=$|[^${LETTERS}\\d_])`, "gi");
+
+  return input.replace(pattern, (match: string, prefix: string, amount: string, unit: string, offset: number, fullText: string) => {
+    const amountStart = offset + prefix.length;
+    const unitEnd = offset + match.length;
+    const bounds = getLooseTokenBounds(fullText, amountStart, unitEnd);
+    const before = fullText.slice(bounds.start, amountStart);
+    const after = fullText.slice(unitEnd, bounds.end);
+
+    if (
+      numberLayerContext?.protectedByNeighbor === true ||
+      hasProtectiveQuantityLabel(fullText, amountStart) ||
+      isInsideProtectedNumericIdentifier(fullText, amountStart, amountStart + amount.length) ||
+      isNumberInsideDateLikeToken(fullText, amountStart, amountStart + amount.length) ||
+      isNumberInsideFullDate(fullText, amountStart, amountStart + amount.length) ||
+      isNumberPartOfMaskedSecret(fullText, amountStart, amount.replace(/\D/g, "")) ||
+      /[A-Za-zА-Яа-яЁё_\/@]/.test(before) ||
+      /[A-Za-zА-Яа-яЁё\d_\/@\-–—‑]/.test(after) ||
+      isSlashSeparatedAbbreviationPart(fullText, amountStart, unitEnd)
+    ) {
+      return match;
+    }
+
+    return `${prefix}${amount}${NBSP}${unit}`;
+  });
+}
+
 function formatNumbersAndMoney(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null, numberLayerContext: NumberLayerContext | null = null): string {
   try {
-    let text = applyTypographyRule(ruleAnalyticsCollector, "number_protect_date", input, normalizeCommaSeparatedDates);
+    let text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", input, (value) => separateAttachedMeasurementUnits(value, numberLayerContext));
+    text = applyTypographyRule(ruleAnalyticsCollector, "number_protect_date", text, normalizeCommaSeparatedDates);
     text = applyTypographyRule(ruleAnalyticsCollector, "number_document_outline", text, normalizeDottedNumberingSeparators);
     text = applyTypographyRule(ruleAnalyticsCollector, "number_western_format", text, (value) => normalizeWesternGroupedNumbers(value, numberLayerContext));
 
@@ -9245,8 +9330,21 @@ function formatNumbersAndMoney(input: string, ruleAnalyticsCollector: Typography
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, (value) =>
       value.replace(
-        new RegExp(`(\\d(?:[\\d \\u00A0\\u2009\\u202F]*\\d)?(?:,\\d+)?)[ \\t\\u00A0\\u2009\\u202F]*([${QUANTITY_CURRENCY_SYMBOLS}]|км|кг|м)(?=$|[^${LETTERS}])`, "g"),
-        `$1${NBSP}$2`
+        new RegExp(`(\\d(?:[\\d \\u00A0\\u2009\\u202F]*\\d)?(?:,\\d+)?)[ \\t\\u00A0\\u2009\\u202F]*([${QUANTITY_CURRENCY_SYMBOLS}]|км|кг|м)(?=$|[^${LETTERS}])`, "gi"),
+        (match: string, number: string, unit: string, offset: number, fullText: string) => {
+          const unitStart = offset + match.lastIndexOf(unit);
+          const isRublePerMonth = unit === "₽" && /^[ \t\u00A0]*\/[ \t\u00A0]*мес(?:\.|$|[^A-Za-zА-Яа-яЁё])/i.test(fullText.slice(unitStart + unit.length));
+
+          if (
+            (!isRublePerMonth && isSlashSeparatedAbbreviationPart(fullText, offset, offset + match.length)) ||
+            (!QUANTITY_CURRENCY_SYMBOLS.includes(unit) && isNumberPartOfCodeToken(fullText, offset, offset + number.length)) ||
+            isCodeLikeTextPart(fullText, unitStart, unitStart + unit.length)
+          ) {
+            return match;
+          }
+
+          return `${number}${NBSP}${unit}`;
+        }
       )
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, (value) =>
@@ -9532,6 +9630,13 @@ function isDottedNumbering(fullText: string, start: number, end: number): boolea
     const textAfterNumber = fullText.slice(end);
     const startsLine = /^[ \t\u00A0]*$/.test(textBeforeNumberOnLine);
     const followedByHeading = /^[ \t\u00A0]+[А-ЯЁA-Z]/.test(textAfterNumber);
+
+    const voltsAfterNumber = /^[ \t\u00A0]+в(?=$|[^A-Za-zА-Яа-яЁё])(.*)$/i.exec(textAfterNumber);
+    const headingAfterPreposition = voltsAfterNumber !== null && /^[ \t\u00A0]+[А-ЯЁA-Z]/.test(voltsAfterNumber[1]);
+
+    if (voltsAfterNumber !== null && !headingAfterPreposition && !isShortDateToken(fullText.slice(start, end))) {
+      return false;
+    }
 
     if (!startsLine || !followedByHeading) {
       return false;
@@ -9901,25 +10006,33 @@ function groupLongNumber(value: string): string {
   }
 }
 
-function normalizeAbbreviations(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null): string {
+function normalizeAbbreviations(
+  input: string,
+  ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null,
+  numberLayerContext: NumberLayerContext | null = null
+): string {
   try {
     let text = input;
+    const number = "\\d+(?:[ \\t\\u00A0\\u2009\\u202F]\\d{3})*(?:[,.]\\d+)?";
+    const numberOrRange = `${number}(?:[—–-]${number})?`;
 
     text = applyTypographyRule(ruleAnalyticsCollector, "abbr_month", text, (value) =>
-      value.replace(/([₽$€])[ \t\u00A0]*\/[ \t\u00A0]*мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match: string, currency: string, offset: number, fullText: string) => {
+      value.replace(/₽[ \t\u00A0]*\/[ \t\u00A0]*(мес)(\.?)(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match: string, abbreviation: string, period: string, offset: number, fullText: string) => {
         try {
-          const periodIndex = match.lastIndexOf(".");
-
-          if (periodIndex !== -1 && isSameLineSentenceContinuation(fullText, offset + periodIndex)) {
-            recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, offset + periodIndex, true);
-            return `${currency}/мес.`;
+          if (isSlashSeparatedAbbreviationPart(fullText, offset, offset + match.length)) {
+            return match;
           }
 
-          if (periodIndex !== -1) {
-            recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, offset + periodIndex, false);
+          if (period !== ".") {
+            return `₽/${abbreviation}`;
           }
 
-          return `${currency}/мес`;
+          const periodIndex = offset + match.length - 1;
+          const removePeriod =
+            !isSentenceEndingPeriod(fullText, periodIndex) &&
+            hasLowercaseSentenceContinuation(fullText, periodIndex);
+          recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, !removePeriod);
+          return `₽/${abbreviation}${removePeriod ? "" : "."}`;
         } catch (error) {
           console.error("[Чистовик] Failed to normalize currency per month", error);
           return match;
@@ -9928,117 +10041,181 @@ function normalizeAbbreviations(input: string, ruleAnalyticsCollector: Typograph
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "abbr_compound", text, (value) =>
       value
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string, third: string) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string, third: string) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(и)[ \t\u00A0]+(др)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string) => `${prefix}${first}${NBSP}${second}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(в)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(ч)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string, third: string) => `${prefix}${first}${NBSP}${second}.${NBSP}${third}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(н)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(в)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string) => `${prefix}${first}.${NBSP}${second}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(е)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string) => `${prefix}${first}.${NBSP}${second}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(к)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string) => `${prefix}${first}.${NBSP}${second}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string) => `${prefix}${first}.${NBSP}${second}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (_match: string, prefix: string, first: string, second: string) => `${prefix}${first}.${NBSP}${second}.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}P.${NBSP}S.`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])p[ \t\u00A0]*\.?[ \t\u00A0]*s\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1P.${NBSP}S.`)
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match: string, prefix: string, first: string, second: string, third: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `${first}${NBSP}${second}.${NBSP}${third}.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(и)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match: string, prefix: string, first: string, second: string, third: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `${first}${NBSP}${second}.${NBSP}${third}.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(и)[ \t\u00A0]+(др)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match: string, prefix: string, first: string, second: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `${first}${NBSP}${second}.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(в)[ \t\u00A0]+(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(ч)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match: string, prefix: string, first: string, second: string, third: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `${first}${NBSP}${second}.${NBSP}${third}.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(е)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match: string, prefix: string, first: string, second: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(к)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match: string, prefix: string, first: string, second: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match: string, prefix: string, first: string, second: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match: string, prefix: string, first: string, second: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])p[ \t\u00A0]*\.[ \t\u00A0]*p[ \t\u00A0]*\.[ \t\u00A0]*s\.(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match: string, prefix: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `P.${NBSP}P.${NBSP}S.`, offset, fullText))
+        .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])p[ \t\u00A0]*\.[ \t\u00A0]*s\.(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match: string, prefix: string, offset: number, fullText: string) => normalizeCompoundUnlessSlash(match, prefix, `P.${NBSP}S.`, offset, fullText))
     );
-    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_area_volume", text, (value) =>
-      value
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])кв\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1кв.${NBSP}м`)
-        .replace(/(^|[^A-Za-zА-Яа-яЁё])куб\.?[ \t\u00A0]*м\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, `$1куб.${NBSP}м`)
+    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_compound", text, (value) =>
+      value.replace(/(^|[^\d_])([12]\d{3})[ \t\u00A0]*[—–-][ \t\u00A0]*(н)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(в)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match: string, prefix: string, year: string, first: string, second: string, offset: number, fullText: string) =>
+        normalizeCompoundUnlessSlash(match, prefix, `${year}${NBSP}${EM_DASH} ${first}.${NBSP}${second}.`, offset, fullText)
+      )
     );
-    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, normalizeSlashSeparatedAbbreviationDots);
-    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) =>
-      value.replace(new RegExp(`(^|[^${LETTERS}])(${DOTTED_ABBREVIATIONS})\\.?(?=$|[^${LETTERS}\\-${NB_HYPHEN}])`, "gi"), (match: string, prefix: string, abbreviation: string, offset: number, fullText: string) => {
-        try {
-          const abbreviationStart = offset + prefix.length;
-          const abbreviationEnd = abbreviationStart + abbreviation.length;
+    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) => {
+      const referenceNumber = "(?:№[ \\t\\u00A0]*\\d+(?:\\.\\d+)*|[IVXLCDM]+|\\d+(?:\\.\\d+)*(?:[—–-]\\d+(?:\\.\\d+)*)?)";
 
-          if (isSlashSeparatedAbbreviationPart(fullText, abbreviationStart, abbreviationEnd)) {
+      return value.replace(
+        new RegExp(`(^|[^${LETTERS}\\d_])(рис|илл|гл|стр|ст|п)\\.?[ \\t\\u00A0]+(${referenceNumber})(?=$|[^${LETTERS}\\d_])`, "gi"),
+        (match: string, prefix: string, abbreviation: string, reference: string, offset: number, fullText: string) =>
+          normalizeCompoundUnlessSlash(match, prefix, `${abbreviation}.${NBSP}${reference}`, offset, fullText)
+      );
+    });
+    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) =>
+      value.replace(
+        new RegExp(`(^|[^${LETTERS}\\d_])(${numberOrRange})[ \\t\\u00A0\\u2009\\u202F]*(тыс|мин|руб|коп)\\.?(?=$|[^${LETTERS}_])`, "gi"),
+        (match: string, prefix: string, amount: string, abbreviation: string, offset: number, fullText: string) => {
+          const abbreviationIndex = match.lastIndexOf(abbreviation);
+          const abbreviationStart = offset + abbreviationIndex;
+
+          if (isSlashSeparatedAbbreviationPart(fullText, offset + prefix.length, abbreviationStart + abbreviation.length)) {
             return match;
           }
 
-          return `${prefix}${abbreviation}.`;
-        } catch (error) {
-          console.error("[Чистовик] Failed to normalize dotted abbreviation candidate", error);
-          return match;
+          return `${prefix}${amount}${NBSP}${abbreviation}.`;
         }
-      })
+      )
     );
-    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) =>
-      value.replace(new RegExp(`(^|[^${LETTERS}])(под)(?=\\.|[ \\t\\u00A0]+\\d)(\\.?)`, "gi"), "$1$2.")
-    );
-    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_undotted_hyphenated", text, (value) =>
-      value.replace(new RegExp(`(^|[^${LETTERS}])(б[-${NB_HYPHEN}]р|пр[-${NB_HYPHEN}]т)\\.?(?=$|[^${LETTERS}])`, "gi"), "$1$2")
-    );
-    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_month", text, (value) =>
-      value.replace(/(^|[^A-Za-zА-Яа-яЁё])мес\.?(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match: string, prefix: string, offset: number, fullText: string) => {
-      try {
-        const start = offset + prefix.length;
-        const previous = previousNonSpace(fullText, start);
-        const next = nextNonSpace(fullText, offset + match.length);
-        const periodIndex = match.lastIndexOf(".");
-
-          if (previous === "/" || previous === "₽" || previous === "$" || previous === "€" || next === "/") {
-            if (periodIndex !== -1 && isSameLineSentenceContinuation(fullText, offset + periodIndex)) {
-              recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, offset + periodIndex, true);
-              return `${prefix}мес.`;
+    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_area_volume", text, (value) =>
+      value.replace(
+        new RegExp(`(^|[^${LETTERS}\\d_])(${number})[ \\t\\u00A0\\u2009\\u202F]+(кв|куб)\\.?[ \\t\\u00A0]+(м)(\\.?)(?=$|[^${LETTERS}_])`, "gi"),
+        (match: string, prefix: string, amount: string, kind: string, unit: string, period: string, offset: number, fullText: string) => {
+          try {
+            if (isSlashSeparatedAbbreviationPart(fullText, offset + prefix.length, offset + match.length)) {
+              return match;
             }
+
+            const periodIndex = period === "." ? offset + match.length - 1 : -1;
+            const removePeriod =
+              periodIndex !== -1 &&
+              !isSentenceEndingPeriod(fullText, periodIndex) &&
+              hasLowercaseSentenceContinuation(fullText, periodIndex);
 
             if (periodIndex !== -1) {
-              recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, offset + periodIndex, false);
+              recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, !removePeriod);
             }
 
-          return `${prefix}мес`;
+            return `${prefix}${amount}${NBSP}${kind}.${NBSP}${unit}${period === "." && !removePeriod ? "." : ""}`;
+          } catch (error) {
+            console.error("[Чистовик] Failed to normalize area or volume abbreviation", error);
+            return match;
+          }
         }
-
-        return `${prefix}мес.`;
-      } catch (error) {
-        console.error("[Чистовик] Failed to normalize мес", error);
-        return match;
-      }
-      })
+      )
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "abbr_undotted_large_number", text, (value) =>
-      value.replace(/(^|[^A-Za-zА-Яа-яЁё])(млн|млрд|трлн)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match: string, prefix: string, abbreviation: string, offset: number, fullText: string) => {
-      try {
-        const periodIndex = offset + match.length - 1;
+      value.replace(
+        new RegExp(`(^|[^${LETTERS}\\d_])(${number})[ \\t\\u00A0\\u2009\\u202F]+(млрд|трлн|млн|кВт|Вт|dpi|lpi|км|кг|мм|см|мл|с|м|г|л|В)(\\.?)(?=$|[^${LETTERS}_])`, "gi"),
+        (match: string, prefix: string, amount: string, abbreviation: string, period: string, offset: number, fullText: string) => {
+          try {
+            const amountStart = offset + prefix.length;
 
-        if (isSameLineSentenceContinuation(fullText, periodIndex)) {
-          recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, true);
-          return `${prefix}${abbreviation}.`;
+            if (amount.includes(".") || (prefix === "." && /\d/.test(fullText[amountStart - 2] ?? ""))) {
+              return match;
+            }
+
+            const abbreviationIndex = match.lastIndexOf(abbreviation);
+            const abbreviationStart = offset + abbreviationIndex;
+
+            if (isSlashSeparatedAbbreviationPart(fullText, amountStart, abbreviationStart + abbreviation.length)) {
+              return match;
+            }
+
+            const periodIndex = period === "." ? offset + match.length - 1 : -1;
+            const removePeriod =
+              periodIndex !== -1 &&
+              !isSentenceEndingPeriod(fullText, periodIndex) &&
+              hasLowercaseSentenceContinuation(fullText, periodIndex);
+
+            if (periodIndex !== -1) {
+              recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, !removePeriod);
+            }
+
+            return `${prefix}${amount}${NBSP}${getCanonicalTechnicalMeasurementUnit(abbreviation)}${period === "." && !removePeriod ? "." : ""}`;
+          } catch (error) {
+            console.error("[Чистовик] Failed to normalize undotted abbreviation", error);
+            return match;
+          }
         }
-
-        recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, false);
-        return `${prefix}${abbreviation}`;
-      } catch (error) {
-        console.error("[Чистовик] Failed to normalize large number abbreviation period", error);
-        return match;
-      }
-      })
+      )
     );
-    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_undotted_units", text, (value) =>
-      value.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?[ \t\u00A0]+)(квт|вт|в|dpi|lpi|км|кг|м|с|мм|см|л|мл)\.(?=$|[^A-Za-zА-Яа-яЁё])/gi, (match: string, numberWithSpace: string, unit: string, offset: number, fullText: string) => {
-      try {
-        const periodIndex = offset + match.length - 1;
-        const normalizedUnit = getCanonicalTechnicalMeasurementUnit(unit);
+    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) =>
+      value
+        .replace(new RegExp(`(^|[^${LETTERS}\\d_])((?:1\\d{3}|20\\d{2}))${NBSP}?г\\.?(?=$|[^${LETTERS}_])`, "g"), (match: string, prefix: string, year: string, offset: number, fullText: string) =>
+          normalizeCompoundUnlessSlash(match, prefix, `${year}${NBSP}г.`, offset, fullText)
+        )
+        .replace(new RegExp(`(^|[^${LETTERS}\\d_])(${number})${NBSP}г\\.?[ \\t\\u00A0]+(${number})[ \\t\\u00A0]+мес\\.?(?=$|[^${LETTERS}_])`, "g"), (match: string, prefix: string, years: string, months: string, offset: number, fullText: string) =>
+          normalizeCompoundUnlessSlash(match, prefix, `${years}${NBSP}г. ${months}${NBSP}мес.`, offset, fullText)
+        )
+    );
+    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_month", text, (value) =>
+      value.replace(new RegExp(`(^|[^${LETTERS}\\d_])(${number})[ \\t\\u00A0\\u2009\\u202F]+мес\\.?(?=$|[^${LETTERS}_])`, "g"), (match: string, prefix: string, amount: string, offset: number, fullText: string) =>
+        normalizeCompoundUnlessSlash(match, prefix, `${amount}${NBSP}мес.`, offset, fullText)
+      )
+    );
+    text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) =>
+      value.replace(
+        new RegExp(`(^|[^${LETTERS}\\d_.])(([12]\\d{3})[ \\t\\u00A0]*[—–-][ \\t\\u00A0]*([12]\\d{3}))[ \\t\\u00A0]*(гг)\\.?(?=$|[^${LETTERS}\\d_.])`, "gi"),
+        (match: string, prefix: string, range: string, firstYear: string, lastYear: string, abbreviation: string, offset: number, fullText: string) => {
+          const rangeStart = offset + prefix.length;
+          const rangeEnd = rangeStart + range.length;
+          const abbreviationStart = offset + match.lastIndexOf(abbreviation);
+          const previous = previousNonSpaceSkippingDevelopmentMarker(fullText, rangeStart);
+          // Ignore the known suffix when checking an attached range for code-like text.
+          const protectionText = `${fullText.slice(0, abbreviationStart)}${" ".repeat(abbreviation.length)}${fullText.slice(abbreviationStart + abbreviation.length)}`;
 
-        if (isSameLineSentenceContinuation(fullText, periodIndex)) {
-          recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, true);
-          return `${numberWithSpace}${normalizedUnit}.`;
+          if (
+            numberLayerContext?.protectedByNeighbor === true ||
+            previous === "+" || previous === MINUS ||
+            hasProtectiveQuantityLabel(fullText, rangeStart) ||
+            isNumberPartOfMaskedSecret(fullText, rangeStart, firstYear) ||
+            isProtectedNumericRange(protectionText, rangeStart, rangeEnd) ||
+            isNumberInsideFullDate(fullText, rangeStart, rangeEnd) ||
+            isSlashSeparatedAbbreviationPart(fullText, rangeStart, abbreviationStart + abbreviation.length)
+          ) {
+            return match;
+          }
+
+          return `${prefix}${firstYear}${EM_DASH}${lastYear}${NBSP}${abbreviation}.`;
         }
-
-        recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, false);
-        return `${numberWithSpace}${normalizedUnit}`;
-      } catch (error) {
-        console.error("[Чистовик] Failed to normalize unit period", error);
-        return match;
-      }
-      })
+      )
     );
+    if (numberLayerContext?.moneyNumberBefore) {
+      text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) =>
+        value.replace(/^([ \t\u00A0]*)(руб|коп)\.?(?=[ \t\u00A0]*$)/i, "$1$2.")
+      );
+    }
 
     return text;
   } catch (error) {
     console.error("[Чистовик] Failed to normalize abbreviations", error);
     throw error;
+  }
+}
+
+function normalizeCompoundUnlessSlash(
+  match: string,
+  prefix: string,
+  normalized: string,
+  offset: number,
+  fullText: string
+): string {
+  try {
+    const abbreviationStart = offset + prefix.length;
+
+    if (isSlashSeparatedAbbreviationPart(fullText, abbreviationStart, offset + match.length)) {
+      return match;
+    }
+
+    return `${prefix}${normalized}`;
+  } catch (error) {
+    console.error("[Чистовик] Failed to protect compound abbreviation inside slash expression", error);
+    return match;
   }
 }
 
@@ -10066,101 +10243,46 @@ function isSentenceEndingPeriod(fullText: string, periodIndex: number): boolean 
   try {
     const after = fullText.slice(periodIndex + 1);
 
-    return after.length === 0 || /^[ \t\u00A0]*$/.test(after) || /^[ \t\u00A0]+[A-ZА-ЯЁ]/.test(after);
+    return after.length === 0 || /^[ \t\u00A0]*$/.test(after) || /^[ \t\u00A0]*[\r\n]/.test(after) || /^[ \t\u00A0]+[A-ZА-ЯЁ]/.test(after);
   } catch (error) {
     console.error("[Чистовик] Failed to check sentence-ending period", error);
     throw error;
   }
 }
 
-function isSameLineSentenceContinuation(fullText: string, periodIndex: number): boolean {
+function hasLowercaseSentenceContinuation(fullText: string, periodIndex: number): boolean {
   try {
-    const after = fullText.slice(periodIndex + 1);
-
-    return /^[ \t\u00A0]+[A-ZА-ЯЁ]/.test(after);
+    return /^[ \t\u00A0]+[a-zа-яё]/.test(fullText.slice(periodIndex + 1));
   } catch (error) {
-    console.error("[Чистовик] Failed to check same-line sentence continuation", error);
-    throw error;
-  }
-}
-
-function normalizeSlashSeparatedAbbreviationDots(input: string): string {
-  try {
-    return input
-      .replace(
-        new RegExp(`(^|[^${LETTERS}])([А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]*\\/[ \\t\\u00A0]*[А-Яа-яЁё])`, "g"),
-        (match: string, prefix: string, abbreviation: string, offset: number, fullText: string) => {
-          try {
-            if (abbreviation.length === 1 && isPersonInitialBeforeSlash(fullText, offset + prefix.length)) {
-              return match;
-            }
-
-            return `${prefix}${abbreviation}`;
-          } catch (error) {
-            console.error("[Чистовик] Failed to normalize abbreviation dot before slash", error);
-            return match;
-          }
-        }
-      )
-      .replace(new RegExp(`(^|[^${LETTERS}])((?:[А-Яа-яЁё]{1,4}[ \\t\\u00A0]*\\/[ \\t\\u00A0]*)+[А-Яа-яЁё]{1,4})\\.(?=[ \\t\\u00A0]+[а-яё])`, "g"), (match: string, prefix: string, slashAbbreviation: string, offset: number, fullText: string) => {
-        try {
-          const dotIndex = offset + match.length - 1;
-
-          if (isSlashSeparatedAreaUnitAbbreviation(fullText, slashAbbreviation, dotIndex)) {
-            return match;
-          }
-
-          return `${prefix}${slashAbbreviation}`;
-        } catch (error) {
-          console.error("[Чистовик] Failed to normalize slash-separated abbreviation dot candidate", error);
-          return match;
-        }
-      });
-  } catch (error) {
-    console.error("[Чистовик] Failed to normalize slash-separated abbreviation dots", error);
-    throw error;
-  }
-}
-
-function isPersonInitialBeforeSlash(fullText: string, initialIndex: number): boolean {
-  try {
-    return new RegExp(`[А-ЯЁ][а-яё]+[ \\t\\u00A0]+$`).test(fullText.slice(0, initialIndex));
-  } catch (error) {
-    console.error("[Чистовик] Failed to check person initial before slash", error);
-    throw error;
-  }
-}
-
-function isSlashSeparatedAreaUnitAbbreviation(fullText: string, slashAbbreviation: string, dotIndex: number): boolean {
-  try {
-    return /\/[ \t\u00A0]*(кв|куб)$/i.test(slashAbbreviation) &&
-      /^[ \t\u00A0]+м(?=$|[^A-Za-zА-Яа-яЁё])/.test(fullText.slice(dotIndex + 1));
-  } catch (error) {
-    console.error("[Чистовик] Failed to check slash-separated area unit abbreviation", error);
+    console.error("[Чистовик] Failed to check lowercase sentence continuation", error);
     throw error;
   }
 }
 
 function isSlashSeparatedAbbreviationPart(fullText: string, abbreviationStart: number, abbreviationEnd: number): boolean {
   try {
+    const nearbyAtom = `[A-Za-zА-Яа-яЁё\\d]{1,5}(?:[.\\-${NB_HYPHEN}][A-Za-zА-Яа-яЁё\\d]{0,5})?\\.?`;
+    const nearbySequence = `${nearbyAtom}(?:[ \\t\\u00A0]+${nearbyAtom}){0,2}`;
+    const before = fullText.slice(Math.max(0, abbreviationStart - 40), abbreviationStart);
+    const after = fullText.slice(abbreviationEnd, Math.min(fullText.length, abbreviationEnd + 40));
+
+    if (
+      new RegExp(`\\/[ \\t\\u00A0]*(?:${nearbySequence})?[ \\t\\u00A0]*$`).test(before) ||
+      new RegExp(`^[ \\t\\u00A0.]*(?:${nearbySequence}[ \\t\\u00A0.]*)?\\/`).test(after)
+    ) {
+      return true;
+    }
+
     const previousIndex = findPreviousHorizontalNonSpaceIndex(fullText, abbreviationStart);
 
     if (previousIndex !== -1 && fullText[previousIndex] === "/") {
-      const beforeSlashIndex = findPreviousHorizontalNonSpaceIndex(fullText, previousIndex);
-
-      if (beforeSlashIndex !== -1 && isLetter(fullText[beforeSlashIndex])) {
-        return true;
-      }
+      return true;
     }
 
     const nextIndex = findNextHorizontalNonSpaceIndex(fullText, abbreviationEnd);
 
     if (nextIndex !== -1 && fullText[nextIndex] === "/") {
-      const afterSlashIndex = findNextHorizontalNonSpaceIndex(fullText, nextIndex + 1);
-
-      if (afterSlashIndex !== -1 && isLetter(fullText[afterSlashIndex])) {
-        return true;
-      }
+      return true;
     }
 
     return false;
@@ -10204,6 +10326,21 @@ function findNextHorizontalNonSpaceIndex(input: string, index: number): number {
   }
 }
 
+function isCapsCompoundAbbreviationBeforeWord(input: string, wordStart: number): boolean {
+  const word = /^[А-ЯЁ][А-Яа-яЁё]+/.exec(input.slice(wordStart))?.[0] ?? "";
+
+  if (!/^[А-ЯЁ]{2,}$/.test(word)) {
+    return false;
+  }
+
+  const before = input.slice(Math.max(0, wordStart - 64), wordStart);
+  return (
+    /(^|[^А-Яа-яЁё])т\.[ \t\u00A0]*[екдп]\.[ \t\u00A0]*$/i.test(before) ||
+    /(^|[^А-Яа-яЁё])в[ \t\u00A0]+т\.[ \t\u00A0]*ч\.[ \t\u00A0]*$/i.test(before) ||
+    /[12]\d{3}[ \t\u00A0]*—[ \t\u00A0]*н\.[ \t\u00A0]*в\.[ \t\u00A0]*$/i.test(before)
+  );
+}
+
 function applyNonBreakingSpaces(input: string, ruleAnalyticsCollector: TypographyRuleAnalyticsCollector | null = null): string {
   try {
     let text = input;
@@ -10219,13 +10356,17 @@ function applyNonBreakingSpaces(input: string, ruleAnalyticsCollector: Typograph
     text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_short_cyrillic_words", text, applyShortWordNonBreakingSpaces);
     text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_initials", text, (value) =>
       value
-        .replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}$3.${NBSP}`)
-        .replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][а-яё]+)/g, `$1$2.${NBSP}`)
+        .replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][А-Яа-яЁё]+)/g, (match: string, prefix: string, first: string, second: string, offset: number, fullText: string) =>
+          isCapsCompoundAbbreviationBeforeWord(fullText, offset + match.length) ? match : `${prefix}${first}.${NBSP}${second}.${NBSP}`
+        )
+        .replace(/(^|[^А-ЯЁа-яё])([А-ЯЁ])\.[ \t\u00A0]*(?=[А-ЯЁ][А-Яа-яЁё]+)/g, (match: string, prefix: string, initial: string, offset: number, fullText: string) =>
+          isCapsCompoundAbbreviationBeforeWord(fullText, offset + match.length) ? match : `${prefix}${initial}.${NBSP}`
+        )
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_after_number_sign", text, (value) => value.replace(/([№§])[ \t\u00A0]*(?=\d)/g, `$1${NBSP}`));
     text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_copyright_year", text, (value) => value.replace(/(©)[ \t\u00A0]*(?=[12]\d{3}\b)/g, `$1${NBSP}`));
     text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_number_unit", text, (value) =>
-      value.replace(/(^|[^A-Za-zА-Яа-яЁё])(д|г|стр|кв)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`)
+      value.replace(/(^|[^A-Za-zА-Яа-яЁё])(стр)\.[ \t\u00A0]*(?=\d)/gi, `$1$2.${NBSP}`)
     );
     text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_percent_metric", text, applyWhitelistedPercentNonBreakingSpaces);
     text = applyTypographyRule(ruleAnalyticsCollector, "nbsp_number_unit", text, (value) =>
@@ -10233,8 +10374,14 @@ function applyNonBreakingSpaces(input: string, ruleAnalyticsCollector: Typograph
         try {
           const numberStart = offset;
           const numberEnd = numberStart + number.length;
+          const followingWordIndex = match.lastIndexOf(followingWord);
+          const followingWordStart = offset + followingWordIndex;
 
-          if (!shouldKeepNumberWithNextWord(fullText, numberStart, numberEnd, number)) {
+          if (
+            isSlashSeparatedAbbreviationPart(fullText, followingWordStart, followingWordStart + followingWord.length) ||
+            isCodeLikeTextPart(fullText, followingWordStart, followingWordStart + followingWord.length) ||
+            !shouldKeepNumberWithNextWord(fullText, numberStart, numberEnd, number)
+          ) {
             return match;
           }
 
@@ -10318,7 +10465,7 @@ function hasPreviousNumberBindingAbbreviation(fullText: string, index: number): 
   try {
     const before = fullText.slice(Math.max(0, index - 16), index);
 
-    return /(?:^|[^A-Za-zА-Яа-яЁё])(д|г|стр|кв)\.[ \t\u00A0]*$/i.test(before);
+    return /(?:^|[^A-Za-zА-Яа-яЁё])стр\.[ \t\u00A0]*$/i.test(before);
   } catch (error) {
     console.error("[Чистовик] Failed to check number-binding abbreviation", error);
     throw error;
@@ -10329,7 +10476,15 @@ function applyParticleNonBreakingSpaces(input: string): string {
   try {
     const particlePattern = new RegExp(`(^|\\S)[ \\t]+(ли|же|бы|ль|ж|б)(?=$|[^${LETTERS}\\-${NB_HYPHEN}])`, "gi");
 
-    return input.replace(particlePattern, `$1${NBSP}$2`);
+    return input.replace(particlePattern, (match: string, prefix: string, particle: string, offset: number, fullText: string) => {
+      const particleStart = offset + prefix.length + match.slice(prefix.length).search(new RegExp(`[${LETTERS}]`));
+
+      if (isSlashSeparatedAbbreviationPart(fullText, particleStart, particleStart + particle.length)) {
+        return match;
+      }
+
+      return `${prefix}${NBSP}${particle}`;
+    });
   } catch (error) {
     console.error("[Чистовик] Failed to apply particle non-breaking spaces", error);
     throw error;
@@ -10345,9 +10500,20 @@ function applyShortWordNonBreakingSpaces(input: string): string {
     while (text !== previous) {
       previous = text;
       shortWordPattern.lastIndex = 0;
-      text = text.replace(shortWordPattern, (match: string, prefix: string, word: string, offset: number, fullText: string) =>
-        isSupportedSmileyAt(fullText, offset + match.length) ? match : `${prefix}${word}${NBSP}`
-      );
+      text = text.replace(shortWordPattern, (match: string, prefix: string, word: string, offset: number, fullText: string) => {
+        const wordStart = offset + prefix.length;
+
+        if (
+          isSupportedSmileyAt(fullText, offset + match.length) ||
+          isCodeLikeTextPart(fullText, wordStart, wordStart + word.length) ||
+          isStandalonePresentTimePairPart(fullText, wordStart, wordStart + word.length) ||
+          isSlashSeparatedAbbreviationPart(fullText, wordStart, wordStart + word.length)
+        ) {
+          return match;
+        }
+
+        return `${prefix}${word}${NBSP}`;
+      });
     }
 
     return restoreSpacesAfterMeasurementUnits(text);
@@ -10357,9 +10523,43 @@ function applyShortWordNonBreakingSpaces(input: string): string {
   }
 }
 
+function isCodeLikeTextPart(fullText: string, wordStart: number, wordEnd: number): boolean {
+  try {
+    const before = fullText.slice(Math.max(0, wordStart - 12), wordStart);
+    const after = fullText.slice(wordEnd, Math.min(fullText.length, wordEnd + 12));
+
+    return /[A-Za-zА-Яа-яЁё\d]_$/.test(before) || /^_[A-Za-zА-Яа-яЁё\d]/.test(after) || /^[ \t\u00A0]+[A-Za-zА-Яа-яЁё\d]{1,4}_/.test(after);
+  } catch (error) {
+    console.error("[Чистовик] Failed to check code-like text part", error);
+    return false;
+  }
+}
+
+function isStandalonePresentTimePairPart(fullText: string, wordStart: number, wordEnd: number): boolean {
+  try {
+    const word = fullText.slice(wordStart, wordEnd);
+
+    if (/^н$/i.test(word)) {
+      return /^[ \t\u00A0]+в(?=$|[^A-Za-zА-Яа-яЁё\d_])/i.test(fullText.slice(wordEnd));
+    }
+
+    if (/^в$/i.test(word)) {
+      return /(^|[^A-Za-zА-Яа-яЁё\d_])н[ \t\u00A0]+$/i.test(fullText.slice(0, wordStart));
+    }
+
+    return false;
+  } catch (error) {
+    console.error("[Чистовик] Failed to protect standalone present-time abbreviation", error);
+    return false;
+  }
+}
+
 function restoreSpacesAfterMeasurementUnits(input: string): string {
   try {
-    return input.replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?\u00A0(?:кВт|Вт|В|г|кг|м|км|мм|см|л|мл|с|dpi|lpi))\u00A0(?=[A-Za-zА-Яа-яЁё])/gi, "$1 ");
+    return input
+      .replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?\u00A0(?:кВт|Вт|В|г|кг|м|км|мм|см|л|мл|с|dpi|lpi))\u00A0(?=[A-Za-zА-Яа-яЁё])/gi, "$1 ")
+      .replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?\u00A0(?:кв|куб)\.\u00A0м\.?)\u00A0(?=[A-Za-zА-Яа-яЁё])/gi, "$1 ")
+      .replace(/(\d(?:[\d \u00A0]*\d)?(?:,\d+)?\u00A0г\.)\u00A0(?=\d(?:[\d \u00A0]*\d)?(?:,\d+)?\u00A0мес\.)/g, "$1 ");
   } catch (error) {
     console.error("[Чистовик] Failed to restore spaces after measurement units", error);
     throw error;

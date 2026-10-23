@@ -866,7 +866,7 @@ const shadowRunAnalyticsProperties = getRunAnalyticsProperties({
     source: "quick_run",
     startedAt: 0,
   });
-assert.strictEqual(shadowRunAnalyticsProperties.performance_measurement_version, 8);
+assert.strictEqual(shadowRunAnalyticsProperties.performance_measurement_version, 9);
 assert.strictEqual(shadowRunAnalyticsProperties.point_editing_phase, "point_safe");
 
 assert.deepStrictEqual(
@@ -895,7 +895,7 @@ assert(ruleAnalyticsSummary.changedCodes.includes("math_multiplication"));
 assert(ruleAnalyticsSummary.changedCodes.includes("number_group_digits"));
 assert(ruleAnalyticsSummary.changedCodes.includes("abbr_dotted"));
 assert(ruleAnalyticsSummary.changedCodes.includes("nbsp_short_cyrillic_words"));
-assert.strictEqual(ruleAnalyticsProperties.rule_analytics_version, 3);
+assert.strictEqual(ruleAnalyticsProperties.rule_analytics_version, 4);
 assert.strictEqual(ruleAnalyticsSummary.measuredCodesCount, 77);
 assert.strictEqual(Object.keys(ruleAnalyticsSummary.metrics).length, 77);
 assert.strictEqual(typeof ruleAnalyticsProperties.rule_metrics_json, "string");
@@ -955,7 +955,8 @@ const abbreviationLineBreakInput = "5 кг.\nДоставка";
 const abbreviationLineBreakResult = cleanTypographyWithMetadata(abbreviationLineBreakInput, beautyOptions, [], abbreviationLineBreakCollector);
 finishTypographyRuleAnalyticsTextLayer(abbreviationLineBreakCollector, abbreviationLineBreakResult.text !== abbreviationLineBreakInput);
 const abbreviationLineBreakSummary = createTypographyRuleAnalyticsSummary(abbreviationLineBreakCollector);
-assert(abbreviationLineBreakSummary.changedCodes.includes("abbr_line_break"));
+assert.strictEqual(abbreviationLineBreakResult.text, `5${NBSP}кг.\nДоставка`);
+assert.strictEqual(abbreviationLineBreakSummary.changedCodes.includes("abbr_line_break"), false);
 
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Node is read-only"), "write_text").category, "layer_not_editable");
 assert.strictEqual(createAnalyticsErrorDiagnostic(new Error("Unexpected write failure"), "write_text").category, "write_text_failed");
@@ -1728,15 +1729,15 @@ expectClean("1.1 Как использовать", `1.1${NBSP}Как испол�
 expectClean("1.2 Что с этим делать", `1.2${NBSP}Что с${NBSP}этим делать`);
 expectClean("Раздел 1.1", "Раздел 1.1");
 expectClean("§ 2.2", `§${NBSP}2.2`);
-expectClean("ст. 35.1", "ст. 35.1");
-expectClean("п. 2.1", "п. 2.1");
+expectClean("ст. 35.1", `ст.${NBSP}35.1`);
+expectClean("п. 2.1", `п.${NBSP}2.1`);
 expectClean("Глава 3.2", "Глава 3.2");
 expectClean("подпункт 4.3", "подпункт 4.3");
 expectClean("3,1 Как использовать", `3.1${NBSP}Как использовать`);
 expectClean("Раздел 1,1", "Раздел 1.1");
 expectClean("§ 2,2", `§${NBSP}2.2`);
-expectClean("ст. 35,1", "ст. 35.1");
-expectClean("п. 2,1", "п. 2.1");
+expectClean("ст. 35,1", `ст.${NBSP}35.1`);
+expectClean("п. 2,1", `п.${NBSP}2.1`);
 expectClean("пункт 5,5 эмоции", `пункт 5.5${NBSP}эмоции`);
 expectClean("Вес 4,5 кг", `Вес 4,5${NBSP}кг`);
 expectClean("4,5 кг разговоров", `4,5${NBSP}кг разговоров`);
@@ -1748,12 +1749,12 @@ expectClean("пункт 10,04 кг", `пункт 10,04${NBSP}кг`);
 expectClean("пункт назначения стоит 5,5 ₽", `пункт назначения стоит 5,5${NBSP}₽`);
 expectClean("Коэффициент 5,5", "Коэффициент 5,5");
 const legalNumbering = cleanTypography("Это зафиксировано в ст. 35 п. 2.1 УК РФ");
-assert(legalNumbering.includes("ст. 35"));
-assert(legalNumbering.includes("п. 2.1"));
+assert(legalNumbering.includes(`ст.${NBSP}35`));
+assert(legalNumbering.includes(`п.${NBSP}2.1`));
 assert.strictEqual(legalNumbering.includes("2,1"), false);
 const repairedLegalNumbering = cleanTypography("Это зафиксировано в ст. 35 п. 2,1 УК РФ");
-assert(repairedLegalNumbering.includes("ст. 35"));
-assert(repairedLegalNumbering.includes("п. 2.1"));
+assert(repairedLegalNumbering.includes(`ст.${NBSP}35`));
+assert(repairedLegalNumbering.includes(`п.${NBSP}2.1`));
 assert.strictEqual(repairedLegalNumbering.includes("2,1"), false);
 expectClean("https://example.com/2/2", "https://example.com/2/2");
 expectClean("mail@example.com", "mail@example.com");
@@ -1771,9 +1772,9 @@ expectClean("В базе 10000 клиентов.", `В${NBSP}базе 10000${NBS
 expectClean("Продано 1234567 билетов", `Продано 1234567${NBSP}билетов`);
 expectClean("812345678901234 клиентов", `812345678901234${NBSP}клиентов`);
 expectClean("по 10000 человек", `по${NBSP}10000${NBSP}человек`);
-expectClean("д. 10000 корпус", `д.${NBSP}10000 корпус`);
-expectClean("г. 10000 жителей", `г.${NBSP}10000 жителей`);
-expectClean("в д. 5 живёт", `в${NBSP}д.${NBSP}5 живёт`);
+expectClean("д. 10000 корпус", `д. 10000${NBSP}корпус`);
+expectClean("г. 10000 жителей", `г. 10000${NBSP}жителей`);
+expectClean("в д. 5 живёт", `в${NBSP}д. 5${NBSP}живёт`);
 expectClean("№ 10000 заявок", `№${NBSP}10000 заявок`);
 expectClean("§ 10000 пунктов", `§${NBSP}10000 пунктов`);
 expectClean("Позвоните +7 (900) 123-45-67 завтра", `Позвоните +7${NBSP}900${NBSP}123${NB_HYPHEN}45${NB_HYPHEN}67 завтра`);
@@ -1847,9 +1848,9 @@ expectClean("10000, 20000 и 30000 ₽", `10${NBSP}000, 20${NBSP}000${NBSP}и${N
 expectClean("10000 + 20000 = 30000", `10${NBSP}000${NBSP}+${NBSP}20${NBSP}000${NBSP}=${NBSP}30${NBSP}000`);
 expectClean("10000 + 20000", `10000${NBSP}+${NBSP}20000`);
 expectClean("Подписка 5000 ₽/мес. Следующий платёж завтра.", `Подписка 5${NBSP}000${NBSP}₽/мес. Следующий платёж завтра.`);
-expectClean("Подписка 5000 ₽/мес.", `Подписка 5${NBSP}000${NBSP}₽/мес`);
+expectClean("Подписка 5000 ₽/мес.", `Подписка 5${NBSP}000${NBSP}₽/мес.`);
 expectClean("Вес 1.5 кг. Доставим завтра.", `Вес 1,5${NBSP}кг. Доставим завтра.`);
-expectClean("Вес 1.5 кг.", `Вес 1,5${NBSP}кг`);
+expectClean("Вес 1.5 кг.", `Вес 1,5${NBSP}кг.`);
 expectClean("Напряжение 220 В", `Напряжение 220${NBSP}В`);
 expectClean("Напряжение 220В", `Напряжение 220${NBSP}В`);
 expectClean("Напряжение 220 в сети", `Напряжение 220${NBSP}В сети`);
@@ -1864,14 +1865,74 @@ expectClean("Линиатура 150 LPI", `Линиатура 150${NBSP}lpi`);
 expectClean("Линиатура 150lpi", `Линиатура 150${NBSP}lpi`);
 expectClean("Напряжение 220 В работает", `Напряжение 220${NBSP}В работает`);
 expectClean("Мощность 100 Вт. Устройство включено.", `Мощность 100${NBSP}Вт. Устройство включено.`);
-expectClean("Мощность 100 Вт.", `Мощность 100${NBSP}Вт`);
+expectClean("Мощность 100 Вт.", `Мощность 100${NBSP}Вт.`);
 expectClean("Код A300dpi", "Код A300dpi");
 expectClean("Код 300dpiX", "Код 300dpiX");
+// Attached agreed units must be recognized before decimal conversion and grouping.
+// Ordinary units keep the author's letters; only the existing technical units
+// have a canonical spelling.
+const attachedUnitCaseGroups = [
+  { variants: ["с", "С"] },
+  { variants: ["м", "М"] },
+  { variants: ["км", "Км", "КМ", "кМ"] },
+  { variants: ["кг", "Кг", "КГ", "кГ"] },
+  { variants: ["г", "Г"] },
+  { variants: ["мм", "Мм", "ММ", "мМ"] },
+  { variants: ["см", "См", "СМ", "сМ"] },
+  { variants: ["л", "Л"] },
+  { variants: ["мл", "Мл", "МЛ", "мЛ"] },
+  { variants: ["в", "В"], canonical: "В" },
+  { variants: ["вт", "Вт", "ВТ", "вТ"], canonical: "Вт" },
+  { variants: ["квт", "Квт", "КВТ", "кВт"], canonical: "кВт" },
+  { variants: ["dpi", "Dpi", "DPI", "dPi"], canonical: "dpi" },
+  { variants: ["lpi", "Lpi", "LPI", "lPi"], canonical: "lpi" },
+];
+
+for (const { variants, canonical } of attachedUnitCaseGroups) {
+  for (const unit of variants) {
+    const expectedUnit = canonical ?? unit;
+
+    expectClean(`10000${unit}`, `10${NBSP}000${NBSP}${expectedUnit}`);
+    expectClean(`2.5${unit}`, `2,5${NBSP}${expectedUnit}`);
+    expectClean(`10000.5${unit}`, `10${NBSP}000,5${NBSP}${expectedUnit}`);
+
+    if (canonical !== undefined) {
+      expectClean(`10000 ${unit}`, `10${NBSP}000${NBSP}${expectedUnit}`);
+      expectClean(`2.5 ${unit}`, `2,5${NBSP}${expectedUnit}`);
+    }
+  }
+}
+
+expectClean("5КГ. ТОВАР", `5${NBSP}КГ. ТОВАР`);
+expectClean("10000 с комиссией", `10000${NBSP}с комиссией`);
+expectClean("10000 С комиссией", `10000${NBSP}С комиссией`);
+expectClean("10000 С КОМИССИЕЙ", `10000${NBSP}С КОМИССИЕЙ`);
+expectClean("10000 с КоМиСсИеЙ", `10000${NBSP}с КоМиСсИеЙ`);
+expectClean("10000 С РАБОТЫ", `10000${NBSP}С РАБОТЫ`);
+expectDevelopmentIdempotent("10000КГ", "10*000*КГ");
+expectDevelopmentIdempotent("2.5КВТ", "2,5*кВт");
+expectDevelopmentIdempotent("10000 С КОМИССИЕЙ", "10000*С КОМИССИЕЙ");
+
+// A suffix is not enough to turn a whole identifier into a quantity.
+for (const input of ["A10000КГ", "SALE-10000КГ", "id_10000КГ", "v2.5КГ", "10000КГX", "10000КГ_код", "10000m"]) {
+  expectClean(input, input);
+}
+
+// Different SI prefixes and unapproved letter forms must not collapse together.
+expectClean("10000 мВт", `10${NBSP}000${NBSP}мВт`);
+expectClean("10000 МВт", `10${NBSP}000${NBSP}МВт`);
+expectClean("10000 МВТ", `10000${NBSP}МВТ`);
+expectClean("10000 ГЦ", `10000${NBSP}ГЦ`);
+expectClean("20C", `20${NBSP}°C`);
+expectClean("20c", "20c");
 expectClean("Энергия 2 кВтч", `Энергия 2${NBSP}кВтч`);
 expectClean("Дата 10.04 В Москве", `Дата 10.04 В${NBSP}Москве`);
+expectClean("1.1 В Москве", `1.1${NBSP}В Москве`);
+expectClean("1,1 В Москве", `1.1${NBSP}В Москве`);
+expectClean("2.5 В устройстве", `2,5${NBSP}В устройстве`);
 expectClean("Мощность 10.04 кВт", `Мощность 10,04${NBSP}кВт`);
 expectClean("Длина 10.04 м. Это стандартный размер.", `Длина 10,04${NBSP}м. Это стандартный размер.`);
-expectClean("Длина 10.04 м.", `Длина 10,04${NBSP}м`);
+expectClean("Длина 10.04 м.", `Длина 10,04${NBSP}м.`);
 expectClean("Доход 100 млн. Компания растёт.", `Доход 100${NBSP}млн. Компания растёт.`);
 expectClean("Выручка 5 млрд. Это прогноз.", `Выручка 5${NBSP}млрд. Это прогноз.`);
 expectClean("Срок 6 мес. Потом продлим.", `Срок 6${NBSP}мес. Потом продлим.`);
@@ -1880,8 +1941,8 @@ expectClean("Доход 100 млн. рублей.", `Доход 100${NBSP}млн
 expectClean("Выручка 5 млрд. рублей.", `Выручка 5${NBSP}млрд рублей.`);
 expectClean("Размер 10 см. в ширину.", `Размер 10${NBSP}см в${NBSP}ширину.`);
 expectClean("Вес 5 кг. товара.", `Вес 5${NBSP}кг товара.`);
-expectClean("Объём 5 мл.", `Объём 5${NBSP}мл`);
-expectClean("Время 10 с.", `Время 10${NBSP}с`);
+expectClean("Объём 5 мл.", `Объём 5${NBSP}мл.`);
+expectClean("Время 10 с.", `Время 10${NBSP}с.`);
 expectClean("100 руб", `100${NBSP}руб.`);
 expectClean("20 коп", `20${NBSP}коп.`);
 expectClean("Стоимость 100 руб. Оплата завтра.", `Стоимость 100${NBSP}руб. Оплата завтра.`);
@@ -1893,61 +1954,61 @@ expectClean("Т. е. пример", `Т.${NBSP}е. пример`);
 expectClean("Т е пример", `Т.${NBSP}е. пример`);
 expectClean("ТК пример", `ТК${NBSP}пример`);
 expectClean("Период: НВ", "Период: НВ");
-expectClean("PS", `P.${NBSP}S.`);
+expectClean("PS", "PS");
 expectClean("P.S. Проверь ещё раз.", `P.${NBSP}S. Проверь ещё раз.`);
-expectClean("P P S проверь ещё раз.", `P.${NBSP}P.${NBSP}S. проверь ещё раз.`);
+expectClean("P P S проверь ещё раз.", "P P S проверь ещё раз.");
 expectClean("Список, в т ч важные пункты", `Список, в${NBSP}т.${NBSP}ч. важные пункты`);
-expectClean("Период: н. в.", `Период: н.${NBSP}в.`);
-expectClean("ж/д билеты", `ж/д${NBSP}билеты`);
-expectClean("ж/д. билеты", `ж/д${NBSP}билеты`);
-expectClean("ж./д. билеты", `ж/д${NBSP}билеты`);
+expectClean("Период: н. в.", "Период: н. в.");
+expectClean("ж/д билеты", "ж/д билеты");
+expectClean("ж/д. билеты", "ж/д. билеты");
+expectClean("ж./д. билеты", "ж./д. билеты");
 expectClean("Иванов А./Петров Б.", `Иванов А./Петров${NBSP}Б.`);
-expectClean("Кешбэк за покупку ж/д билетов, оплату проезда в метро", `Кешбэк за${NBSP}покупку${NBSP}ж/д${NBSP}билетов, оплату проезда в${NBSP}метро`);
-expectClean("д/к фильм", `д/к${NBSP}фильм`);
-expectClean("п/п платеж", `п/п${NBSP}платеж`);
-expectClean("а/д дорога", `а/д${NBSP}дорога`);
+expectClean("Кешбэк за покупку ж/д билетов, оплату проезда в метро", `Кешбэк за${NBSP}покупку ж/д билетов, оплату проезда в${NBSP}метро`);
+expectClean("д/к фильм", "д/к фильм");
+expectClean("п/п платеж", "п/п платеж");
+expectClean("а/д дорога", "а/д дорога");
 expectClean("руб/мес тариф", "руб/мес тариф");
-expectClean("кв/м площадь", `кв/м${NBSP}площадь`);
-expectClean("руб/кв. м", `руб/кв.${NBSP}м`);
-expectClean("руб./кв. м", `руб/кв.${NBSP}м`);
-expectClean("100 руб/кв. м", `100${NBSP}руб/кв.${NBSP}м`);
-expectClean("см ниже, гл 2, илл 3, ст 12, п 4", "см. ниже, гл. 2, илл. 3, ст. 12, п. 4");
-expectClean("обл Московская, кр 1, пос Северный, пер Лесной, пр Мира", "обл. Московская, кр. 1, пос. Северный, пер. Лесной, пр. Мира");
-expectClean("просп Ленина, пл Победы, бул Солнечный, наб Реки, ш Энтузиастов, туп Южный", "просп. Ленина, пл. Победы, бул. Солнечный, наб. Реки, ш. Энтузиастов, туп. Южный");
-expectClean("оф 12, комн 3, под 2, мкр Северный, уч 4", "оф. 12, комн. 3, под. 2, мкр. Северный, уч. 4");
-expectClean("вл 5, влад 7, корп 2, эт 10, пгт Новый", "вл. 5, влад. 7, корп. 2, эт. 10, пгт. Новый");
+expectClean("кв/м площадь", "кв/м площадь");
+expectClean("руб/кв. м", "руб/кв. м");
+expectClean("руб./кв. м", "руб./кв. м");
+expectClean("100 руб/кв. м", "100 руб/кв. м");
+expectClean("см ниже, гл 2, илл 3, ст 12, п 4", `см${NBSP}ниже, гл.${NBSP}2, илл.${NBSP}3, ст.${NBSP}12, п.${NBSP}4`);
+expectClean("обл Московская, кр 1, пос Северный, пер Лесной, пр Мира", `обл Московская, кр${NBSP}1, пос Северный, пер Лесной, пр${NBSP}Мира`);
+expectClean("просп Ленина, пл Победы, бул Солнечный, наб Реки, ш Энтузиастов, туп Южный", `просп Ленина, пл${NBSP}Победы, бул Солнечный, наб Реки, ш${NBSP}Энтузиастов, туп Южный`);
+expectClean("оф 12, комн 3, под 2, мкр Северный, уч 4", `оф${NBSP}12, комн 3, под 2, мкр Северный, уч${NBSP}4`);
+expectClean("вл 5, влад 7, корп 2, эт 10, пгт Новый", `вл${NBSP}5, влад 7, корп 2, эт${NBSP}10, пгт Новый`);
 expectClean("под столом", "под столом");
 expectClean("Адрес: пр-т Мира, б-р Цветной.", `Адрес: пр${NB_HYPHEN}т Мира, б${NB_HYPHEN}р Цветной.`);
-expectClean("Адрес: пр-т. Мира, б-р. Цветной.", `Адрес: пр${NB_HYPHEN}т Мира, б${NB_HYPHEN}р Цветной.`);
+expectClean("Адрес: пр-т. Мира, б-р. Цветной.", `Адрес: пр${NB_HYPHEN}т. Мира, б${NB_HYPHEN}р. Цветной.`);
 expectClean("Длина 5 см", `Длина 5${NBSP}см`);
-expectClean("д. 5, стр. 10, кв. 7", `д.${NBSP}5, стр.${NBSP}10, кв.${NBSP}7`);
-expectClean("Дом д 5, страница стр 10, квартира кв 7", `Дом д.${NBSP}5, страница стр.${NBSP}10, квартира кв.${NBSP}7`);
+expectClean("д. 5, стр. 10, кв. 7", `д. 5, стр.${NBSP}10, кв. 7`);
+expectClean("Дом д 5, страница стр 10, квартира кв 7", `Дом д${NBSP}5, страница стр.${NBSP}10, квартира кв${NBSP}7`);
 expectClean("Площадь 20 кв м", `Площадь 20${NBSP}кв.${NBSP}м`);
 expectClean("Выручка 10 млн", `Выручка 10${NBSP}млн`);
-expectClean("Доход 100 млн и 5 млрд.", `Доход 100${NBSP}млн и${NBSP}5${NBSP}млрд`);
-expectClean("Выручка 10 млн.\nНужно увеличить на 5%", `Выручка 10${NBSP}млн\nНужно увеличить на${NBSP}5%`);
+expectClean("Доход 100 млн и 5 млрд.", `Доход 100${NBSP}млн и${NBSP}5${NBSP}млрд.`);
+expectClean("Выручка 10 млн.\nНужно увеличить на 5%", `Выручка 10${NBSP}млн.\nНужно увеличить на${NBSP}5%`);
 expectClean("Выручка 10 млн. Нужно увеличить на 5%", `Выручка 10${NBSP}млн. Нужно увеличить на${NBSP}5%`);
 expectDevelopmentIdempotent(`Цена 2${NBSP}000,35${NBSP}₽.`, "Цена 2*000,35*₽.");
 expectDevelopmentIdempotent("В базе 10000 клиентов.", "В*базе 10000*клиентов.");
 expectDevelopmentIdempotent("далеко ли холодно ли стало", "далеко*ли холодно*ли стало");
 expectDevelopmentIdempotent("знал б ты, всё ж можно ль иначе", "знал*б ты, всё*ж можно*ль иначе");
 expectDevelopmentIdempotent("Это же не баг, а фича ли?", "Это*же не*баг, а*фича*ли?");
-expectDevelopmentIdempotent("Доход 100 млн и 5 млрд.", "Доход 100*млн и*5*млрд");
+expectDevelopmentIdempotent("Доход 100 млн и 5 млрд.", "Доход 100*млн и*5*млрд.");
 expectDevelopmentIdempotent("1.1 Как использовать", "1.1*Как использовать");
 expectDevelopmentIdempotent("Раздел 1.1", "Раздел 1.1");
 expectDevelopmentIdempotent("§ 2.2", "§*2.2");
-expectDevelopmentIdempotent("ст. 35.1", "ст. 35.1");
-expectDevelopmentIdempotent("п. 2.1", "п. 2.1");
+expectDevelopmentIdempotent("ст. 35.1", "ст.*35.1");
+expectDevelopmentIdempotent("п. 2.1", "п.*2.1");
 expectDevelopmentIdempotent("3,1 Как использовать", "3.1*Как использовать");
 expectDevelopmentIdempotent("Раздел 1,1", "Раздел 1.1");
 expectDevelopmentIdempotent("§ 2,2", "§*2.2");
-expectDevelopmentIdempotent("ст. 35,1", "ст. 35.1");
-expectDevelopmentIdempotent("п. 2,1", "п. 2.1");
+expectDevelopmentIdempotent("ст. 35,1", "ст.*35.1");
+expectDevelopmentIdempotent("п. 2,1", "п.*2.1");
 expectDevelopmentIdempotent("пункт 5,5 эмоции", "пункт 5.5*эмоции");
 expectDevelopmentIdempotent("контрольный пункт 5,5 км", "контрольный пункт 5,5*км");
 expectDevelopmentIdempotent("контрольный пункт 5.5 км", "контрольный пункт 5,5*км");
 expectDevelopmentIdempotent("4,5 кг разговоров", "4,5*кг разговоров");
-expectDevelopmentIdempotent("Вес 1.5 кг.", "Вес 1,5*кг");
+expectDevelopmentIdempotent("Вес 1.5 кг.", "Вес 1,5*кг.");
 expectDevelopmentIdempotent("Формула: 2 * 2 = 4.", `Формула: 2*${MULTIPLY}*2*=*4.`);
 expectDevelopmentIdempotent("Формула: 2*2=4.", `Формула: 2*${MULTIPLY}*2*=*4.`);
 expectDevelopmentIdempotent("Формула 2*2=4", `Формула 2*${MULTIPLY}*2*=*4`);
@@ -3409,6 +3470,38 @@ async function runStandalonePhoneCountryPrefixContextTests() {
 async function runEvidenceBasedNumberLayerContextTests() {
   context.figma.loadFontAsync = async () => {};
 
+  const rubleAmount = createProcessTextNodeMock("cross-layer-ruble-amount", "100", { height: 20, width: 40, x: 0, y: 0 });
+  const rubleAbbreviation = createProcessTextNodeMock("cross-layer-ruble-abbreviation", "руб", { height: 20, width: 30, x: 50, y: 0 });
+  connectHorizontalAutoLayoutParent("cross-layer-ruble-parent", [rubleAmount, rubleAbbreviation]);
+  const rubleResult = await processTextNodes([rubleAbbreviation], 0, 0, beautyOptions);
+
+  assertTextProcessCounts(rubleResult, {
+    changed: 1,
+    failed: 0,
+    processed: 1,
+    skippedHidden: 0,
+    skippedLocked: 0,
+  });
+  assert.strictEqual(rubleAbbreviation.characters, "руб.");
+
+  const unstableMoneyAmount = createProcessTextNodeMock("unstable-money-amount", "10000", { height: 20, width: 70, x: 0, y: 10 });
+  const unstableMoneyAbbreviation = createProcessTextNodeMock("unstable-money-abbreviation", "руб", { height: 20, width: 30, x: 80, y: 10 });
+  connectHorizontalAutoLayoutParent("unstable-money-parent", [unstableMoneyAmount, unstableMoneyAbbreviation]);
+  let moneyNeighborChanged = false;
+  context.figma.loadFontAsync = async () => {
+    if (!moneyNeighborChanged) {
+      moneyNeighborChanged = true;
+      unstableMoneyAmount.characters = "10000,";
+    }
+  };
+  const unstableMoneyResult = await processTextNodes([unstableMoneyAbbreviation], 0, 0, beautyOptions);
+  context.figma.loadFontAsync = async () => {};
+
+  assert.strictEqual(unstableMoneyResult.failed, 0);
+  assert.strictEqual(unstableMoneyResult.changed, 0);
+  assert.strictEqual(unstableMoneyResult.processed, 1);
+  assert.strictEqual(unstableMoneyAbbreviation.characters, "руб");
+
   const amount = createProcessTextNodeMock("context-amount", "10000", { height: 20, width: 70, x: 0, y: 0 });
   const currency = createProcessTextNodeMock("context-currency", "₽", { height: 20, width: 12, x: 80, y: 0 });
   currency.locked = true;
@@ -3442,6 +3535,22 @@ async function runEvidenceBasedNumberLayerContextTests() {
 
   assert.strictEqual(decimalResult.failed, 0);
   assert.strictEqual(decimal.characters, "338,00");
+
+  for (const marker of ["вт", "Вт", "ВТ", "вТ", "квт", "Квт", "КВТ", "кВт"]) {
+    for (const [input, expected] of [["10000", `10${NBSP}000`], ["2.5", "2,5"]]) {
+      const aliasAmount = createProcessTextNodeMock(`alias-amount-${marker}-${input}`, input, { height: 20, width: 70, x: 0, y: 40 });
+      const aliasUnit = createProcessTextNodeMock(`alias-unit-${marker}-${input}`, marker, { height: 20, width: 30, x: 80, y: 40 });
+      connectHorizontalAutoLayoutParent(`alias-parent-${marker}-${input}`, [aliasAmount, aliasUnit]);
+
+      // Only the numeric layer is selected; its neighboring marker is context.
+      const aliasResult = await processTextNodes([aliasAmount], 0, 0, beautyOptions);
+
+      assert.strictEqual(aliasResult.failed, 0, `${input} | ${marker}: processing must succeed`);
+      assert.strictEqual(aliasResult.changed, 1, `${input} | ${marker}: one run must format the number`);
+      assert.strictEqual(aliasAmount.characters, expected, `${input} | ${marker}: the marker must prove quantity`);
+      assert.strictEqual(aliasUnit.characters, marker, `${input} | ${marker}: an unselected marker must stay unchanged`);
+    }
+  }
 
   const manualAmount = createProcessTextNodeMock("manual-amount", "10000", { height: 20, width: 70, x: 0, y: 60 });
   const manualCurrency = createProcessTextNodeMock("manual-currency", "₽", { height: 20, width: 12, x: 80, y: 60 });

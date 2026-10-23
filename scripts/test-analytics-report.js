@@ -506,7 +506,7 @@ async function run() {
       assert(JSON.parse(calls[0].options.body).query.query.includes("event = 'support_link_clicked'"));
       assert(JSON.parse(calls[0].options.body).query.query.includes("properties.announcement_id = 'feedback-2026-09'"));
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
-      assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '8'")));
+      assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("= '9'")));
       assert(calls[0] && JSON.parse(calls[0].options.body).query.query.includes("coalesce(nullIf(toString(properties.run_id), ''), toString(uuid))"));
       assert(calls.slice(3, 5).every((call) => JSON.parse(call.options.body).query.query.includes("GROUP BY run_id")));
       assert(JSON.parse(calls[5].options.body).query.query.includes("startsWith(toString(properties.plugin_release), '2026-08-05')"));
@@ -563,7 +563,7 @@ async function run() {
       assert.strictEqual(summary.fontsMs, 310);
       assert.strictEqual(summary.baseline.averageDurationMs, 338.71);
       assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));
-      assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("= '8'")));
+      assert(calls.every((call) => JSON.parse(call.options.body).query.query.includes("= '9'")));
     }
   );
 
