@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Превью отчёта о неразрывных пробелах — Чистовик</title>
+    <title>Исследование отчёта о неразрывных пробелах — Чистовик</title>
     <style>
       @font-face {
         font-display: block;
@@ -33,12 +33,14 @@
       }
 
       body {
-        align-items: start;
+        align-items: center;
         background:
           radial-gradient(circle at 50% -10%, rgba(6, 92, 91, 0.09), transparent 34%),
           var(--canvas);
         color: var(--text);
         display: flex;
+        flex-direction: column;
+        gap: 16px;
         justify-content: center;
         margin: 0;
         min-height: 100vh;
@@ -47,6 +49,14 @@
 
       button {
         font: inherit;
+      }
+
+      .research-status {
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 16px;
+        margin: 0;
+        text-align: center;
       }
 
       .preview-grid {
@@ -577,6 +587,7 @@
     </style>
   </head>
   <body>
+    <p class="research-status">Исследовательский прототип · принято решение не внедрять</p>
     <main class="preview-grid">
       <section class="preview-column" aria-label="Экран проверки удалённых неразрывных пробелов">
         <div class="window-frame">
@@ -690,7 +701,7 @@
               </header>
 
               <div class="result-toolbar">
-                <span class="result-count">7&nbsp;слоёв пропущены <span class="result-layer-count">· 10&nbsp;успешно</span></span>
+                <span class="result-count">10&nbsp;слоёв нужно проверить <span class="result-layer-count">· 10&nbsp;успешно</span></span>
                 <div class="result-navigation">
                   <button class="navigation-button previous error-previous" type="button" aria-label="Предыдущий проблемный слой"></button>
                   <button class="navigation-button next error-next" type="button" aria-label="Следующий проблемный слой"></button>
@@ -699,56 +710,93 @@
 
               <div class="report-scroll-frame">
                 <div class="report-scroll error-report-scroll">
-                  <div class="result-list" aria-label="Пропущенные слои">
-                    <button class="result-item active" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически</span>
-                        <span class="layer-name">checkout / desktop / pricing / comparison / card / caption</span>
-                      </span>
-                    </button>
-                    <button class="result-item" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Первый пункт списка, второй пункт и важное примечание</span>
-                        <span class="layer-name">checklist / item</span>
-                      </span>
-                    </button>
-                    <button class="result-item" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Заголовок карточки с подключённым библиотечным стилем</span>
-                        <span class="layer-name">library card / title</span>
-                      </span>
-                    </button>
-                    <button class="result-item" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Скидка 20% действует только до 15 мая — потом цена изменится</span>
-                        <span class="layer-name">promo / legal note</span>
-                      </span>
-                    </button>
-                    <button class="result-item" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Перейти к оформлению заказа и выбрать удобный способ оплаты</span>
-                        <span class="layer-name">checkout / actions / button label</span>
-                      </span>
-                    </button>
-                    <button class="result-item" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Доставка займёт от двух до четырёх рабочих дней</span>
-                        <span class="layer-name">cart / delivery / note</span>
-                      </span>
-                    </button>
-                    <button class="result-item" type="button">
-                      <span class="text-layer-icon" aria-hidden="true">Т</span>
-                      <span class="result-item-content">
-                        <span class="text-preview text-preview-collapsed">Нажимая кнопку, вы соглашаетесь с условиями обработки данных</span>
-                        <span class="layer-name">form / legal / consent</span>
-                      </span>
-                    </button>
+                  <div class="result-list" aria-label="Слои, которые нужно проверить">
+                    <section class="result-group">
+                      <div class="result-group-title">Не удалось обработать · 7</div>
+                      <button class="result-item active" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически</span>
+                          <span class="layer-name">checkout / desktop / pricing / comparison / card / caption</span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Первый пункт списка, второй пункт и важное примечание</span>
+                          <span class="layer-name">checklist / item</span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Заголовок карточки с подключённым библиотечным стилем</span>
+                          <span class="layer-name">library card / title</span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Скидка 20% действует только до 15 мая — потом цена изменится</span>
+                          <span class="layer-name">promo / legal note</span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Перейти к оформлению заказа и выбрать удобный способ оплаты</span>
+                          <span class="layer-name">checkout / actions / button label</span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Доставка займёт от двух до четырёх рабочих дней</span>
+                          <span class="layer-name">cart / delivery / note</span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Нажимая кнопку, вы соглашаетесь с условиями обработки данных</span>
+                          <span class="layer-name">form / legal / consent</span>
+                        </span>
+                      </button>
+                    </section>
+                    <section class="result-group">
+                      <div class="result-group-title">Плагин убрал неразрывные пробелы · 3</div>
+                      <div class="screen-legend">На&nbsp;месте <span class="removed-space-marker">▂</span> был неразрывный пробел</div>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">…вводных пояснений встречается это длинное<span class="removed-space-marker">▂</span>слово, которое помогает проверить…</span>
+                          <span class="layer-meta">
+                            <span class="layer-name">checkout / desktop / pricing / comparison / card / caption</span>
+                            <span class="space-count">1 пробел</span>
+                          </span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Проверьте важную<span class="removed-space-marker">▂</span>информацию до<span class="nbsp-star-rule">*</span>публикации</span>
+                          <span class="layer-meta">
+                            <span class="layer-name">hero / subtitle</span>
+                            <span class="space-count">1 пробел</span>
+                          </span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">…Команда подготовила важную<span class="removed-space-marker">▂</span>инструкцию для участников, чтобы можно было начать работу…</span>
+                          <span class="layer-meta">
+                            <span class="layer-name">workspace / marketing / campaign / details / note</span>
+                            <span class="space-count">1 пробел</span>
+                          </span>
+                        </span>
+                      </button>
+                    </section>
                   </div>
                 </div>
                 <div class="scroll-indicator error-scroll-indicator" hidden aria-hidden="true">
@@ -785,7 +833,7 @@
               </header>
 
               <div class="result-toolbar">
-                <span class="result-count">4&nbsp;слоя нужно проверить <span class="result-layer-count">· 10&nbsp;успешно</span></span>
+                <span class="result-count">7&nbsp;слоёв нужно проверить <span class="result-layer-count">· 10&nbsp;успешно</span></span>
                 <div class="result-navigation">
                   <button class="navigation-button previous error-previous" type="button" aria-label="Предыдущий критический слой"></button>
                   <button class="navigation-button next error-next" type="button" aria-label="Следующий критический слой"></button>
@@ -826,6 +874,40 @@
                         <span class="result-item-content">
                           <span class="text-preview text-preview-collapsed">Стоимость обслуживания составляет 1000 рублей в месяц, первые 30 дней бесплатно, затем оплата будет списываться автоматически</span>
                           <span class="layer-name">pricing / card / caption</span>
+                        </span>
+                      </button>
+                    </section>
+                    <section class="result-group">
+                      <div class="result-group-title">Плагин убрал неразрывные пробелы · 3</div>
+                      <div class="screen-legend">На&nbsp;месте <span class="removed-space-marker">▂</span> был неразрывный пробел</div>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">…вводных пояснений встречается это длинное<span class="removed-space-marker">▂</span>слово, которое помогает проверить…</span>
+                          <span class="layer-meta">
+                            <span class="layer-name">checkout / desktop / pricing / comparison / card / caption</span>
+                            <span class="space-count">1 пробел</span>
+                          </span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">Проверьте важную<span class="removed-space-marker">▂</span>информацию до<span class="nbsp-star-rule">*</span>публикации</span>
+                          <span class="layer-meta">
+                            <span class="layer-name">hero / subtitle</span>
+                            <span class="space-count">1 пробел</span>
+                          </span>
+                        </span>
+                      </button>
+                      <button class="result-item" type="button">
+                        <span class="text-layer-icon" aria-hidden="true">Т</span>
+                        <span class="result-item-content">
+                          <span class="text-preview text-preview-collapsed">…Команда подготовила важную<span class="removed-space-marker">▂</span>инструкцию для участников, чтобы можно было начать работу…</span>
+                          <span class="layer-meta">
+                            <span class="layer-name">workspace / marketing / campaign / details / note</span>
+                            <span class="space-count">1 пробел</span>
+                          </span>
                         </span>
                       </button>
                     </section>
