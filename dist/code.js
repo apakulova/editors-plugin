@@ -2526,30 +2526,20 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 const existingDevelopmentMarkerIndexes = measureDuration((duration) => {
                     timings.developmentMarkers += duration;
                 }, () => getExistingDevelopmentMarkerIndexes(textNode));
+                currentStage = "read_styles";
+                const currencyStyles = Array.from(oldText).some((character) => QUANTITY_CURRENCY_SYMBOLS.includes(character))
+                    ? measureDuration((duration) => { timings.readStyles += duration; }, () => captureTextStyles(textNode))
+                    : null;
                 currentStage = "clean_text";
-                const cleanResult = measureDuration((duration) => {
+                let cleanResult = measureDuration((duration) => {
                     timings.typography += duration;
                 }, () => {
                     const inputText = (numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.standalonePhonePrefix) === true ? normalizeStandaloneRussianPhoneCountryPrefix(oldText) : oldText;
-                    return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext);
+                    return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext, currencyStyles === null ? null : createCurrencyFormattingContext(oldText, currencyStyles));
                 });
-                const newText = cleanResult.text;
+                let newText = cleanResult.text;
                 currentLayerNumberDiagnostics = createNumberDiagnosticCases(oldText, newText, numberDiagnosticLayerContext, existingDevelopmentMarkerIndexes, cleanResult.developmentMarkerIndexes);
                 if (newText !== oldText) {
-                    const pointEditPlan = measureDuration((duration) => {
-                        timings.pointEditPlanning += duration;
-                    }, () => createPointTextEditPlan(oldText, newText));
-                    pointEditPlannedLayersCount += 1;
-                    pointEditOperationsCount += pointEditPlan.operationsCount;
-                    pointEditMaxOperationsCount = Math.max(pointEditMaxOperationsCount, pointEditPlan.operationsCount);
-                    if (!pointEditPlan.matches) {
-                        pointEditMismatchLayersCount += 1;
-                        console.error(`[Чистовик] Point edit plan mismatch for text node ${textNode.id}`);
-                        if (writeStrategy === "point") {
-                            currentStage = "compare_text";
-                            throw new Error("Point text edit plan does not match the expected text");
-                        }
-                    }
                     currentStage = "read_styles";
                     let styles = measureDuration((duration) => {
                         timings.readStyles += duration;
@@ -2594,11 +2584,30 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         error.name = "TextLayerStylesChangedError";
                         throw error;
                     }
+                    if (currencyStyles !== null && !areTextStyleSegmentsEqual(currencyStyles, styles)) {
+                        const inputText = (numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.standalonePhonePrefix) === true ? normalizeStandaloneRussianPhoneCountryPrefix(oldText) : oldText;
+                        currentStage = "clean_text";
+                        beginTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, processed - 1);
+                        cleanResult = measureDuration((duration) => { timings.typography += duration; }, () => cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext, createCurrencyFormattingContext(oldText, styles)));
+                        newText = cleanResult.text;
+                        currentLayerNumberDiagnostics = createNumberDiagnosticCases(oldText, newText, numberDiagnosticLayerContext, existingDevelopmentMarkerIndexes, cleanResult.developmentMarkerIndexes);
+                    }
+                    const pointEditPlan = measureDuration((duration) => { timings.pointEditPlanning += duration; }, () => createPointTextEditPlan(oldText, newText));
+                    pointEditPlannedLayersCount += 1;
+                    pointEditOperationsCount += pointEditPlan.operationsCount;
+                    pointEditMaxOperationsCount = Math.max(pointEditMaxOperationsCount, pointEditPlan.operationsCount);
+                    if (!pointEditPlan.matches) {
+                        pointEditMismatchLayersCount += 1;
+                        if (writeStrategy === "point") {
+                            currentStage = "compare_text";
+                            throw new Error("Point text edit plan does not match the expected text");
+                        }
+                    }
                     if (writeStrategy === "full") {
                         currentStage = "compare_text";
                         const styleComparison = measureDuration((duration) => {
                             timings.compareText += duration;
-                        }, () => createStyleRestorationPlan(oldText, newText, styles));
+                        }, () => createStyleRestorationPlan(oldText, newText, styles, cleanResult.currencySourceIndexes));
                         currentStage = "write_text";
                         assertTextNodeCharactersUnchanged(textNode, oldText);
                         assertNumberLayerContextUnchanged(textNode, numberLayerContext, finalNumberContextParentSnapshotCache, finalNumberContextVisibleChildrenCache, finalNumberContextChildIndexCache);
@@ -2633,12 +2642,18 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                     }
                     else {
                         currentStage = "compare_text";
-                        const pointEdits = coalesceDensePointTextEdits(oldText, pointEditPlan.edits, styles);
+                        const coalescedEdits = coalesceDensePointTextEdits(oldText, pointEditPlan.edits, styles);
+                        const pointEdits = includeMovedCurrencyReplacements(oldText, newText, coalescedEdits, styles, cleanResult.currencySourceIndexes);
+                        const extraCurrencyEdits = pointEdits.length - coalescedEdits.length;
+                        pointEditOperationsCount += extraCurrencyEdits;
+                        pointEditMaxOperationsCount = Math.max(pointEditMaxOperationsCount, pointEditPlan.operationsCount + extraCurrencyEdits);
                         const pointStyleMap = measureDuration((duration) => {
                             timings.compareText += duration;
                         }, () => {
                             assertPointTextEditsSafeForCurrentStage(oldText, pointEdits, styles);
-                            return buildPointTextEditStyleMap(oldText, styles, pointEdits);
+                            const styleMap = buildPointTextEditStyleMap(oldText, styles, pointEdits, cleanResult.currencySourceIndexes);
+                            assertInsertedCurrencyStylesRestorable(oldText, pointEdits, styleMap, styles);
+                            return styleMap;
                         });
                         currentStage = "write_text";
                         assertTextNodeCharactersUnchanged(textNode, oldText);
@@ -2656,7 +2671,10 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         currentStage = "restore_styles";
                         const stylesPreserved = measureDuration((duration) => {
                             timings.restoreStyles += duration;
-                        }, () => verifyTextStyleRestorationPlan(textNode, pointStyleMap, styles));
+                        }, () => {
+                            restoreInsertedCurrencyStyles(textNode, pointEdits, pointStyleMap, styles);
+                            return verifyTextStyleRestorationPlan(textNode, pointStyleMap, styles);
+                        });
                         if (!stylesPreserved) {
                             throw new Error("Point text write did not preserve text styles");
                         }
@@ -3594,7 +3612,7 @@ async function restoreWholeTextStyle(textNode, style, skipUnchangedLinkedStyleId
 function hasTextDecoration(style) {
     return style.textDecoration !== "NONE";
 }
-function createStyleRestorationPlan(oldText, newText, styles) {
+function createStyleRestorationPlan(oldText, newText, styles, currencySourceIndexes) {
     try {
         const wholeTextStyle = getWholeTextStyle(styles, oldText);
         const verifyUniformLinkedStyle = canVerifyUniformLinkedStyle(oldText, styles);
@@ -3612,8 +3630,10 @@ function createStyleRestorationPlan(oldText, newText, styles) {
                 verifyUniformLinkedStyle,
             };
         }
+        const styleMap = buildStyleMap(oldText, newText, styles);
+        applyCurrencyStyleSources(oldText, newText, styles, styleMap, currencySourceIndexes);
         return {
-            styleMap: buildStyleMap(oldText, newText, styles),
+            styleMap,
             wholeTextStyle: null,
             verifyUniformLinkedStyle: false,
         };
@@ -3814,8 +3834,43 @@ function buildGreedyOldIndexMap(oldText, newText) {
         throw error;
     }
 }
-function preserveCurrencySymbolStyleSources(oldText, newText, oldIndexMap) {
+function createCurrencyFormattingContext(text, styles) {
+    const symbols = [];
+    for (let index = 0; index < text.length; index += 1) {
+        if (!QUANTITY_CURRENCY_SYMBOLS.includes(text[index]))
+            continue;
+        const style = findStyleSegmentAtPosition(styles, index);
+        if (style === null)
+            throw new Error("Currency symbol has no style source");
+        symbols.push({ currency: text[index], sourceIndex: index, style });
+    }
+    return { symbols };
+}
+function applyCurrencyStyleSources(oldText, newText, styles, styleMap, currencySourceIndexes) {
+    if (currencySourceIndexes === undefined)
+        return;
+    const sources = preserveCurrencySymbolStyleSources(oldText, newText, new Array(newText.length).fill(0), currencySourceIndexes);
+    for (let index = 0; index < newText.length; index += 1) {
+        if (!QUANTITY_CURRENCY_SYMBOLS.includes(newText[index]))
+            continue;
+        const styleIndex = styles.findIndex((style) => sources[index] >= style.start && sources[index] < style.end);
+        if (styleIndex < 0)
+            throw new Error("Currency symbol has no preserved style");
+        styleMap[index] = styleIndex;
+    }
+}
+function preserveCurrencySymbolStyleSources(oldText, newText, oldIndexMap, currencySourceIndexes) {
     try {
+        if (currencySourceIndexes !== undefined) {
+            const newPositions = Array.from({ length: newText.length }, (_, index) => index).filter((index) => QUANTITY_CURRENCY_SYMBOLS.includes(newText[index]));
+            if (newPositions.length !== currencySourceIndexes.length || newPositions.some((position, index) => oldText[currencySourceIndexes[index]] !== newText[position])) {
+                throw new Error("Currency style sources do not match the formatted text");
+            }
+            for (let index = 0; index < newPositions.length; index += 1) {
+                oldIndexMap[newPositions[index]] = currencySourceIndexes[index];
+            }
+            return oldIndexMap;
+        }
         for (const currency of QUANTITY_CURRENCY_SYMBOLS) {
             const oldPositions = [];
             const newPositions = [];
@@ -3893,6 +3948,104 @@ async function applyStyleSegment(textNode, start, end, style, variableCache, ski
     catch (error) {
         console.error("[Чистовик] Failed to apply style segment", error);
         throw error;
+    }
+}
+function includeMovedCurrencyReplacements(oldText, newText, edits, styles, currencySourceIndexes) {
+    if (currencySourceIndexes === undefined)
+        return edits;
+    const desiredSources = preserveCurrencySymbolStyleSources(oldText, newText, new Array(newText.length).fill(0), currencySourceIndexes);
+    const result = edits.slice();
+    let oldCursor = 0;
+    let newCursor = 0;
+    const checkUnchangedRange = (end) => {
+        while (oldCursor < end) {
+            if (QUANTITY_CURRENCY_SYMBOLS.includes(oldText[oldCursor]) && desiredSources[newCursor] !== oldCursor) {
+                const sourceStyle = findStyleSegmentAtPosition(styles, desiredSources[newCursor]);
+                const retainedStyle = findStyleSegmentAtPosition(styles, oldCursor);
+                if (sourceStyle === null || retainedStyle === null)
+                    throw new Error("Retained currency symbol has no style source");
+                if (!STYLE_FIELDS.every((field) => areStyleValuesEqual(sourceStyle[field], retainedStyle[field]))) {
+                    // A text diff may pair identical glyphs from different amounts. Replace
+                    // that glyph so only inserted characters receive the moved source style.
+                    result.push({ start: oldCursor, end: oldCursor + 1, insertText: oldText[oldCursor] });
+                }
+            }
+            oldCursor += 1;
+            newCursor += 1;
+        }
+    };
+    for (const edit of edits) {
+        checkUnchangedRange(edit.start);
+        oldCursor = edit.end;
+        newCursor += edit.insertText.length;
+    }
+    checkUnchangedRange(oldText.length);
+    return result.sort((first, second) => first.start - second.start);
+}
+function currencyStyleNeedsRebinding(expected, actual) {
+    return ["textStyleId", "fillStyleId", "boundVariables", "openTypeFeatures"].some((field) => !areStyleValuesEqual(expected[field], actual[field]));
+}
+function assertInsertedCurrencyStylesRestorable(oldText, edits, styleMap, styles) {
+    if (!edits.some((edit) => Array.from(edit.insertText).some((character) => QUANTITY_CURRENCY_SYMBOLS.includes(character))))
+        return;
+    const inheritedStyleMap = buildPointTextEditStyleMap(oldText, styles, edits, undefined, false);
+    let offset = 0;
+    for (const edit of edits) {
+        for (let relativeIndex = 0; relativeIndex < edit.insertText.length; relativeIndex += 1) {
+            if (!QUANTITY_CURRENCY_SYMBOLS.includes(edit.insertText[relativeIndex]))
+                continue;
+            const index = edit.start + offset + relativeIndex;
+            const expected = styles[styleMap[index]];
+            const inherited = styles[inheritedStyleMap[index]];
+            if (expected === undefined || inherited === undefined || currencyStyleNeedsRebinding(expected, inherited)) {
+                throw new Error("Inserted currency symbol requires unsupported style rebinding");
+            }
+        }
+        offset += edit.insertText.length - (edit.end - edit.start);
+    }
+}
+function restoreInsertedCurrencyStyles(textNode, edits, styleMap, styles) {
+    if (!edits.some((edit) => Array.from(edit.insertText).some((character) => QUANTITY_CURRENCY_SYMBOLS.includes(character))))
+        return;
+    const currentStyles = captureTextStyles(textNode);
+    let offset = 0;
+    for (const edit of edits) {
+        const start = edit.start + offset;
+        for (let relativeIndex = 0; relativeIndex < edit.insertText.length; relativeIndex += 1) {
+            if (!QUANTITY_CURRENCY_SYMBOLS.includes(edit.insertText[relativeIndex]))
+                continue;
+            const index = start + relativeIndex;
+            const expected = styles[styleMap[index]];
+            const actual = findStyleSegmentAtPosition(currentStyles, index);
+            if (expected === undefined || actual === null)
+                throw new Error("Inserted currency symbol has no style source");
+            if (STYLE_FIELDS.every((field) => areStyleValuesEqual(expected[field], actual[field])))
+                continue;
+            // Linked styles, text variables and OpenType features need more than synchronous
+            // character edits. Keep the strict verification and rollback for these cases.
+            if (currencyStyleNeedsRebinding(expected, actual)) {
+                throw new Error("Inserted currency symbol requires unsupported style rebinding");
+            }
+            const end = index + 1;
+            if (!areStyleValuesEqual(expected.fontName, actual.fontName))
+                textNode.setRangeFontName(index, end, expected.fontName);
+            if (!areStyleValuesEqual(expected.fontSize, actual.fontSize))
+                textNode.setRangeFontSize(index, end, expected.fontSize);
+            if (!areStyleValuesEqual(expected.textCase, actual.textCase))
+                textNode.setRangeTextCase(index, end, expected.textCase);
+            if (!areStyleValuesEqual(expected.letterSpacing, actual.letterSpacing))
+                textNode.setRangeLetterSpacing(index, end, expected.letterSpacing);
+            if (!areStyleValuesEqual(expected.lineHeight, actual.lineHeight))
+                textNode.setRangeLineHeight(index, end, expected.lineHeight);
+            if (!areStyleValuesEqual(expected.fills, actual.fills))
+                textNode.setRangeFills(index, end, expected.fills);
+            if (!areStyleValuesEqual(expected.hyperlink, actual.hyperlink))
+                restoreHyperlink(textNode, index, end, expected);
+            const decorationFields = ["textDecoration", "textDecorationStyle", "textDecorationOffset", "textDecorationThickness", "textDecorationColor", "textDecorationSkipInk"];
+            if (decorationFields.some((field) => !areStyleValuesEqual(expected[field], actual[field])))
+                restoreTextDecoration(textNode, index, end, expected);
+        }
+        offset += edit.insertText.length - (edit.end - edit.start);
     }
 }
 function restoreDetachedTextProperties(textNode, start, end, style) {
@@ -4450,7 +4603,7 @@ function assertPointTextEditsSafeForCurrentStage(oldText, edits, styles) {
         throw error;
     }
 }
-function buildPointTextEditStyleMap(oldText, styles, edits) {
+function buildPointTextEditStyleMap(oldText, styles, edits, currencySourceIndexes, preserveCurrencyStyles = true) {
     var _a, _b, _c, _d, _e, _f;
     try {
         const originalStyleMap = new Array(oldText.length).fill(0);
@@ -4473,7 +4626,7 @@ function buildPointTextEditStyleMap(oldText, styles, edits) {
                 const rightStyleIndex = edit.start < oldText.length ? originalStyleMap[edit.start] : undefined;
                 const defaultStyleIndex = (_b = rightStyleIndex !== null && rightStyleIndex !== void 0 ? rightStyleIndex : leftStyleIndex) !== null && _b !== void 0 ? _b : 0;
                 insertedStyles = new Array(edit.insertText.length).fill(defaultStyleIndex);
-                if (leftStyleIndex !== undefined && leadingWhitespaceLength > 0) {
+                if (leftStyleIndex !== undefined && leadingWhitespaceLength > 0 && shouldPointTextEditWhitespaceUseLeftStyle(oldText, edit)) {
                     insertedStyles.fill(leftStyleIndex, 0, leadingWhitespaceLength);
                 }
             }
@@ -4490,8 +4643,10 @@ function buildPointTextEditStyleMap(oldText, styles, edits) {
         for (let characterIndex = sourceCursor; characterIndex < originalStyleMap.length; characterIndex += 1) {
             result.push((_d = originalStyleMap[characterIndex]) !== null && _d !== void 0 ? _d : 0);
         }
+        if (!preserveCurrencyStyles)
+            return result;
         const newText = applyPointTextEditsToString(oldText, edits);
-        const currencyStyleSources = preserveCurrencySymbolStyleSources(oldText, newText, new Array(newText.length).fill(0));
+        const currencyStyleSources = preserveCurrencySymbolStyleSources(oldText, newText, new Array(newText.length).fill(0), currencySourceIndexes);
         for (let index = 0; index < newText.length; index += 1) {
             if (QUANTITY_CURRENCY_SYMBOLS.includes(newText[index])) {
                 result[index] = (_f = (_e = originalStyleMap[currencyStyleSources[index]]) !== null && _e !== void 0 ? _e : result[index]) !== null && _f !== void 0 ? _f : 0;
@@ -4593,10 +4748,10 @@ function applyPointTextEditsToTextNode(textNode, edits, mutationJournal = create
                     leadingWhitespaceLength > 0 &&
                     leadingWhitespaceLength < edit.insertText.length) {
                     insertPointTextWithJournal(textNode, edit.start, edit.insertText.slice(leadingWhitespaceLength), "AFTER", mutationJournal);
-                    insertPointTextWithJournal(textNode, edit.start, edit.insertText.slice(0, leadingWhitespaceLength), "BEFORE", mutationJournal);
+                    insertPointTextWithJournal(textNode, edit.start, edit.insertText.slice(0, leadingWhitespaceLength), shouldPointTextEditWhitespaceUseLeftStyle(originalText, edit) ? "BEFORE" : "AFTER", mutationJournal);
                 }
                 else {
-                    const whitespaceShouldUseLeftStyle = hasTextBefore && leadingWhitespaceLength === edit.insertText.length;
+                    const whitespaceShouldUseLeftStyle = hasTextBefore && leadingWhitespaceLength === edit.insertText.length && shouldPointTextEditWhitespaceUseLeftStyle(originalText, edit);
                     const useStyle = hasTextAfter && !whitespaceShouldUseLeftStyle ? "AFTER" : "BEFORE";
                     insertPointTextWithJournal(textNode, edit.start, edit.insertText, useStyle, mutationJournal);
                 }
@@ -4614,6 +4769,11 @@ function applyPointTextEditsToTextNode(textNode, edits, mutationJournal = create
         console.error(`[Чистовик] Failed to apply point text edits to text node ${textNode.id}`, error);
         throw error;
     }
+}
+function shouldPointTextEditWhitespaceUseLeftStyle(oldText, edit) {
+    // A currency glyph can move to another amount during the diff. New spacing
+    // beside it inherits the following text rather than the glyph's color/link.
+    return edit.start > 0 && (edit.start === oldText.length || !QUANTITY_CURRENCY_SYMBOLS.includes(oldText[edit.start - 1]));
 }
 function getPointTextEditLeadingWhitespaceLength(insertText) {
     var _a, _b;
@@ -5141,21 +5301,19 @@ function cleanTypography(input, options = getDefaultRunOptions()) {
         throw error;
     }
 }
-function cleanTypographyWithMetadata(input, options = getDefaultRunOptions(), existingDevelopmentMarkerIndexes = [], ruleAnalyticsCollector = null, numberLayerContext = null) {
+function cleanTypographyWithMetadata(input, options = getDefaultRunOptions(), existingDevelopmentMarkerIndexes = [], ruleAnalyticsCollector = null, numberLayerContext = null, currencyContext = null) {
     try {
         const normalizedInput = normalizeInputNonBreakingSpaces(input);
         const asteriskSpaceCandidateIndexes = getExistingAsteriskSpaceCandidateIndexesForRun(normalizedInput, options);
         const markerIndexes = getDevelopmentMarkerIndexesForRun(normalizedInput, options, existingDevelopmentMarkerIndexes, asteriskSpaceCandidateIndexes);
         const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, [...markerIndexes, ...asteriskSpaceCandidateIndexes]);
         const beautyInput = restoreStableDevelopmentPatternMarkers(inputWithKnownMarkers);
-        const beautyText = cleanTypographyForBeauty(beautyInput, ruleAnalyticsCollector, numberLayerContext);
+        const beautyText = cleanTypographyForBeauty(beautyInput, ruleAnalyticsCollector, numberLayerContext, currencyContext);
+        const currencySources = currencyContext === null ? {} : { currencySourceIndexes: currencyContext.symbols.map((symbol) => symbol.sourceIndex) };
         if (options.mode !== "development") {
-            return {
-                text: beautyText,
-                developmentMarkerIndexes: [],
-            };
+            return Object.assign({ text: beautyText, developmentMarkerIndexes: [] }, currencySources);
         }
-        return createDevelopmentTypographyResult(beautyText);
+        return Object.assign(Object.assign({}, createDevelopmentTypographyResult(beautyText)), currencySources);
     }
     catch (error) {
         console.error("[Чистовик] Failed to clean text with metadata", error);
@@ -5405,14 +5563,14 @@ function createDevelopmentTypographyResult(beautyText) {
         throw error;
     }
 }
-function cleanTypographyForBeauty(input, ruleAnalyticsCollector = null, numberLayerContext = null) {
+function cleanTypographyForBeauty(input, ruleAnalyticsCollector = null, numberLayerContext = null, currencyContext = null) {
     try {
         let text = input;
         text = cleanupSpaces(text, ruleAnalyticsCollector);
         text = cleanupQuotesAndPunctuation(text, ruleAnalyticsCollector);
         text = normalizeMathAndSymbols(text, ruleAnalyticsCollector);
         text = cleanupDashesAndHyphens(text, ruleAnalyticsCollector);
-        text = formatNumbersAndMoney(text, ruleAnalyticsCollector, numberLayerContext);
+        text = formatNumbersAndMoney(text, ruleAnalyticsCollector, numberLayerContext, currencyContext);
         text = formatPhoneNumbers(text, ruleAnalyticsCollector, numberLayerContext);
         text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, moveLeadingCurrencySymbolsAfterQuantity);
         text = normalizeEditorialRanges(text, ruleAnalyticsCollector);
@@ -6811,10 +6969,17 @@ function formatEvidenceBasedNumberToken(token) {
         throw error;
     }
 }
-function formatSharedQuantityConstructions(input, numberLayerContext = null) {
+function formatSharedQuantityConstructions(input, numberLayerContext = null, currencyContext = null) {
     try {
         const numberToken = QUANTITY_NUMBER_TOKEN_PATTERN;
         let text = input;
+        const currencyPositions = [];
+        for (let index = 0; index < text.length; index += 1) {
+            if (QUANTITY_CURRENCY_SYMBOLS.includes(text[index]))
+                currencyPositions.push(index);
+        }
+        const matchingCurrencySources = currencyContext !== null && currencyPositions.length === currencyContext.symbols.length && currencyPositions.every((position, index) => text[position] === currencyContext.symbols[index].currency);
+        const removedCurrencySymbols = new Set();
         text = text.replace(LEADING_CURRENCY_RANGE_PATTERN, (match, firstCurrency, first, secondCurrency, second, offset, fullText) => {
             var _a, _b, _c, _d;
             try {
@@ -6832,7 +6997,12 @@ function formatSharedQuantityConstructions(input, numberLayerContext = null) {
                 const secondSign = (_d = (_c = /^[+−-]/.exec(second)) === null || _c === void 0 ? void 0 : _c[0]) !== null && _d !== void 0 ? _d : "";
                 const formattedFirst = `${firstSign}${formatEvidenceBasedNumberToken(first.slice(firstSign.length))}`;
                 const formattedSecond = `${secondSign}${formatEvidenceBasedNumberToken(second.slice(secondSign.length))}`;
-                if (firstCurrency === secondCurrency) {
+                const firstCurrencyOrdinal = currencyPositions.indexOf(offset);
+                const secondCurrencyPosition = offset + match.lastIndexOf(secondCurrency);
+                const secondCurrencyOrdinal = currencyPositions.indexOf(secondCurrencyPosition);
+                const canShareCurrencyStyle = currencyContext === null || (matchingCurrencySources && firstCurrencyOrdinal >= 0 && secondCurrencyOrdinal >= 0 && STYLE_FIELDS.every((field) => areStyleValuesEqual(currencyContext.symbols[firstCurrencyOrdinal].style[field], currencyContext.symbols[secondCurrencyOrdinal].style[field])));
+                if (firstCurrency === secondCurrency && canShareCurrencyStyle) {
+                    removedCurrencySymbols.add(firstCurrencyOrdinal);
                     return `${formattedFirst}${NBSP}${EM_DASH} ${formattedSecond}${NBSP}${secondCurrency}`;
                 }
                 return `${formattedFirst}${NBSP}${firstCurrency}${NBSP}${EM_DASH} ${formattedSecond}${NBSP}${secondCurrency}`;
@@ -6842,6 +7012,9 @@ function formatSharedQuantityConstructions(input, numberLayerContext = null) {
                 return match;
             }
         });
+        if (currencyContext !== null) {
+            currencyContext.symbols = currencyContext.symbols.filter((_, index) => !removedCurrencySymbols.has(index));
+        }
         const rangePattern = new RegExp(`(${numberToken})[ \\t\\u00A0]*(?:—|–|-|−)[ \\t\\u00A0]*(${numberToken})`, "g");
         text = text.replace(rangePattern, (match, first, second, offset, fullText) => {
             var _a, _b, _c, _d, _e, _f;
@@ -6963,7 +7136,7 @@ function separateAttachedMeasurementUnits(input, numberLayerContext) {
         return `${prefix}${amount}${NBSP}${unit}`;
     });
 }
-function formatNumbersAndMoney(input, ruleAnalyticsCollector = null, numberLayerContext = null) {
+function formatNumbersAndMoney(input, ruleAnalyticsCollector = null, numberLayerContext = null, currencyContext = null) {
     try {
         let text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", input, (value) => separateAttachedMeasurementUnits(value, numberLayerContext));
         text = applyTypographyRule(ruleAnalyticsCollector, "number_protect_date", text, normalizeCommaSeparatedDates);
@@ -6983,7 +7156,7 @@ function formatNumbersAndMoney(input, ruleAnalyticsCollector = null, numberLayer
             }
         }));
         text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, formatQuantitativeMathExpressions);
-        text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, (value) => formatSharedQuantityConstructions(value, numberLayerContext));
+        text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, (value) => formatSharedQuantityConstructions(value, numberLayerContext, currencyContext));
         text = applyTypographyRule(ruleAnalyticsCollector, "number_group_digits", text, (value) => value.replace(/\b(?:\d{4,}|\d{1,3}(?:[ \t\u00A0\u2009\u202F]\d{3})+)(?:,\d+)?\b/g, (match, offset, fullText) => {
             try {
                 const integerPart = match.split(",")[0].replace(/[ \t\u00A0\u2009\u202F]/g, "");

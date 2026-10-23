@@ -3053,6 +3053,101 @@ function createProcessTextNodeMock(id, characters, absoluteBoundingBox, parentId
   return node;
 }
 
+// Unlike the uniform mock above, this node changes its per-character styles only
+// through native-style insert/delete/setRange operations. It never derives them
+// from the text or style map that a test expects the typograph to produce.
+function createStyleInheritingTextNodeMock(id, input, baseStyle, overrides = []) {
+  const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+  let text = input;
+  const originalStyle = createProcessTextNodeMock(id, input, null).getStyledTextSegments()[0];
+  delete originalStyle.characters;
+  delete originalStyle.start;
+  delete originalStyle.end;
+  const defaultStyle = { ...originalStyle, textStyleId: "", ...clone(baseStyle) };
+  const characterStyles = Array.from({ length: input.length }, () => clone(defaultStyle));
+  const pluginData = new Map();
+  const operations = [];
+
+  for (const { start, end, style } of overrides) {
+    for (let index = start; index < end; index += 1) {
+      characterStyles[index] = { ...characterStyles[index], ...clone(style) };
+    }
+  }
+
+  const checkRange = (start, end) => {
+    assert(Number.isInteger(start) && Number.isInteger(end) && start >= 0 && start <= end && end <= text.length);
+  };
+  const getRange = (start, end, field) => {
+    checkRange(start, end);
+    const values = characterStyles.slice(start, end).map((style) => style[field]);
+    return values.every((value) => same(value, values[0])) ? clone(values[0]) : context.figma.mixed;
+  };
+  const setRange = (start, end, field, value) => {
+    checkRange(start, end);
+    operations.push(["setRange", start, end, field, clone(value)]);
+    for (let index = start; index < end; index += 1) {
+      characterStyles[index] = { ...characterStyles[index], [field]: clone(value) };
+    }
+  };
+  const node = createProcessTextNodeMock(id, input, { height: 60, width: 622, x: 0, y: 0 }, null);
+  Object.defineProperty(node, "characters", {
+    get: () => text,
+    set: () => { throw new Error("The point writer must not assign the whole characters value"); },
+  });
+  node.getStyledTextSegments = (fields = Object.keys(defaultStyle)) => {
+    const project = (style) => Object.fromEntries(fields.map((field) => [field, clone(style[field])]));
+    const segments = [];
+    for (let start = 0; start < text.length;) {
+      const style = project(characterStyles[start]);
+      let end = start + 1;
+      while (end < text.length && same(style, project(characterStyles[end]))) end += 1;
+      segments.push({ ...style, start, end, characters: text.slice(start, end) });
+      start = end;
+    }
+    return segments;
+  };
+  node.getRangeAllFontNames = () => Array.from(new Map(characterStyles.map((style) => [JSON.stringify(style.fontName), clone(style.fontName)])).values());
+  node.getRangeTextStyleId = (start, end) => getRange(start, end, "textStyleId");
+  node.getRangeFillStyleId = (start, end) => getRange(start, end, "fillStyleId");
+  node.getRangeFills = (start, end) => getRange(start, end, "fills");
+  node.getPluginData = (key) => pluginData.get(key) ?? "";
+  node.setPluginData = (key, value) => pluginData.set(key, value);
+  node.insertCharacters = (start, value, useStyle = "BEFORE") => {
+    checkRange(start, start);
+    assert(useStyle === "BEFORE" || useStyle === "AFTER");
+    const source = useStyle === "AFTER"
+      ? characterStyles[start] ?? characterStyles[start - 1] ?? defaultStyle
+      : characterStyles[start - 1] ?? characterStyles[start] ?? defaultStyle;
+    operations.push(["insertCharacters", start, value, useStyle]);
+    characterStyles.splice(start, 0, ...Array.from({ length: value.length }, () => clone(source)));
+    text = `${text.slice(0, start)}${value}${text.slice(start)}`;
+  };
+  node.deleteCharacters = (start, end) => {
+    checkRange(start, end);
+    operations.push(["deleteCharacters", start, end]);
+    characterStyles.splice(start, end - start);
+    text = `${text.slice(0, start)}${text.slice(end)}`;
+  };
+  for (const field of ["fontName", "fontSize", "textCase", "letterSpacing", "lineHeight", "textDecoration", "textDecorationStyle", "textDecorationOffset", "textDecorationThickness", "textDecorationColor", "textDecorationSkipInk", "fills", "hyperlink", "listOptions", "listSpacing", "indentation", "paragraphIndent", "paragraphSpacing"]) {
+    node[`setRange${field[0].toUpperCase()}${field.slice(1)}`] = (start, end, value) => setRange(start, end, field, value);
+  }
+  node.setRangeTextStyleIdAsync = async (start, end, value) => setRange(start, end, "textStyleId", value);
+  node.setRangeFillStyleIdAsync = async (start, end, value) => setRange(start, end, "fillStyleId", value);
+  node.setRangeBoundVariable = (start, end, field, variable) => {
+    checkRange(start, end);
+    operations.push(["setRangeBoundVariable", start, end, field, clone(variable)]);
+    for (let index = start; index < end; index += 1) {
+      const boundVariables = { ...characterStyles[index].boundVariables };
+      if (variable === null) delete boundVariables[field];
+      else boundVariables[field] = { type: "VARIABLE_ALIAS", id: variable.id };
+      characterStyles[index] = { ...characterStyles[index], boundVariables };
+    }
+  };
+
+  return { node, operations, styleAt: (index) => clone(characterStyles[index]) };
+}
+
 function connectHorizontalAutoLayoutParent(id, nodes) {
   const parent = {
     children: nodes,
@@ -4152,6 +4247,225 @@ async function runIntegratedMixedStyleProcessingTests() {
     ["insertCharacters", 4, "…", "AFTER"],
     ["deleteCharacters", 5, 8],
   ]);
+}
+
+async function runMovedCurrencyStyleProcessingTests() {
+  const regular = { family: "Inter", style: "Regular", variationSettings: { wght: 400, slnt: 0 } };
+  const bold = { family: "Inter", style: "Bold", variationSettings: { wght: 700, slnt: 0 } };
+  const italic = { family: "Inter", style: "Italic", variationSettings: { wght: 400, slnt: -10 } };
+  const bodyFills = [{
+    type: "SOLID", visible: true, opacity: 1, blendMode: "NORMAL",
+    color: { r: 0, g: 0, b: 0 },
+    boundVariables: { color: { type: "VARIABLE_ALIAS", id: "VariableID:currency-body-color" } },
+  }];
+  const accentFills = [{
+    type: "SOLID", visible: true, opacity: 1, blendMode: "NORMAL",
+    color: { r: 6 / 255, g: 92 / 255, b: 91 / 255 }, boundVariables: {},
+  }];
+  const firstLink = { type: "URL", value: "https://example.com/first" };
+  const secondLink = { type: "URL", value: "https://example.com/second" };
+  const authorLink = { type: "URL", value: "https://example.com/author" };
+  const baseStyle = { fontName: regular, fontSize: 15, fills: bodyFills };
+  const sourceS04 = 'Жирный "привет"... Цена $10000 и 5 кг. товара.';
+  const expectedS04 = `Жирный «привет»… Цена 10${NBSP}000${NBSP}$ и${NBSP}5${NBSP}кг товара.`;
+  const separateRubles = `10${NBSP}000${NBSP}₽${NBSP}— 20${NBSP}000${NBSP}₽`;
+  const scenarios = [
+    { id: "currency-color", input: "$123", expected: `123${NBSP}$`, overrides: [{ start: 0, end: 1, style: { fills: accentFills } }] },
+    { id: "currency-link", input: "$123", expected: `123${NBSP}$`, overrides: [{ start: 0, end: 1, style: { hyperlink: firstLink } }] },
+    { id: "currency-font", input: "$123", expected: `123${NBSP}$`, overrides: [{ start: 0, end: 1, style: { fontName: bold } }] },
+    {
+      id: "currency-S04", input: sourceS04, expected: expectedS04,
+      overrides: [
+        { start: 8, end: 14, style: { fontName: bold } },
+        { start: 19, end: 23, style: { fontName: italic } },
+        { start: 24, end: 25, style: { fills: accentFills } },
+        { start: 39, end: 45, style: { textDecoration: "UNDERLINE", hyperlink: { type: "URL", value: "https://example.com" } } },
+      ],
+      words: [{ text: "привет", source: 8 }, { text: "Цена", source: 19 }, { text: "товара", source: 39 }],
+    },
+    {
+      id: "currency-S11", input: "₽10000—₽20000", expected: separateRubles,
+      overrides: [
+        { start: 0, end: 1, style: { hyperlink: firstLink } },
+        { start: 7, end: 8, style: { fills: accentFills, hyperlink: secondLink } },
+      ],
+      addedBodySpaces: [8],
+    },
+    {
+      id: "currency-same-color-different-links", input: "₽10000—₽20000", expected: separateRubles,
+      overrides: [
+        { start: 0, end: 1, style: { hyperlink: firstLink } },
+        { start: 7, end: 8, style: { hyperlink: secondLink } },
+      ],
+    },
+    {
+      id: "currency-same-color-different-fonts", input: "₽10000—₽20000", expected: separateRubles,
+      overrides: [{ start: 7, end: 8, style: { fontName: bold } }],
+    },
+    {
+      id: "currency-identical-style-control", input: "₽10000—₽20000",
+      expected: `10${NBSP}000${NBSP}— 20${NBSP}000${NBSP}₽`,
+      overrides: [
+        { start: 0, end: 1, style: { fills: accentFills, hyperlink: firstLink } },
+        { start: 7, end: 8, style: { fills: accentFills, hyperlink: firstLink } },
+      ],
+      retainedCurrencySources: [1],
+    },
+    {
+      id: "currency-three-distinct-signs", input: "₽10000—₽20000; ₽30000",
+      expected: `${separateRubles}; 30${NBSP}000${NBSP}₽`,
+      overrides: [
+        { start: 0, end: 1, style: { hyperlink: firstLink } },
+        { start: 7, end: 8, style: { fills: accentFills, hyperlink: secondLink } },
+        { start: 15, end: 16, style: { fontName: bold } },
+      ],
+    },
+    {
+      id: "currency-partial-collapse", input: "₽10000—₽20000; ₽30000",
+      expected: `10${NBSP}000${NBSP}— 20${NBSP}000${NBSP}₽; 30${NBSP}000${NBSP}₽`,
+      overrides: [
+        { start: 0, end: 1, style: { fills: accentFills, hyperlink: firstLink } },
+        { start: 7, end: 8, style: { fills: accentFills, hyperlink: firstLink } },
+        { start: 15, end: 16, style: { hyperlink: secondLink } },
+      ],
+      retainedCurrencySources: [1, 2],
+    },
+    {
+      id: "currency-two-distinct-pairs", input: "₽10000—₽20000; ₽30000—₽40000",
+      expected: `${separateRubles}; 30${NBSP}000${NBSP}₽${NBSP}— 40${NBSP}000${NBSP}₽`,
+      overrides: [
+        { start: 0, end: 1, style: { hyperlink: firstLink } },
+        { start: 7, end: 8, style: { fills: accentFills, hyperlink: secondLink } },
+        { start: 15, end: 16, style: { fontName: bold } },
+        { start: 22, end: 23, style: { fontName: italic } },
+      ],
+      addedBodySpaces: [8, 29],
+    },
+    {
+      id: "currency-authored-space-and-link", input: "Ссылка ₽10000—₽20000 хвост",
+      expected: `Ссылка ${separateRubles} хвост`,
+      overrides: [
+        { start: 6, end: 7, style: { fills: accentFills, hyperlink: authorLink } },
+        { start: 7, end: 8, style: { hyperlink: firstLink } },
+        { start: 14, end: 15, style: { fills: accentFills, hyperlink: secondLink } },
+        { start: 20, end: 26, style: { fontName: italic, fills: accentFills, hyperlink: authorLink } },
+      ],
+      preservedRanges: [{ source: 6, target: 6, length: 1 }, { source: 20, target: 26, length: 6 }],
+      addedBodySpaces: [15],
+    },
+    {
+      id: "currency-two-collapsed-pairs", input: "₽10000—₽20000; ₽30000—₽40000",
+      expected: `10${NBSP}000${NBSP}— 20${NBSP}000${NBSP}₽; 30${NBSP}000${NBSP}— 40${NBSP}000${NBSP}₽`,
+      overrides: [
+        { start: 0, end: 1, style: { fills: accentFills, hyperlink: firstLink } },
+        { start: 7, end: 8, style: { fills: accentFills, hyperlink: firstLink } },
+        { start: 15, end: 16, style: { hyperlink: secondLink } },
+        { start: 22, end: 23, style: { hyperlink: secondLink } },
+      ],
+      retainedCurrencySources: [1, 3],
+    },
+    {
+      id: "currency-style-changes-during-font-load", input: "₽10000—₽20000", expected: separateRubles,
+      overrides: [], changeDuringFontLoad: { index: 7, fills: accentFills, hyperlink: secondLink },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const fixture = createStyleInheritingTextNodeMock(scenario.id, scenario.input, baseStyle, scenario.overrides);
+    const sourcePositions = Array.from(scenario.input.matchAll(/[₽$]/g), (match) => match.index);
+    const sourceCurrencyStyles = sourcePositions.map((index) => fixture.styleAt(index));
+    const sourceWordStyles = (scenario.words ?? []).map(({ source }) => fixture.styleAt(source));
+    const sourceRangeStyles = (scenario.preservedRanges ?? []).map(({ source, length }) =>
+      Array.from({ length }, (_, offset) => fixture.styleAt(source + offset))
+    );
+    let styleChanged = false;
+    context.figma.loadFontAsync = async () => {
+      const change = scenario.changeDuringFontLoad;
+      if (change !== undefined && !styleChanged) {
+        styleChanged = true;
+        fixture.node.setRangeFills(change.index, change.index + 1, change.fills);
+        fixture.node.setRangeHyperlink(change.index, change.index + 1, change.hyperlink);
+        sourceCurrencyStyles[sourcePositions.indexOf(change.index)] = fixture.styleAt(change.index);
+      }
+    };
+    const undo = configureFigmaUndoForNodes([fixture.node]);
+    const result = await processTextNodes([fixture.node], 0, 0, beautyOptions);
+
+    assert.strictEqual(result.failed, 0, `${scenario.id}: native-style insertion must preserve currency formatting`);
+    assert.strictEqual(result.changed, 1, `${scenario.id}: one run must finish the change`);
+    assert.strictEqual(fixture.node.characters, scenario.expected, `${scenario.id}: currency signs must be retained safely`);
+    assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 0, `${scenario.id}: a valid moved currency must not be rolled back`);
+    assert.strictEqual(undo.getTriggerCalls(), 0);
+
+    const targetPositions = Array.from(fixture.node.characters.matchAll(/[₽$]/g), (match) => match.index);
+    const retainedSources = scenario.retainedCurrencySources ?? sourcePositions.map((_position, index) => index);
+    assert.strictEqual(targetPositions.length, retainedSources.length, `${scenario.id}: no differently styled currency may disappear`);
+    targetPositions.forEach((position, index) => {
+      assert.deepStrictEqual(fixture.styleAt(position), sourceCurrencyStyles[retainedSources[index]], `${scenario.id}: currency ${index + 1} keeps its own original style`);
+    });
+    (scenario.words ?? []).forEach(({ text: word }, index) => {
+      const start = fixture.node.characters.indexOf(word);
+      assert(start >= 0);
+      for (let offset = 0; offset < word.length; offset += 1) {
+        assert.deepStrictEqual(fixture.styleAt(start + offset), sourceWordStyles[index], `${scenario.id}: ${word} retains its formatting`);
+      }
+    });
+    for (const position of scenario.addedBodySpaces ?? []) {
+      assert.strictEqual(fixture.node.characters[position], NBSP, `${scenario.id}: the checked separator must be an added NBSP`);
+      assert.deepStrictEqual(fixture.styleAt(position).fills, bodyFills, `${scenario.id}: added separator ${position} keeps body color and its variable binding`);
+      assert.strictEqual(fixture.styleAt(position).hyperlink, null, `${scenario.id}: added separator ${position} must not inherit a currency hyperlink`);
+    }
+    (scenario.preservedRanges ?? []).forEach(({ source, target, length }, rangeIndex) => {
+      assert.strictEqual(fixture.node.characters.slice(target, target + length), scenario.input.slice(source, source + length), `${scenario.id}: original authored characters remain in place`);
+      for (let offset = 0; offset < length; offset += 1) {
+        assert.deepStrictEqual(fixture.styleAt(target + offset), sourceRangeStyles[rangeIndex][offset], `${scenario.id}: original authored space and hyperlink retain their full style`);
+      }
+    });
+
+    const stableStyles = fixture.node.getStyledTextSegments();
+    const operationCount = fixture.operations.length;
+    const repeated = await processTextNodes([fixture.node], 0, 0, beautyOptions);
+    assert.strictEqual(repeated.failed, 0, `${scenario.id}: repeat must not fail`);
+    assert.strictEqual(repeated.changed, 0, `${scenario.id}: repeat must not change the text`);
+    assert.strictEqual(fixture.node.characters, scenario.expected);
+    assert.deepStrictEqual(fixture.node.getStyledTextSegments(), stableStyles, `${scenario.id}: repeat preserves all actual styles`);
+    assert.strictEqual(fixture.operations.length, operationCount, `${scenario.id}: repeat makes no text or style edits`);
+  }
+
+  // Linked text styles cannot be rebound synchronously. Reject the entire plan
+  // before even the first currency is moved or recolored, regardless of whether
+  // adjacent changes coalesce across a space or remain separated by punctuation.
+  for (const input of ["$123 €456", "$123;€456"]) {
+    const id = `currency-unsupported-rebinding-${input[4] === ";" ? "semicolon" : "space"}`;
+    const unsupported = createStyleInheritingTextNodeMock(id, input, baseStyle, [
+      { start: 0, end: 1, style: { fills: accentFills } },
+      { start: 5, end: 6, style: { textStyleId: "currency-linked-style" } },
+    ]);
+    const originalUnsupportedStyles = unsupported.node.getStyledTextSegments();
+    context.figma.loadFontAsync = async () => {};
+    const unsupportedUndo = configureFigmaUndoForNodes([unsupported.node]);
+    const originalConsole = context.console;
+    context.console = { ...console, error: () => {} };
+    let unsupportedResult;
+    try {
+      unsupportedResult = await processTextNodes([unsupported.node], 0, 0, beautyOptions);
+    } finally {
+      context.console = originalConsole;
+    }
+    assert.strictEqual(unsupportedResult.changed, 0, id);
+    assert.strictEqual(unsupportedResult.failed, 1, id);
+    assert.strictEqual(unsupportedResult.failedStage, "compare_text", id);
+    assert.strictEqual(unsupportedResult.requiresStyleWarning, false, id);
+    assert.deepStrictEqual(Array.from(unsupportedResult.problemLayers, (layer) => layer.kind), ["safe_failure"], id);
+    assert.strictEqual(unsupportedResult.analytics.rollbackAttemptedLayersCount, 0, id);
+    assert.strictEqual(unsupportedResult.analytics.rollbackFailedLayersCount, 0, id);
+    assert.strictEqual(unsupported.node.characters, input, id);
+    assert.deepStrictEqual(unsupported.node.getStyledTextSegments(), originalUnsupportedStyles, `${id}: unsupported rebinding must leave every original style untouched`);
+    assert.strictEqual(unsupported.operations.length, 0, `${id}: reject before any text or style mutation`);
+    assert.strictEqual(unsupportedUndo.getCommitCalls(), 0, id);
+    assert.strictEqual(unsupportedUndo.getTriggerCalls(), 0, id);
+  }
+  context.figma.loadFontAsync = async () => {};
 }
 
 async function runPointStyleBoundaryProcessingTests() {
@@ -5640,6 +5954,7 @@ runStyleRestorationTests()
   .then(runAllTypographyExamplesThroughPointWriterTests)
   .then(runSinglePassDevelopmentPunctuationTests)
   .then(runIntegratedMixedStyleProcessingTests)
+  .then(runMovedCurrencyStyleProcessingTests)
   .then(runPointStyleBoundaryProcessingTests)
   .then(runPointInsertionProcessingTests)
   .then(runPointWriteRollbackTests)
