@@ -107,7 +107,6 @@ function createSummary(overrides = {}) {
     modeBeauty: 0,
     modeDefault: 28,
     modeDevelopment: 0,
-    numberDiagnosticCases: 0,
     performanceRuns: 20,
     pointEditingReadiness: {
       fullDays: 1,
@@ -137,7 +136,7 @@ async function run() {
   };
 
   const dateRange = getMoscowReportRange("yesterday", new Date("2026-07-28T06:00:00.000Z"));
-  const message = formatAnalyticsMessage(dateRange, createSummary(), env);
+  const message = formatAnalyticsMessage(dateRange, createSummary({ numberDiagnosticCases: 0 }), env);
 
   assert(message.includes("<b>✦ Чистовик за 27 июля (пн)</b>"));
   assert(message.startsWith([
@@ -155,7 +154,8 @@ async function run() {
   assert(message.includes("18% от всех запусков"));
   assert(message.includes("основные причины — недоступен шрифт (4 из 5 ошибок), не удалось записать текст (1 из 5 ошибок)"));
   assert(message.includes("📍 Это на 346% больше среднего за последние 7 дней"));
-  assert(message.includes(">Изменения чисел: 0 случаев</a>"));
+  assert(!message.includes("Изменения чисел"));
+  assert(!message.includes("/number-diagnostics"));
   assert(!message.includes("Производительность:"));
   assert(!message.includes("обычное время обработки"));
   assert(!message.includes("90% обработок"));
@@ -203,7 +203,7 @@ async function run() {
   assert.strictEqual(getPointEditingFullDays(new Date("2026-08-13T06:00:00.000Z")), 7);
 
   const todayRange = getMoscowReportRange("today", new Date("2026-07-28T06:00:00.000Z"));
-  const todayMessage = formatAnalyticsMessage(todayRange, createSummary(), env);
+  const todayMessage = formatAnalyticsMessage(todayRange, createSummary({ numberDiagnosticCases: 127 }), env);
 
   assert(todayMessage.includes("<b>✦ Чистовик сегодня (вт)</b>"));
   assert(!todayMessage.includes("Нельзя делать доработки"));
@@ -211,6 +211,8 @@ async function run() {
   assert(todayMessage.includes("Запуски типографа: 28"));
   assert(todayMessage.includes("📍 Плагин запускали на 12% больше среднего за последние 7 дней"));
   assert(todayMessage.includes("Ошибки:"));
+  assert(!todayMessage.includes("Изменения чисел"));
+  assert(!todayMessage.includes("/number-diagnostics"));
   assert(!todayMessage.includes("Производительность:"));
   assert(todayMessage.includes("основные причины — недоступен шрифт (4 из 5 ошибок), не удалось записать текст (1 из 5 ошибок)"));
 
@@ -256,7 +258,6 @@ async function run() {
       errorCategories: [],
       failedRuns: 0,
       medianDurationMs: 0,
-      numberDiagnosticCases: 0,
       p90DurationMs: 0,
       successfulRuns: 0,
       typographRuns: 0,
@@ -503,6 +504,8 @@ async function run() {
       assert.strictEqual(summary.medianDurationMs, 420);
       assert.strictEqual(summary.supportLinkClicked, 2);
       assert.strictEqual(summary.pointEditingReadiness.successfulRuns, 7);
+      assert.strictEqual(Object.hasOwn(summary, "numberDiagnosticCases"), false);
+      assert.strictEqual(calls.length, 6);
       assert(JSON.parse(calls[0].options.body).query.query.includes("event = 'support_link_clicked'"));
       assert(JSON.parse(calls[0].options.body).query.query.includes("properties.announcement_id = 'feedback-2026-09'"));
       assert(calls.slice(0, 2).every((call) => JSON.parse(call.options.body).query.query.includes("performance_measurement_version")));

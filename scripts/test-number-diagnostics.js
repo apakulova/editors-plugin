@@ -2,12 +2,6 @@ const assert = require("assert");
 const fs = require("fs");
 
 const {
-  createSessionToken,
-  getSessionCookie,
-  isPasswordValid,
-  isSessionAuthorized,
-} = require("./lib/number-diagnostics-auth");
-const {
   NumberDiagnosticsCaptureError,
   validateNumberDiagnosticsPayload,
 } = require("./lib/number-diagnostics-capture");
@@ -15,31 +9,12 @@ const {
   NUMBER_DIAGNOSTICS_END_AT,
   isNumberDiagnosticsCollectionOpen,
 } = require("./lib/number-diagnostics-config");
-const { createCsv, formatDecisionContext } = require("../api/number-diagnostics-export");
-const { formatNumberDiagnosticCasesLine } = require("./lib/analytics-report");
 const {
   createCaseFilters,
   getSeenAfterThreshold,
   normalizeSeenAfter,
 } = require("./lib/number-diagnostics-store");
 
-const authEnv = {
-  NUMBER_DIAGNOSTICS_PASSWORD: "test-password-for-report",
-  NUMBER_DIAGNOSTICS_SESSION_SECRET: "test-session-secret-that-is-long-enough",
-};
-const now = new Date("2026-08-26T09:00:00.000Z");
-const token = createSessionToken(authEnv, now);
-const cookie = getSessionCookie(token);
-const request = {
-  headers: {
-    cookie: cookie.split(";")[0],
-  },
-};
-
-assert.strictEqual(isPasswordValid("test-password-for-report", authEnv), true);
-assert.strictEqual(isPasswordValid("wrong-password-for-report", authEnv), false);
-assert.strictEqual(isSessionAuthorized(request, authEnv, new Date(now.getTime() + 1000)), true);
-assert.strictEqual(isSessionAuthorized(request, authEnv, new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)), false);
 assert.strictEqual(isNumberDiagnosticsCollectionOpen(new Date("2026-09-18T20:59:59.999Z")), true);
 assert.strictEqual(isNumberDiagnosticsCollectionOpen(NUMBER_DIAGNOSTICS_END_AT), false);
 assert.strictEqual(normalizeSeenAfter("2026-08-27T12:34:56.789Z"), "2026-08-27T12:34:56.789Z");
@@ -64,17 +39,6 @@ assert(newCasesFilters.conditions.some((condition) => condition.includes("create
 assert(newCasesFilters.params.includes("2026-08-27T12:34:56.789999Z"));
 const firstVisitFilters = createCaseFilters({ newOnly: "1" });
 assert(firstVisitFilters.conditions.includes("FALSE"));
-const telegramLine = formatNumberDiagnosticCasesLine(
-  {
-    start: new Date("2026-08-25T21:00:00.000Z"),
-    end: new Date("2026-08-26T21:00:00.000Z"),
-  },
-  127,
-  { NUMBER_DIAGNOSTICS_REPORT_URL: "https://example.test/number-diagnostics" }
-);
-assert(telegramLine.includes("Изменения чисел: 127 случаев"));
-assert(telegramLine.includes("from=2026-08-26&amp;to=2026-08-26"));
-
 const validPayload = {
   capturedAt: "2026-08-26T09:15:00.000Z",
   cases: [
@@ -124,71 +88,19 @@ assert.throws(
   (error) => error instanceof NumberDiagnosticsCaptureError && error.code === "forbidden_case_property"
 );
 
-assert.strictEqual(
-  formatDecisionContext({ number_before: "10000", neighbors: [{ direction: "right", text: "₽", usedAsEvidence: true }] }),
-  "10000 · ₽"
-);
-const csv = createCsv([
-  {
-    after_text: "Стоимость 338,00 $ за месяц",
-    before_text: "Стоимость $338.00 за месяц",
-    captured_at: "2026-08-26T09:15:00.000Z",
-    layer_mode: "single",
-    neighbors: [],
-    number_after: "338,00 $",
-    number_before: "$338.00",
-    number_kind: "Сумма с валютой",
-    number_rules_version: "numbers-2026-08-25-v1",
-    plugin_release: "2026-08-26",
-    reason: "Валюта",
-    rule_codes: ["number_decimal_comma"],
-    run_id: "run-test",
-    status: "changed",
-  },
-]);
-assert(csv.startsWith("\uFEFF"));
-assert(csv.includes("Стоимость $338.00 за месяц"));
-assert(csv.includes("Стоимость 338,00 $ за месяц"));
-assert.strictEqual(csv.includes("[НП]"), false);
-assert.strictEqual(csv.includes("неразрывные пробелы как"), false);
-assert(csv.includes("numbers-2026-08-25-v1"));
-assert(csv.includes("Сборка диагностики"));
-
-const page = fs.readFileSync("public/number-diagnostics.html", "utf8");
-const pageScript = fs.readFileSync("public/number-diagnostics.js", "utf8");
-const pageStyles = fs.readFileSync("public/number-diagnostics.css", "utf8");
-const reportApi = fs.readFileSync("api/number-diagnostics.js", "utf8");
-const favicon = fs.readFileSync("public/favicon.png");
 const vercelConfig = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
-assert(page.includes("Все случаи с числами") === false, "Summary labels are rendered from the page script");
-assert(pageScript.includes("Все случаи с числами"));
-assert(pageScript.includes("Новых с прошлого визита"));
-assert(pageScript.includes("chistovik-number-diagnostics-visit-watermark"));
-assert(pageScript.includes('params.set("newOnly", "1")'));
-assert.strictEqual(pageScript.includes("date.toISOString()"), false);
-assert(reportApi.includes("getNumberDiagnosticVisitSummary"));
-assert(fs.readFileSync("scripts/lib/number-diagnostics-store.js", "utf8").includes("SS.US"));
-assert(page.includes("Выгрузить все случаи"));
-assert(page.includes("Показать неразрывные пробелы"));
-assert(page.includes('id="spacesToggle" type="checkbox" checked'));
-assert(page.includes('<link rel="icon" href="/favicon.png" type="image/png">'));
-assert.deepStrictEqual(Array.from(favicon.subarray(0, 8)), [137, 80, 78, 71, 13, 10, 26, 10]);
-assert(pageScript.includes("Сборка диагностики"));
-assert(pageScript.includes("Соседние слои для проверки"));
-assert(pageScript.includes("Соседний текстовый слой не найден"));
-assert(pageScript.includes("Соседний текстовый слой не был записан этой сборкой"));
-assert(pageScript.includes("Контекст после числа"));
-assert(pageScript.includes("isMeaningfulNumberDiagnosticNeighbor"));
-assert(pageScript.includes('neighbor.role !== "separator"'));
-assert.strictEqual(pageScript.includes("getChangedRanges"), true);
-assert.strictEqual(pageScript.includes('document.createElement("mark")'), true);
-assert.strictEqual(pageStyles.includes(".comparison-text .nbsp-marker"), true);
-assert(pageStyles.includes("repeat(6, minmax(140px, 1fr))"));
-assert.strictEqual(pageScript.includes('number_context_nbsp: "Пробел рядом с числом"'), true);
-assert.strictEqual(pageScript.includes('"Изменён текст рядом"'), true);
-assert.strictEqual(page.includes("space-legend"), false);
-assert.strictEqual(page.includes("Узкий неразрывный пробел"), false);
-assert(page.includes('meta name="robots" content="noindex, nofollow, noarchive"'));
-assert(vercelConfig.rewrites.some((rewrite) => rewrite.source === "/number-diagnostics"));
+for (const removedPath of [
+  "public/number-diagnostics.html",
+  "public/number-diagnostics.js",
+  "public/number-diagnostics.css",
+  "public/number-diagnostics-demo.json",
+  "api/number-diagnostics.js",
+  "api/number-diagnostics-session.js",
+  "api/number-diagnostics-export.js",
+  "scripts/lib/number-diagnostics-auth.js",
+]) {
+  assert.strictEqual(fs.existsSync(removedPath), false, `Temporary diagnostics must stay removed: ${removedPath}`);
+}
+assert(!(vercelConfig.rewrites || []).some((rewrite) => rewrite.source === "/number-diagnostics"));
 
 console.log("Number diagnostics tests passed.");
