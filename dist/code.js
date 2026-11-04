@@ -1,4 +1,266 @@
 "use strict";
+// This is the catalogue we actually edit, not the wider quantity-marker list:
+// SI prefixes in that list (for example мВт and МВт) have different meanings.
+const ABBREVIATION_CASE_WORDS = new Set("рис илл гл стр ст п тыс мин руб коп шт мес млн млрд трлн с м км кг г гг мм см л мл в вт квт dpi lpi кв куб т е к д и др ч н p s".split(" "));
+function abbreviationAuthorCase(value) {
+    return value === "UPPER" ? "upper" : value === "TITLE" ? "title" : null;
+}
+function createAbbreviationCaseContext(text, segments) {
+    const explicitSegments = [];
+    for (const segment of segments) {
+        if (abbreviationAuthorCase(segment.textCase) === null)
+            continue;
+        const previous = explicitSegments[explicitSegments.length - 1];
+        if ((previous === null || previous === void 0 ? void 0 : previous.end) === segment.start && previous.textCase === segment.textCase)
+            previous.end = segment.end;
+        else
+            explicitSegments.push({ start: segment.start, end: segment.end, textCase: segment.textCase });
+    }
+    return explicitSegments.length === 0 ? null : { originalText: text, segments: explicitSegments };
+}
+function readAbbreviationCaseContext(textNode, text) {
+    const textCase = textNode.textCase;
+    if (typeof textCase === "string") {
+        return createAbbreviationCaseContext(text, [{ start: 0, end: text.length, textCase }]);
+    }
+    // Small test doubles may not expose this Figma property.
+    if (textCase === undefined)
+        return null;
+    return createAbbreviationCaseContext(text, textNode.getStyledTextSegments(["textCase"]));
+}
+function areAbbreviationCaseContextsEqual(first, second) {
+    if (first === null || second === null)
+        return first === second;
+    return first.originalText === second.originalText && JSON.stringify(first.segments) === JSON.stringify(second.segments);
+}
+function getAbbreviationParagraphStarts(text) {
+    const starts = [0];
+    const breaks = /\r\n|\r|\n/g;
+    let match;
+    while ((match = breaks.exec(text)) !== null)
+        starts.push(match.index + match[0].length);
+    return starts;
+}
+function detectAbbreviationAuthorCase(text) {
+    var _a, _b;
+    const words = [];
+    for (const atom of (_a = text.match(/[^\s\u00A0]+/g)) !== null && _a !== void 0 ? _a : []) {
+        if (/[\d_/@:]/.test(atom))
+            continue;
+        for (const word of (_b = atom.match(/[A-Za-zА-Яа-яЁё]+/g)) !== null && _b !== void 0 ? _b : []) {
+            if (word.length < 2 || ABBREVIATION_CASE_WORDS.has(word.toLowerCase()) || QUANTITY_MARKER_FORMS.has(word) || /^[IVXLCDM]+$/.test(word))
+                continue;
+            words.push(word);
+        }
+    }
+    if (words.length > 0 && words.every((word) => word === word.toUpperCase()))
+        return "upper";
+    if (words.length >= 3 && words.every((word) => /^[A-ZА-ЯЁ][a-zа-яё]+$/.test(word)))
+        return "title";
+    return null;
+}
+function createAbbreviationCasePolicy(text, context) {
+    var _a, _b;
+    const originalText = (_a = context === null || context === void 0 ? void 0 : context.originalText) !== null && _a !== void 0 ? _a : text;
+    const segments = (_b = context === null || context === void 0 ? void 0 : context.segments) !== null && _b !== void 0 ? _b : [];
+    const starts = getAbbreviationParagraphStarts(originalText);
+    const restoredStarts = getAbbreviationParagraphStarts(text);
+    const paragraphs = starts.map((start, index) => {
+        var _a, _b, _c;
+        const end = (_a = starts[index + 1]) !== null && _a !== void 0 ? _a : originalText.length;
+        let explicitCase = null;
+        let allExplicit = true;
+        for (let position = start; position < end; position += 1) {
+            if (!/[A-Za-zА-Яа-яЁё]/.test(originalText[position]))
+                continue;
+            const segment = segments.find((candidate) => candidate.start <= position && position < candidate.end);
+            const mode = segment === undefined ? null : abbreviationAuthorCase(segment.textCase);
+            if (mode === null || (explicitCase !== null && explicitCase !== mode)) {
+                allExplicit = false;
+                break;
+            }
+            explicitCase = mode;
+        }
+        const restoredStart = (_b = restoredStarts[index]) !== null && _b !== void 0 ? _b : text.length;
+        const restoredEnd = (_c = restoredStarts[index + 1]) !== null && _c !== void 0 ? _c : text.length;
+        return { start, end, authorCase: detectAbbreviationAuthorCase(text.slice(restoredStart, restoredEnd)), explicitCase: allExplicit ? explicitCase : null };
+    });
+    return { originalText, segments, paragraphs, currentParagraphs: new Map(), mappedCases: new Map() };
+}
+function getAbbreviationCaseParagraph(policy, text, position) {
+    let starts = policy.currentParagraphs.get(text);
+    if (starts === undefined) {
+        starts = getAbbreviationParagraphStarts(text);
+        policy.currentParagraphs.set(text, starts);
+    }
+    let low = 0;
+    let high = starts.length;
+    while (low + 1 < high) {
+        const middle = (low + high) >>> 1;
+        if (starts[middle] <= position)
+            low = middle;
+        else
+            high = middle;
+    }
+    return policy.paragraphs[low];
+}
+function getMappedAbbreviationCases(policy, text) {
+    var _a;
+    const cached = policy.mappedCases.get(text);
+    if (cached !== undefined)
+        return cached;
+    const originalCases = new Array(policy.originalText.length).fill(null);
+    for (const segment of policy.segments) {
+        originalCases.fill(abbreviationAuthorCase(segment.textCase), segment.start, segment.end);
+    }
+    if (text === policy.originalText) {
+        policy.mappedCases.set(text, originalCases);
+        return originalCases;
+    }
+    // Reuse the existing pure text comparison to carry only case hints across
+    // inserted punctuation/spaces. This does not change how Figma text is written.
+    const edits = calculatePointTextEdits(policy.originalText, text);
+    const result = [];
+    let cursor = 0;
+    for (const edit of edits) {
+        for (let index = cursor; index < edit.start; index += 1)
+            result.push(originalCases[index]);
+        const source = edit.start === edit.end
+            ? Math.min(edit.start, originalCases.length - 1)
+            : getPointTextEditStyleSourcePosition(policy.originalText, edit);
+        for (let index = 0; index < edit.insertText.length; index += 1)
+            result.push((_a = originalCases[source]) !== null && _a !== void 0 ? _a : null);
+        cursor = edit.end;
+    }
+    for (let index = cursor; index < originalCases.length; index += 1)
+        result.push(originalCases[index]);
+    policy.mappedCases.set(text, result);
+    return result;
+}
+function shouldPreserveAbbreviationCase(policy, text, start, end) {
+    const paragraph = getAbbreviationCaseParagraph(policy, text, start);
+    if ((paragraph === null || paragraph === void 0 ? void 0 : paragraph.authorCase) || (paragraph === null || paragraph === void 0 ? void 0 : paragraph.explicitCase))
+        return true;
+    if (policy.segments.length === 0)
+        return false;
+    const cases = getMappedAbbreviationCases(policy, text);
+    for (let index = start; index < end; index += 1) {
+        if (cases[index] !== null && /[A-Za-zА-Яа-яЁё]/.test(text[index]))
+            return true;
+    }
+    return false;
+}
+function shouldPreserveAuthorAbbreviationPeriod(policy, text, position) {
+    if (policy === null)
+        return false;
+    const paragraph = getAbbreviationCaseParagraph(policy, text, position);
+    return Boolean((paragraph === null || paragraph === void 0 ? void 0 : paragraph.authorCase) || (paragraph === null || paragraph === void 0 ? void 0 : paragraph.explicitCase));
+}
+function isAbbreviationAtSentenceStart(text, position) {
+    const before = text.slice(0, position).replace(/[ \t\u00A0«“„"'([{]+$/, "");
+    return before.length === 0 || /[.!?…\r\n]$/.test(before) || /(?:^|[\r\n])[ \t\u00A0]*(?:[—–\-•●○◦‣⁃*]|\d+[.)])$/.test(before);
+}
+function normalizeAbbreviationCase(input, policy, collector, numberLayerContext) {
+    const changes = new Map();
+    const occupied = new Set();
+    const add = (start, end, code, canonical, sentenceInitial = false) => {
+        var _a;
+        for (let index = start; index < end; index += 1)
+            if (occupied.has(index))
+                return;
+        for (let index = start; index < end; index += 1)
+            occupied.add(index);
+        const rublePerMonth = input.slice(Math.max(0, start - 2), start) === "₽/" && !isSlashSeparatedAbbreviationPart(input, start - 2, end);
+        if ((!rublePerMonth && isSlashSeparatedAbbreviationPart(input, start, end)) || isCodeLikeTextPart(input, start, end) || shouldPreserveAbbreviationCase(policy, input, start, end))
+            return;
+        const original = input.slice(start, end);
+        if (sentenceInitial && /^[A-ZА-ЯЁ]/.test(original) && isAbbreviationAtSentenceStart(input, start)) {
+            canonical = canonical[0].toUpperCase() + canonical.slice(1);
+        }
+        if (original === canonical)
+            return;
+        const entries = (_a = changes.get(code)) !== null && _a !== void 0 ? _a : [];
+        entries.push({ start, end, text: canonical });
+        changes.set(code, entries);
+    };
+    const scan = (pattern, visit) => {
+        let match;
+        while ((match = pattern.exec(input)) !== null)
+            visit(match);
+    };
+    scan(/(^|[^A-Za-zА-Яа-яЁё\d_])((?:и[ \t\u00A0]+т\.[ \t\u00A0]+[дп]\.|и[ \t\u00A0]+др\.|в[ \t\u00A0]+т\.[ \t\u00A0]+ч\.|т\.[ \t\u00A0]+[екдп]\.))(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match) => {
+        const start = match.index + match[1].length;
+        // The same two capital letters can be a person's initials.
+        if (/^[А-ЯЁ]\.[ \t\u00A0]+[А-ЯЁ]\.$/.test(match[2]) && /^[ \t\u00A0]*[А-ЯЁ][А-Яа-яЁё]+/.test(input.slice(start + match[2].length)))
+            return;
+        add(start, start + match[2].length, "abbr_compound", match[2].toLowerCase(), true);
+    });
+    scan(/(^|[^\d_])[12]\d{3}[ \t\u00A0]*—[ \t\u00A0]*(н\.[ \t\u00A0]+в\.)(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match) => {
+        const start = match.index + match[0].lastIndexOf(match[2]);
+        add(start, start + match[2].length, "abbr_compound", match[2].toLowerCase());
+    });
+    scan(/(^|[^A-Za-zА-Яа-яЁё\d_])((?:p\.[ \t\u00A0]+){1,2}s\.)(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match) => {
+        const start = match.index + match[1].length;
+        add(start, start + match[2].length, "abbr_compound", match[2].toUpperCase());
+    });
+    const number = "\\d+(?:[ \\t\\u00A0\\u2009\\u202F]\\d{3})*(?:,\\d+)?";
+    scan(new RegExp(`(^|[^${LETTERS}\\d_])${number}[ \\t\\u00A0]+(кв|куб)\\.[ \\t\\u00A0]+(м)(?=$|[^${LETTERS}\\d_])`, "gi"), (match) => {
+        const unitStart = match.index + match[0].lastIndexOf(match[3]);
+        const kindStart = match.index + match[0].lastIndexOf(match[2]);
+        const amountStart = match.index + match[1].length;
+        const amountEnd = amountStart + input.slice(amountStart, kindStart).replace(/[ \t\u00A0]+$/, "").length;
+        if (isPartialSeparatedNumber(input, amountStart, amountEnd) || isNumberPartOfCodeToken(input, amountStart, amountEnd))
+            return;
+        add(kindStart, kindStart + match[2].length, "abbr_area_volume", match[2].toLowerCase());
+        add(unitStart, unitStart + match[3].length, "abbr_area_volume", "м");
+    });
+    scan(new RegExp(`(^|[^${LETTERS}\\d_])${number}(?:[—–-]${number})?[ \\t\\u00A0]+(млрд|трлн|млн|тыс|мин|руб|коп|шт|мес|квт|вт|dpi|lpi|км|кг|мм|см|мл|с|м|г|л|в)(\\.?)(?=$|[^${LETTERS}\\d_])`, "gi"), (match) => {
+        const abbreviation = match[2];
+        const start = match.index + match[0].lastIndexOf(abbreviation);
+        const amountStart = match.index + match[1].length;
+        const amountEnd = amountStart + input.slice(amountStart, start).replace(/[ \t\u00A0]+$/, "").length;
+        if (isPartialSeparatedNumber(input, amountStart, amountEnd) || isNumberPartOfCodeToken(input, amountStart, amountEnd))
+            return;
+        if (abbreviation.toLowerCase() === "шт" && isProtectedPieceAbbreviation(input, amountStart, amountEnd, start + abbreviation.length, numberLayerContext))
+            return;
+        if (abbreviation.toLowerCase() === "с" && match[3] === "" && /^[ \t\u00A0]+[A-Za-zА-Яа-яЁё]/.test(input.slice(start + abbreviation.length)))
+            return;
+        const code = abbreviation.toLowerCase() === "мес" ? "abbr_month" : /^(?:тыс|мин|руб|коп|шт)$/i.test(abbreviation) || (abbreviation.toLowerCase() === "г" && match[3] === ".") ? "abbr_dotted" : "abbr_undotted_large_number";
+        add(start, start + abbreviation.length, code, getCanonicalTechnicalMeasurementUnit(abbreviation.toLowerCase()));
+    });
+    scan(new RegExp(`(^|[^${LETTERS}\\d_.])(([12]\\d{3})—([12]\\d{3}))[ \\t\\u00A0]+(гг)\\.(?=$|[^${LETTERS}\\d_.])`, "gi"), (match) => {
+        const rangeStart = match.index + match[1].length;
+        const rangeEnd = rangeStart + match[2].length;
+        const start = match.index + match[0].lastIndexOf(match[5]);
+        const previous = previousNonSpaceSkippingDevelopmentMarker(input, rangeStart);
+        const protectionText = input.slice(0, start) + "  " + input.slice(start + 2);
+        if ((numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.protectedByNeighbor) || previous === "+" || previous === MINUS || hasProtectiveQuantityLabel(input, rangeStart) || isNumberPartOfMaskedSecret(input, rangeStart, match[3]) || isProtectedNumericRange(protectionText, rangeStart, rangeEnd) || isNumberInsideFullDate(input, rangeStart, rangeEnd))
+            return;
+        add(start, start + 2, "abbr_dotted", "гг");
+    });
+    scan(/₽\/(мес)(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match) => add(match.index + 2, match.index + match[0].length, "abbr_month", "мес"));
+    const referenceNumber = "(?:№[ \\t\\u00A0]*\\d+(?:\\.\\d+)*|[IVXLCDM]+|\\d+(?:\\.\\d+)*(?:[—–-]\\d+(?:\\.\\d+)*)?)";
+    scan(new RegExp(`(^|[^${LETTERS}\\d_])(рис|илл|гл|стр|ст|п)\\.(?=[ \\t\\u00A0]+${referenceNumber}(?=$|[^${LETTERS}\\d_]))`, "gi"), (match) => {
+        const start = match.index + match[1].length;
+        add(start, start + match[2].length, "abbr_dotted", match[2].toLowerCase(), true);
+    });
+    if (numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.moneyNumberBefore) {
+        scan(/^([ \t\u00A0]*)(руб|коп)\.(?=[ \t\u00A0]*$)/gi, (match) => add(match[1].length, match[1].length + match[2].length, "abbr_dotted", match[2].toLowerCase()));
+    }
+    let text = input;
+    for (const [code, edits] of changes) {
+        text = applyTypographyRule(collector, code, text, (value) => {
+            let result = "";
+            let cursor = 0;
+            for (const edit of edits.sort((first, second) => first.start - second.start)) {
+                result += value.slice(cursor, edit.start) + edit.text;
+                cursor = edit.end;
+            }
+            return result + value.slice(cursor);
+        });
+    }
+    return text;
+}
 const NBSP = "\u00A0";
 const DEVELOPMENT_NBSP_MARKER = "*";
 const DEVELOPMENT_NBSP_FILL = {
@@ -24,9 +286,9 @@ const NUMBER_DIAGNOSTICS_MAX_QUEUED_REPORTS = 10;
 const NUMBER_DIAGNOSTICS_MAX_CASES_PER_PAYLOAD = 50;
 const NUMBER_DIAGNOSTICS_MAX_PAYLOAD_BYTES = 440 * 1024;
 const NUMBER_DIAGNOSTICS_MAX_TEXT_LENGTH = 12000;
-const NUMBER_RULES_VERSION = "numbers-2026-08-25-v1";
+const NUMBER_RULES_VERSION = "numbers-2026-11-03-v1";
 const ANALYTICS_SCHEMA_VERSION = 15;
-const ANALYTICS_PLUGIN_RELEASE = "2026-08-26";
+const ANALYTICS_PLUGIN_RELEASE = "2026-11-04";
 const PERFORMANCE_MEASUREMENT_VERSION = 9;
 const POINT_EDITING_RUNTIME_PHASE = "point_safe";
 const DEFAULT_TEXT_WRITE_STRATEGY = "point";
@@ -1743,10 +2005,13 @@ function isSupportedNumberContextTextNode(node) {
         return false;
     }
 }
+function hasNumberLayerContextValue(input) {
+    return /\d{4}|\d+\.\d+|\d{1,3}(?:[ \t\u00A0\u2009\u202F]\d{3})+/.test(input);
+}
 function isPureNumberContextCandidate(input) {
     try {
         const trimmed = input.trim();
-        return /(\d{4}|\d+\.\d+)/.test(trimmed) && /^[+−\-()\d.,'’ʼ \t\u00A0\u2009\u202F—–:;]+$/.test(trimmed);
+        return hasNumberLayerContextValue(trimmed) && /^[+−\-()\d.,'’ʼ \t\u00A0\u2009\u202F—–:;]+$/.test(trimmed);
     }
     catch (error) {
         console.error("[Чистовик] Failed to check number context candidate", error);
@@ -2074,7 +2339,7 @@ function buildNumberLayerContexts(textNodes) {
         const childIndexCache = new Map();
         for (const textNode of textNodes) {
             try {
-                if (isTextNodeRemoved(textNode) || !/\d{4}|\d+\.\d+|^\s*\+\s*7\s*$|^\s*(?:руб|коп)\.?\s*$/i.test(textNode.characters)) {
+                if (isTextNodeRemoved(textNode) || (!hasNumberLayerContextValue(textNode.characters) && !/^\s*\+\s*7\s*$|^\s*(?:руб|коп)\.?\s*$/i.test(textNode.characters))) {
                     continue;
                 }
                 const context = buildNumberLayerContextForNode(textNode, parentSnapshotCache, visibleChildrenCache, childIndexCache);
@@ -2530,12 +2795,13 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                 const currencyStyles = Array.from(oldText).some((character) => QUANTITY_CURRENCY_SYMBOLS.includes(character))
                     ? measureDuration((duration) => { timings.readStyles += duration; }, () => captureTextStyles(textNode))
                     : null;
+                const abbreviationCaseContext = measureDuration((duration) => { timings.readStyles += duration; }, () => readAbbreviationCaseContext(textNode, oldText));
                 currentStage = "clean_text";
                 let cleanResult = measureDuration((duration) => {
                     timings.typography += duration;
                 }, () => {
                     const inputText = (numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.standalonePhonePrefix) === true ? normalizeStandaloneRussianPhoneCountryPrefix(oldText) : oldText;
-                    return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext, currencyStyles === null ? null : createCurrencyFormattingContext(oldText, currencyStyles));
+                    return cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext, currencyStyles === null ? null : createCurrencyFormattingContext(oldText, currencyStyles), abbreviationCaseContext);
                 });
                 let newText = cleanResult.text;
                 currentLayerNumberDiagnostics = createNumberDiagnosticCases(oldText, newText, numberDiagnosticLayerContext, existingDevelopmentMarkerIndexes, cleanResult.developmentMarkerIndexes);
@@ -2584,112 +2850,115 @@ async function processTextNodes(textNodes, skippedLocked, skippedHidden, options
                         error.name = "TextLayerStylesChangedError";
                         throw error;
                     }
-                    if (currencyStyles !== null && !areTextStyleSegmentsEqual(currencyStyles, styles)) {
+                    const finalAbbreviationCaseContext = createAbbreviationCaseContext(oldText, styles);
+                    if ((currencyStyles !== null && !areTextStyleSegmentsEqual(currencyStyles, styles)) || !areAbbreviationCaseContextsEqual(abbreviationCaseContext, finalAbbreviationCaseContext)) {
                         const inputText = (numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.standalonePhonePrefix) === true ? normalizeStandaloneRussianPhoneCountryPrefix(oldText) : oldText;
                         currentStage = "clean_text";
                         beginTypographyRuleAnalyticsTextLayer(ruleAnalyticsCollector, processed - 1);
-                        cleanResult = measureDuration((duration) => { timings.typography += duration; }, () => cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext, createCurrencyFormattingContext(oldText, styles)));
+                        cleanResult = measureDuration((duration) => { timings.typography += duration; }, () => cleanTypographyWithMetadata(inputText, options, existingDevelopmentMarkerIndexes, ruleAnalyticsCollector, numberLayerContext, createCurrencyFormattingContext(oldText, styles), finalAbbreviationCaseContext));
                         newText = cleanResult.text;
                         currentLayerNumberDiagnostics = createNumberDiagnosticCases(oldText, newText, numberDiagnosticLayerContext, existingDevelopmentMarkerIndexes, cleanResult.developmentMarkerIndexes);
                     }
-                    const pointEditPlan = measureDuration((duration) => { timings.pointEditPlanning += duration; }, () => createPointTextEditPlan(oldText, newText));
-                    pointEditPlannedLayersCount += 1;
-                    pointEditOperationsCount += pointEditPlan.operationsCount;
-                    pointEditMaxOperationsCount = Math.max(pointEditMaxOperationsCount, pointEditPlan.operationsCount);
-                    if (!pointEditPlan.matches) {
-                        pointEditMismatchLayersCount += 1;
-                        if (writeStrategy === "point") {
-                            currentStage = "compare_text";
-                            throw new Error("Point text edit plan does not match the expected text");
-                        }
-                    }
-                    if (writeStrategy === "full") {
-                        currentStage = "compare_text";
-                        const styleComparison = measureDuration((duration) => {
-                            timings.compareText += duration;
-                        }, () => createStyleRestorationPlan(oldText, newText, styles, cleanResult.currencySourceIndexes));
-                        currentStage = "write_text";
-                        assertTextNodeCharactersUnchanged(textNode, oldText);
-                        assertNumberLayerContextUnchanged(textNode, numberLayerContext, finalNumberContextParentSnapshotCache, finalNumberContextVisibleChildrenCache, finalNumberContextChildIndexCache);
-                        ensureCurrentLayerSnapshot(styles);
-                        ensureUndoCheckpoint();
-                        currentLayerWasMutated = true;
-                        currentLayerMutationJournal = createPointTextMutationJournal(oldText);
-                        measureDuration((duration) => {
-                            timings.writeText += duration;
-                        }, () => {
-                            textNode.characters = newText;
-                            currentLayerMutationJournal.expectedText = textNode.characters;
-                        });
-                        currentStage = "restore_styles";
-                        const { styleMap, verifyUniformLinkedStyle, wholeTextStyle } = styleComparison;
-                        if (wholeTextStyle !== null) {
-                            await measureAsyncDuration((duration) => {
-                                timings.restoreStyles += duration;
-                            }, () => restoreWholeTextStyle(textNode, wholeTextStyle, verifyUniformLinkedStyle));
-                        }
-                        else {
-                            await measureAsyncDuration((duration) => {
-                                timings.restoreStyles += duration;
-                            }, () => restoreTextStyles(textNode, styleMap, styles, verifyUniformLinkedStyle));
-                            if (!verifyTextStyleRestorationPlan(textNode, styleMap, styles)) {
-                                throw new Error("Text style verification failed");
+                    if (newText !== oldText) {
+                        const pointEditPlan = measureDuration((duration) => { timings.pointEditPlanning += duration; }, () => createPointTextEditPlan(oldText, newText));
+                        pointEditPlannedLayersCount += 1;
+                        pointEditOperationsCount += pointEditPlan.operationsCount;
+                        pointEditMaxOperationsCount = Math.max(pointEditMaxOperationsCount, pointEditPlan.operationsCount);
+                        if (!pointEditPlan.matches) {
+                            pointEditMismatchLayersCount += 1;
+                            if (writeStrategy === "point") {
+                                currentStage = "compare_text";
+                                throw new Error("Point text edit plan does not match the expected text");
                             }
                         }
-                        if (verifyUniformLinkedStyle && !verifyUniformStylePreservation(textNode, styles[0])) {
-                            throw new Error("Linked style verification failed");
+                        if (writeStrategy === "full") {
+                            currentStage = "compare_text";
+                            const styleComparison = measureDuration((duration) => {
+                                timings.compareText += duration;
+                            }, () => createStyleRestorationPlan(oldText, newText, styles, cleanResult.currencySourceIndexes));
+                            currentStage = "write_text";
+                            assertTextNodeCharactersUnchanged(textNode, oldText);
+                            assertNumberLayerContextUnchanged(textNode, numberLayerContext, finalNumberContextParentSnapshotCache, finalNumberContextVisibleChildrenCache, finalNumberContextChildIndexCache);
+                            ensureCurrentLayerSnapshot(styles);
+                            ensureUndoCheckpoint();
+                            currentLayerWasMutated = true;
+                            currentLayerMutationJournal = createPointTextMutationJournal(oldText);
+                            measureDuration((duration) => {
+                                timings.writeText += duration;
+                            }, () => {
+                                textNode.characters = newText;
+                                currentLayerMutationJournal.expectedText = textNode.characters;
+                            });
+                            currentStage = "restore_styles";
+                            const { styleMap, verifyUniformLinkedStyle, wholeTextStyle } = styleComparison;
+                            if (wholeTextStyle !== null) {
+                                await measureAsyncDuration((duration) => {
+                                    timings.restoreStyles += duration;
+                                }, () => restoreWholeTextStyle(textNode, wholeTextStyle, verifyUniformLinkedStyle));
+                            }
+                            else {
+                                await measureAsyncDuration((duration) => {
+                                    timings.restoreStyles += duration;
+                                }, () => restoreTextStyles(textNode, styleMap, styles, verifyUniformLinkedStyle));
+                                if (!verifyTextStyleRestorationPlan(textNode, styleMap, styles)) {
+                                    throw new Error("Text style verification failed");
+                                }
+                            }
+                            if (verifyUniformLinkedStyle && !verifyUniformStylePreservation(textNode, styles[0])) {
+                                throw new Error("Linked style verification failed");
+                            }
                         }
-                    }
-                    else {
-                        currentStage = "compare_text";
-                        const coalescedEdits = coalesceDensePointTextEdits(oldText, pointEditPlan.edits, styles);
-                        const pointEdits = includeMovedCurrencyReplacements(oldText, newText, coalescedEdits, styles, cleanResult.currencySourceIndexes);
-                        const extraCurrencyEdits = pointEdits.length - coalescedEdits.length;
-                        pointEditOperationsCount += extraCurrencyEdits;
-                        pointEditMaxOperationsCount = Math.max(pointEditMaxOperationsCount, pointEditPlan.operationsCount + extraCurrencyEdits);
-                        const pointStyleMap = measureDuration((duration) => {
-                            timings.compareText += duration;
-                        }, () => {
-                            assertPointTextEditsSafeForCurrentStage(oldText, pointEdits, styles);
-                            const styleMap = buildPointTextEditStyleMap(oldText, styles, pointEdits, cleanResult.currencySourceIndexes);
-                            assertInsertedCurrencyStylesRestorable(oldText, pointEdits, styleMap, styles);
-                            return styleMap;
-                        });
-                        currentStage = "write_text";
-                        assertTextNodeCharactersUnchanged(textNode, oldText);
-                        assertNumberLayerContextUnchanged(textNode, numberLayerContext, finalNumberContextParentSnapshotCache, finalNumberContextVisibleChildrenCache, finalNumberContextChildIndexCache);
-                        ensureCurrentLayerSnapshot(styles);
-                        ensureUndoCheckpoint();
-                        currentLayerWasMutated = true;
-                        currentLayerMutationJournal = createPointTextMutationJournal(oldText);
+                        else {
+                            currentStage = "compare_text";
+                            const coalescedEdits = coalesceDensePointTextEdits(oldText, pointEditPlan.edits, styles);
+                            const pointEdits = includeMovedCurrencyReplacements(oldText, newText, coalescedEdits, styles, cleanResult.currencySourceIndexes);
+                            const extraCurrencyEdits = pointEdits.length - coalescedEdits.length;
+                            pointEditOperationsCount += extraCurrencyEdits;
+                            pointEditMaxOperationsCount = Math.max(pointEditMaxOperationsCount, pointEditPlan.operationsCount + extraCurrencyEdits);
+                            const pointStyleMap = measureDuration((duration) => {
+                                timings.compareText += duration;
+                            }, () => {
+                                assertPointTextEditsSafeForCurrentStage(oldText, pointEdits, styles);
+                                const styleMap = buildPointTextEditStyleMap(oldText, styles, pointEdits, cleanResult.currencySourceIndexes);
+                                assertInsertedCurrencyStylesRestorable(oldText, pointEdits, styleMap, styles);
+                                return styleMap;
+                            });
+                            currentStage = "write_text";
+                            assertTextNodeCharactersUnchanged(textNode, oldText);
+                            assertNumberLayerContextUnchanged(textNode, numberLayerContext, finalNumberContextParentSnapshotCache, finalNumberContextVisibleChildrenCache, finalNumberContextChildIndexCache);
+                            ensureCurrentLayerSnapshot(styles);
+                            ensureUndoCheckpoint();
+                            currentLayerWasMutated = true;
+                            currentLayerMutationJournal = createPointTextMutationJournal(oldText);
+                            measureDuration((duration) => {
+                                timings.writeText += duration;
+                            }, () => applyPointTextEditsToTextNode(textNode, pointEdits, currentLayerMutationJournal));
+                            if (textNode.characters !== newText) {
+                                throw new Error("Point text write did not produce the expected text");
+                            }
+                            currentStage = "restore_styles";
+                            const stylesPreserved = measureDuration((duration) => {
+                                timings.restoreStyles += duration;
+                            }, () => {
+                                restoreInsertedCurrencyStyles(textNode, pointEdits, pointStyleMap, styles);
+                                return verifyTextStyleRestorationPlan(textNode, pointStyleMap, styles);
+                            });
+                            if (!stylesPreserved) {
+                                throw new Error("Point text write did not preserve text styles");
+                            }
+                        }
+                        charactersChangedTotal += oldText.length;
+                        styleSegmentsCount += styles.length;
+                        currentLayerRecordedTextChange = true;
+                        currentStage = "development_markers";
                         measureDuration((duration) => {
-                            timings.writeText += duration;
-                        }, () => applyPointTextEditsToTextNode(textNode, pointEdits, currentLayerMutationJournal));
-                        if (textNode.characters !== newText) {
-                            throw new Error("Point text write did not produce the expected text");
-                        }
-                        currentStage = "restore_styles";
-                        const stylesPreserved = measureDuration((duration) => {
-                            timings.restoreStyles += duration;
-                        }, () => {
-                            restoreInsertedCurrencyStyles(textNode, pointEdits, pointStyleMap, styles);
-                            return verifyTextStyleRestorationPlan(textNode, pointStyleMap, styles);
-                        });
-                        if (!stylesPreserved) {
-                            throw new Error("Point text write did not preserve text styles");
-                        }
+                            timings.developmentMarkers += duration;
+                        }, () => applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes));
+                        changed += 1;
+                        currentLayerCountedAsChanged = true;
                     }
-                    charactersChangedTotal += oldText.length;
-                    styleSegmentsCount += styles.length;
-                    currentLayerRecordedTextChange = true;
-                    currentStage = "development_markers";
-                    measureDuration((duration) => {
-                        timings.developmentMarkers += duration;
-                    }, () => applyDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes));
-                    changed += 1;
-                    currentLayerCountedAsChanged = true;
                 }
-                else {
+                if (!currentLayerRecordedTextChange) {
                     currentStage = "development_markers";
                     if (needsDevelopmentMarkerStyles(textNode, cleanResult.developmentMarkerIndexes)) {
                         ensureCurrentLayerSnapshot();
@@ -5301,14 +5570,14 @@ function cleanTypography(input, options = getDefaultRunOptions()) {
         throw error;
     }
 }
-function cleanTypographyWithMetadata(input, options = getDefaultRunOptions(), existingDevelopmentMarkerIndexes = [], ruleAnalyticsCollector = null, numberLayerContext = null, currencyContext = null) {
+function cleanTypographyWithMetadata(input, options = getDefaultRunOptions(), existingDevelopmentMarkerIndexes = [], ruleAnalyticsCollector = null, numberLayerContext = null, currencyContext = null, abbreviationCaseContext = null) {
     try {
         const normalizedInput = normalizeInputNonBreakingSpaces(input);
         const asteriskSpaceCandidateIndexes = getExistingAsteriskSpaceCandidateIndexesForRun(normalizedInput, options);
         const markerIndexes = getDevelopmentMarkerIndexesForRun(normalizedInput, options, existingDevelopmentMarkerIndexes, asteriskSpaceCandidateIndexes);
         const inputWithKnownMarkers = restoreExistingDevelopmentMarkers(normalizedInput, [...markerIndexes, ...asteriskSpaceCandidateIndexes]);
         const beautyInput = restoreStableDevelopmentPatternMarkers(inputWithKnownMarkers);
-        const beautyText = cleanTypographyForBeauty(beautyInput, ruleAnalyticsCollector, numberLayerContext, currencyContext);
+        const beautyText = cleanTypographyForBeauty(beautyInput, ruleAnalyticsCollector, numberLayerContext, currencyContext, abbreviationCaseContext);
         const currencySources = currencyContext === null ? {} : { currencySourceIndexes: currencyContext.symbols.map((symbol) => symbol.sourceIndex) };
         if (options.mode !== "development") {
             return Object.assign({ text: beautyText, developmentMarkerIndexes: [] }, currencySources);
@@ -5563,9 +5832,10 @@ function createDevelopmentTypographyResult(beautyText) {
         throw error;
     }
 }
-function cleanTypographyForBeauty(input, ruleAnalyticsCollector = null, numberLayerContext = null, currencyContext = null) {
+function cleanTypographyForBeauty(input, ruleAnalyticsCollector = null, numberLayerContext = null, currencyContext = null, abbreviationCaseContext = null) {
     try {
         let text = input;
+        const abbreviationCasePolicy = createAbbreviationCasePolicy(input, abbreviationCaseContext);
         text = cleanupSpaces(text, ruleAnalyticsCollector);
         text = cleanupQuotesAndPunctuation(text, ruleAnalyticsCollector);
         text = normalizeMathAndSymbols(text, ruleAnalyticsCollector);
@@ -5574,10 +5844,11 @@ function cleanTypographyForBeauty(input, ruleAnalyticsCollector = null, numberLa
         text = formatPhoneNumbers(text, ruleAnalyticsCollector, numberLayerContext);
         text = applyTypographyRule(ruleAnalyticsCollector, "number_unit_currency_nbsp", text, moveLeadingCurrencySymbolsAfterQuantity);
         text = normalizeEditorialRanges(text, ruleAnalyticsCollector);
-        text = normalizeAbbreviations(text, ruleAnalyticsCollector, numberLayerContext);
+        text = normalizeAbbreviations(text, ruleAnalyticsCollector, numberLayerContext, abbreviationCasePolicy);
         text = applyNonBreakingSpaces(text, ruleAnalyticsCollector);
         text = normalizeMathAndSymbols(text, ruleAnalyticsCollector);
         text = applyTypographyRule(ruleAnalyticsCollector, "year_context", text, normalizeSpacedYears);
+        text = normalizeAbbreviationCase(text, abbreviationCasePolicy, ruleAnalyticsCollector, numberLayerContext);
         return text;
     }
     catch (error) {
@@ -5665,7 +5936,7 @@ function cleanupQuotesAndPunctuation(input, ruleAnalyticsCollector = null) {
             .replace(/([?!](?:[»“"']+))\./g, "$1"));
         text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_repeated_marks", text, (value) => value.replace(/!{2,}/g, "!").replace(/\?{2,}/g, "?"));
         text = applyTypographyRule(ruleAnalyticsCollector, "punctuation_question_exclamation_order", text, (value) => value.replace(/(^|[^!?])!\?(?![!?])/g, "$1?!"));
-        text = applyTypographyRule(ruleAnalyticsCollector, "quote_punctuation_outside", text, (value) => value.replace(/([.,;:])([»“"'])/g, "$2$1"));
+        text = applyTypographyRule(ruleAnalyticsCollector, "quote_punctuation_outside", text, (value) => value.replace(/([.,;:])([»“"'])/g, (match, punctuation, quote, offset, fullText) => punctuation === "." && isPieceAbbreviationPeriod(fullText, offset) ? match : `${quote}${punctuation}`));
         return applyTypographyRule(ruleAnalyticsCollector, "space_before_punctuation", text, removeSpacesBeforePunctuation);
     }
     catch (error) {
@@ -6184,7 +6455,13 @@ function formatPhoneNumbers(input, ruleAnalyticsCollector = null, numberLayerCon
 }
 function moveLeadingCurrencySymbolsAfterQuantity(input) {
     try {
-        return input.replace(LEADING_CURRENCY_VALUE_PATTERN, (_match, prefix, currency, value, scale) => `${prefix}${value}${scale !== null && scale !== void 0 ? scale : ""}${NBSP}${currency}`);
+        return input.replace(LEADING_CURRENCY_VALUE_PATTERN, (match, prefix, currency, value, scale, offset, fullText) => {
+            const valueStart = offset + match.indexOf(value, prefix.length + currency.length);
+            if (isPartialSeparatedNumber(fullText, valueStart, valueStart + value.length)) {
+                return match;
+            }
+            return `${prefix}${value}${scale !== null && scale !== void 0 ? scale : ""}${NBSP}${currency}`;
+        });
     }
     catch (error) {
         console.error("[Чистовик] Failed to move leading currency symbol", error);
@@ -6833,6 +7110,17 @@ function getQuantityEvidenceAfter(fullText, end) {
             }
             return { kind, marker };
         }
+        // Recognize accepted local area/volume spellings before their dots are
+        // added, and beside closing quotes/punctuation on later runs. Keep this out
+        // of the shared catalogue: separate layers must not gain new evidence.
+        const areaOrVolume = /^[ \t\u00A0\u2009\u202F]+((?:кв|куб)\.?[ \t\u00A0]+м\.?)(?=$|[^A-Za-zА-Яа-яЁё\d_.])(?![-‑][A-Za-zА-Яа-яЁё\d_])/i.exec(after);
+        if (areaOrVolume !== null) {
+            const markerStart = end + areaOrVolume[0].indexOf(areaOrVolume[1]);
+            const markerEnd = end + areaOrVolume[0].length;
+            if (!isSlashSeparatedAbbreviationPart(fullText, markerStart, markerEnd)) {
+                return { kind: "quantity", marker: areaOrVolume[1] };
+            }
+        }
         return null;
     }
     catch (error) {
@@ -7115,14 +7403,15 @@ function formatQuantitativeMathExpressions(input) {
     }
 }
 function separateAttachedMeasurementUnits(input, numberLayerContext) {
-    const pattern = new RegExp(`(^|[^${LETTERS}\\d_.,])(\\d+(?:[.,]\\d+)?)(кВт|Вт|dpi|lpi|км|кг|мм|см|мл|с|м|г|л|В)(?=$|[^${LETTERS}\\d_])`, "gi");
+    const pattern = new RegExp(`(^|[^${LETTERS}\\d_.,])(\\d+(?:[.,]\\d+)?)(тыс|мин|руб|коп|кВт|Вт|dpi|lpi|км|кг|мм|см|мл|шт|с|м|г|л|В)(?=$|[^${LETTERS}\\d_])`, "gi");
     return input.replace(pattern, (match, prefix, amount, unit, offset, fullText) => {
         const amountStart = offset + prefix.length;
         const unitEnd = offset + match.length;
         const bounds = getLooseTokenBounds(fullText, amountStart, unitEnd);
         const before = fullText.slice(bounds.start, amountStart);
         const after = fullText.slice(unitEnd, bounds.end);
-        if ((numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.protectedByNeighbor) === true ||
+        if ((unit.toLowerCase() === "шт" && hasPieceAbbreviationMaskPrefix(fullText, amountStart)) ||
+            (numberLayerContext === null || numberLayerContext === void 0 ? void 0 : numberLayerContext.protectedByNeighbor) === true ||
             hasProtectiveQuantityLabel(fullText, amountStart) ||
             isInsideProtectedNumericIdentifier(fullText, amountStart, amountStart + amount.length) ||
             isNumberInsideDateLikeToken(fullText, amountStart, amountStart + amount.length) ||
@@ -7161,7 +7450,8 @@ function formatNumbersAndMoney(input, ruleAnalyticsCollector = null, numberLayer
             try {
                 const integerPart = match.split(",")[0].replace(/[ \t\u00A0\u2009\u202F]/g, "");
                 const evidence = getQuantityEvidence(fullText, offset, offset + match.length, numberLayerContext);
-                if (evidence === null ||
+                if (isPartialSeparatedNumber(fullText, offset, offset + match.length) ||
+                    evidence === null ||
                     (evidence.kind !== "currency" && isCompactRussianPhoneDigits(integerPart)) ||
                     isNumberPartOfDate(fullText, offset, offset + integerPart.length) ||
                     shouldProtectEvidenceBasedNumber(fullText, offset, offset + match.length, integerPart, numberLayerContext)) {
@@ -7198,7 +7488,7 @@ function normalizeTechnicalMeasurementUnits(input) {
     try {
         return input.replace(/(^|[^A-Za-zА-Яа-яЁё\d.,])(\d(?:[\d \u00A0]*\d)?(?:,\d+)?)[ \t\u00A0]*(квт|вт|в|dpi|lpi)(?=$|[^A-Za-zА-Яа-яЁё\d])/gi, (_match, prefix, number, unit) => {
             try {
-                return `${prefix}${number}${NBSP}${getCanonicalTechnicalMeasurementUnit(unit)}`;
+                return `${prefix}${number}${NBSP}${unit}`;
             }
             catch (error) {
                 console.error("[Чистовик] Failed to normalize technical measurement unit candidate", error);
@@ -7296,7 +7586,7 @@ function normalizeWesternGroupedNumbers(input, numberLayerContext = null) {
                 const compactInteger = integerPart.replace(/,/g, "");
                 const evidence = getQuantityEvidence(fullText, candidateStart, candidateStart + candidate.length, numberLayerContext);
                 const commaGroups = countMatches(integerPart, /,/g);
-                if ((evidence === null || evidence === void 0 ? void 0 : evidence.kind) !== "currency" || (commaGroups < 2 && decimalPart === undefined) || shouldProtectEvidenceBasedNumber(fullText, candidateStart, candidateStart + candidate.length, compactInteger, numberLayerContext)) {
+                if (isPartialSeparatedNumber(fullText, candidateStart, candidateStart + candidate.length) || (evidence === null || evidence === void 0 ? void 0 : evidence.kind) !== "currency" || (commaGroups < 2 && decimalPart === undefined) || shouldProtectEvidenceBasedNumber(fullText, candidateStart, candidateStart + candidate.length, compactInteger, numberLayerContext)) {
                     return match;
                 }
                 return `${prefix}${integerPart.replace(/,/g, NBSP)}${decimalPart === undefined ? "" : `,${decimalPart}`}`;
@@ -7333,9 +7623,15 @@ function normalizeGroupedNumberSpaces(input) {
         throw error;
     }
 }
+function isPartialSeparatedNumber(fullText, start, end) {
+    var _a, _b, _c, _d;
+    return ((/[.,]/.test((_a = fullText[start - 1]) !== null && _a !== void 0 ? _a : "") && /\d/.test((_b = fullText[start - 2]) !== null && _b !== void 0 ? _b : "")) ||
+        (/[.,]/.test((_c = fullText[end]) !== null && _c !== void 0 ? _c : "") && /\d/.test((_d = fullText[end + 1]) !== null && _d !== void 0 ? _d : "")));
+}
 function isProtectedDottedNumber(fullText, start, end) {
     try {
-        if (isNumberPartOfCodeToken(fullText, start, end) ||
+        if (isPartialSeparatedNumber(fullText, start, end) ||
+            isNumberPartOfCodeToken(fullText, start, end) ||
             isNumberInsideDateLikeToken(fullText, start, end) ||
             isNumberPartOfDate(fullText, start, end) ||
             isDottedNumbering(fullText, start, end)) {
@@ -7756,7 +8052,39 @@ function groupLongNumber(value) {
         throw error;
     }
 }
-function normalizeAbbreviations(input, ruleAnalyticsCollector = null, numberLayerContext = null) {
+function hasPieceAbbreviationMaskPrefix(fullText, amountStart) {
+    return /[\*•]{2,}[ \t\u00A0]*$/.test(fullText.slice(Math.max(0, amountStart - 24), amountStart));
+}
+function isPieceAbbreviationPeriod(fullText, periodIndex) {
+    const number = "\\d+(?:[ \\t\\u00A0\\u2009\\u202F]\\d{3})*(?:[,.]\\d+)?";
+    const before = fullText.slice(0, periodIndex);
+    const match = new RegExp(`(^|[^${LETTERS}\\d_])(${number}(?:[—–-]${number})?)[ \\t\\u00A0\\u2009\\u202F]*(шт)$`, "i").exec(before);
+    if (match === null)
+        return false;
+    const amountStart = match.index + match[1].length;
+    const amountEnd = amountStart + match[2].length;
+    const abbreviationStart = periodIndex - match[3].length;
+    // Quote cleanup runs before attached quantities receive their separating
+    // space. Inspect that spelling without mistaking the suffix for a code.
+    if (amountEnd === abbreviationStart) {
+        const separated = `${fullText.slice(0, abbreviationStart)}${NBSP}${fullText.slice(abbreviationStart)}`;
+        return !isProtectedPieceAbbreviation(separated, amountStart, amountEnd, periodIndex + 1, null);
+    }
+    return !isProtectedPieceAbbreviation(fullText, amountStart, amountEnd, periodIndex, null);
+}
+function isProtectedPieceAbbreviation(fullText, amountStart, amountEnd, abbreviationEnd, numberLayerContext) {
+    const integer = fullText.slice(amountStart, amountEnd).split(/[,.]/)[0].replace(/\D/g, "");
+    return (hasPieceAbbreviationMaskPrefix(fullText, amountStart) ||
+        isPartialSeparatedNumber(fullText, amountStart, amountEnd) ||
+        shouldProtectEvidenceBasedNumber(fullText, amountStart, amountEnd, integer, numberLayerContext) ||
+        isInsideProtectedNumericIdentifier(fullText, amountStart, amountEnd) ||
+        isCodeLikeTextPart(fullText, amountStart, abbreviationEnd) ||
+        isSlashSeparatedAbbreviationPart(fullText, amountStart, abbreviationEnd) ||
+        /^[\d_]/.test(fullText.slice(abbreviationEnd)) ||
+        /^\.[A-Za-zА-Яа-яЁё\d_]/.test(fullText.slice(abbreviationEnd)) ||
+        /^[ \t\u00A0]*\.?[ \t\u00A0]*[·×^]/.test(fullText.slice(abbreviationEnd)));
+}
+function normalizeAbbreviations(input, ruleAnalyticsCollector = null, numberLayerContext = null, abbreviationCasePolicy = null) {
     try {
         let text = input;
         const number = "\\d+(?:[ \\t\\u00A0\\u2009\\u202F]\\d{3})*(?:[,.]\\d+)?";
@@ -7770,7 +8098,8 @@ function normalizeAbbreviations(input, ruleAnalyticsCollector = null, numberLaye
                     return `₽/${abbreviation}`;
                 }
                 const periodIndex = offset + match.length - 1;
-                const removePeriod = !isSentenceEndingPeriod(fullText, periodIndex) &&
+                const removePeriod = !shouldPreserveAuthorAbbreviationPeriod(abbreviationCasePolicy, fullText, periodIndex) &&
+                    !isSentenceEndingPeriod(fullText, periodIndex) &&
                     hasLowercaseSentenceContinuation(fullText, periodIndex);
                 recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, !removePeriod);
                 return `₽/${abbreviation}${removePeriod ? "" : "."}`;
@@ -7789,16 +8118,19 @@ function normalizeAbbreviations(input, ruleAnalyticsCollector = null, numberLaye
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(к)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match, prefix, first, second, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.`, offset, fullText))
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(д)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match, prefix, first, second, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.`, offset, fullText))
             .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(т)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(п)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_.])/gi, (match, prefix, first, second, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.`, offset, fullText))
-            .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])p[ \t\u00A0]*\.[ \t\u00A0]*p[ \t\u00A0]*\.[ \t\u00A0]*s\.(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match, prefix, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `P.${NBSP}P.${NBSP}S.`, offset, fullText))
-            .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])p[ \t\u00A0]*\.[ \t\u00A0]*s\.(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match, prefix, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `P.${NBSP}S.`, offset, fullText)));
+            .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(p)[ \t\u00A0]*\.[ \t\u00A0]*(p)[ \t\u00A0]*\.[ \t\u00A0]*(s)\.(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match, prefix, first, second, third, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.${NBSP}${third}.`, offset, fullText))
+            .replace(/(^|[^A-Za-zА-Яа-яЁё\d_])(p)[ \t\u00A0]*\.[ \t\u00A0]*(s)\.(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match, prefix, first, second, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${first}.${NBSP}${second}.`, offset, fullText)));
         text = applyTypographyRule(ruleAnalyticsCollector, "abbr_compound", text, (value) => value.replace(/(^|[^\d_])([12]\d{3})[ \t\u00A0]*[—–-][ \t\u00A0]*(н)(?:[ \t\u00A0]*\.[ \t\u00A0]*|[ \t\u00A0]+)(в)\.?(?=$|[^A-Za-zА-Яа-яЁё\d_])/gi, (match, prefix, year, first, second, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${year}${NBSP}${EM_DASH} ${first}.${NBSP}${second}.`, offset, fullText)));
         text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) => {
             const referenceNumber = "(?:№[ \\t\\u00A0]*\\d+(?:\\.\\d+)*|[IVXLCDM]+|\\d+(?:\\.\\d+)*(?:[—–-]\\d+(?:\\.\\d+)*)?)";
             return value.replace(new RegExp(`(^|[^${LETTERS}\\d_])(рис|илл|гл|стр|ст|п)\\.?[ \\t\\u00A0]+(${referenceNumber})(?=$|[^${LETTERS}\\d_])`, "gi"), (match, prefix, abbreviation, reference, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${abbreviation}.${NBSP}${reference}`, offset, fullText));
         });
-        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}\\d_])(${numberOrRange})[ \\t\\u00A0\\u2009\\u202F]*(тыс|мин|руб|коп)\\.?(?=$|[^${LETTERS}_])`, "gi"), (match, prefix, amount, abbreviation, offset, fullText) => {
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}\\d_])(${numberOrRange})[ \\t\\u00A0\\u2009\\u202F]*(тыс|мин|руб|коп|шт)\\.?(?=$|[^${LETTERS}_])`, "gi"), (match, prefix, amount, abbreviation, offset, fullText) => {
             const abbreviationIndex = match.lastIndexOf(abbreviation);
             const abbreviationStart = offset + abbreviationIndex;
+            if (abbreviation.toLowerCase() === "шт" && isProtectedPieceAbbreviation(fullText, offset + prefix.length, offset + prefix.length + amount.length, abbreviationStart + abbreviation.length, numberLayerContext)) {
+                return match;
+            }
             if (isSlashSeparatedAbbreviationPart(fullText, offset + prefix.length, abbreviationStart + abbreviation.length)) {
                 return match;
             }
@@ -7811,6 +8143,7 @@ function normalizeAbbreviations(input, ruleAnalyticsCollector = null, numberLaye
                 }
                 const periodIndex = period === "." ? offset + match.length - 1 : -1;
                 const removePeriod = periodIndex !== -1 &&
+                    !shouldPreserveAuthorAbbreviationPeriod(abbreviationCasePolicy, fullText, periodIndex) &&
                     !isSentenceEndingPeriod(fullText, periodIndex) &&
                     hasLowercaseSentenceContinuation(fullText, periodIndex);
                 if (periodIndex !== -1) {
@@ -7837,12 +8170,13 @@ function normalizeAbbreviations(input, ruleAnalyticsCollector = null, numberLaye
                 }
                 const periodIndex = period === "." ? offset + match.length - 1 : -1;
                 const removePeriod = periodIndex !== -1 &&
+                    !shouldPreserveAuthorAbbreviationPeriod(abbreviationCasePolicy, fullText, periodIndex) &&
                     !isSentenceEndingPeriod(fullText, periodIndex) &&
                     hasLowercaseSentenceContinuation(fullText, periodIndex);
                 if (periodIndex !== -1) {
                     recordAbbreviationPeriodRuleObservation(ruleAnalyticsCollector, fullText, periodIndex, !removePeriod);
                 }
-                return `${prefix}${amount}${NBSP}${getCanonicalTechnicalMeasurementUnit(abbreviation)}${period === "." && !removePeriod ? "." : ""}`;
+                return `${prefix}${amount}${NBSP}${abbreviation}${period === "." && !removePeriod ? "." : ""}`;
             }
             catch (error) {
                 console.error("[Чистовик] Failed to normalize undotted abbreviation", error);
@@ -7850,9 +8184,9 @@ function normalizeAbbreviations(input, ruleAnalyticsCollector = null, numberLaye
             }
         }));
         text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) => value
-            .replace(new RegExp(`(^|[^${LETTERS}\\d_])((?:1\\d{3}|20\\d{2}))${NBSP}?г\\.?(?=$|[^${LETTERS}_])`, "g"), (match, prefix, year, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${year}${NBSP}г.`, offset, fullText))
-            .replace(new RegExp(`(^|[^${LETTERS}\\d_])(${number})${NBSP}г\\.?[ \\t\\u00A0]+(${number})[ \\t\\u00A0]+мес\\.?(?=$|[^${LETTERS}_])`, "g"), (match, prefix, years, months, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${years}${NBSP}г. ${months}${NBSP}мес.`, offset, fullText)));
-        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_month", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}\\d_])(${number})[ \\t\\u00A0\\u2009\\u202F]+мес\\.?(?=$|[^${LETTERS}_])`, "g"), (match, prefix, amount, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${amount}${NBSP}мес.`, offset, fullText)));
+            .replace(new RegExp(`(^|[^${LETTERS}\\d_])((?:1\\d{3}|20\\d{2}))${NBSP}?(г)\\.?(?=$|[^${LETTERS}_])`, "gi"), (match, prefix, year, abbreviation, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${year}${NBSP}${abbreviation}.`, offset, fullText))
+            .replace(new RegExp(`(^|[^${LETTERS}\\d_])(${number})${NBSP}(г)\\.?[ \\t\\u00A0]+(${number})[ \\t\\u00A0]+(мес)\\.?(?=$|[^${LETTERS}_])`, "gi"), (match, prefix, years, yearAbbreviation, months, monthAbbreviation, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${years}${NBSP}${yearAbbreviation}. ${months}${NBSP}${monthAbbreviation}.`, offset, fullText)));
+        text = applyTypographyRule(ruleAnalyticsCollector, "abbr_month", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}\\d_])(${number})[ \\t\\u00A0\\u2009\\u202F]+(мес)\\.?(?=$|[^${LETTERS}_])`, "gi"), (match, prefix, amount, abbreviation, offset, fullText) => normalizeCompoundUnlessSlash(match, prefix, `${amount}${NBSP}${abbreviation}.`, offset, fullText)));
         text = applyTypographyRule(ruleAnalyticsCollector, "abbr_dotted", text, (value) => value.replace(new RegExp(`(^|[^${LETTERS}\\d_.])(([12]\\d{3})[ \\t\\u00A0]*[—–-][ \\t\\u00A0]*([12]\\d{3}))[ \\t\\u00A0]*(гг)\\.?(?=$|[^${LETTERS}\\d_.])`, "gi"), (match, prefix, range, firstYear, lastYear, abbreviation, offset, fullText) => {
             const rangeStart = offset + prefix.length;
             const rangeEnd = rangeStart + range.length;

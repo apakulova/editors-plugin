@@ -366,7 +366,7 @@ assert.strictEqual(analyticsPayload.properties.$process_person_profile, false);
 assert.strictEqual(analyticsPayload.properties.$geoip_disable, true);
 assert.strictEqual(analyticsPayload.properties.analytics_schema_version, 15);
 assert.strictEqual(analyticsPayload.properties.mode, "default");
-assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-08-26");
+assert.strictEqual(analyticsPayload.properties.plugin_release, "2026-11-04");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(analyticsPayload.properties, "plugin_version"), false);
 
 const movedCurrencyDiagnostics = createNumberDiagnosticCases(
@@ -380,7 +380,7 @@ assert.strictEqual(movedCurrencyDiagnostics[0].numberBefore, "$338.00");
 assert.strictEqual(movedCurrencyDiagnostics[0].numberAfter, `338,00${NBSP}$`);
 assert.strictEqual(movedCurrencyDiagnostics[0].beforeText, "Стоимость $338.00 за месяц");
 assert.strictEqual(movedCurrencyDiagnostics[0].reason, "$ перед числом");
-assert.strictEqual(movedCurrencyDiagnostics[0].numberRulesVersion, "numbers-2026-08-25-v1");
+assert.strictEqual(movedCurrencyDiagnostics[0].numberRulesVersion, "numbers-2026-11-03-v1");
 assert(movedCurrencyDiagnostics[0].ruleCodes.includes("number_decimal_comma"));
 assert(movedCurrencyDiagnostics[0].ruleCodes.includes("number_unit_currency_nbsp"));
 
@@ -1841,6 +1841,15 @@ expectClean("12,345 ₽", `12,345${NBSP}₽`);
 expectClean("1,234,567", "1,234,567");
 expectClean("1,234,567 ₽", `1${NBSP}234${NBSP}567${NBSP}₽`);
 expectClean("12,345.00 ₽", `12${NBSP}345,00${NBSP}₽`);
+for (const number of ["1,23.00", "12,34,567.00", "1234,567.00", "1,234,56.00", "12345,67,890.00", "1.234,56", "12,3456"]) {
+  expectClean(`${number} ₽`, `${number}${NBSP}₽`);
+  expectClean(`${number}₽`, `${number}${NBSP}₽`);
+  expectDevelopmentIdempotent(`${number} ₽`, `${number}*₽`);
+}
+expectClean("12,345.00 кг", `12,345.00${NBSP}кг`);
+expectClean("1,23.00 ₽; 338.00 ₽", `1,23.00${NBSP}₽; 338,00${NBSP}₽`);
+expectClean("₽1,23.00", "₽1,23.00");
+expectClean("$12,34,567.00", "$12,34,567.00");
 expectClean("₽10000—$20000", `10${NBSP}000${NBSP}₽${NBSP}— 20${NBSP}000${NBSP}$`);
 expectClean("₽10000—₽20000", `10${NBSP}000${NBSP}— 20${NBSP}000${NBSP}₽`);
 expectClean("10000—20000 кг", `10${NBSP}000${NBSP}— 20${NBSP}000${NBSP}кг`);
@@ -1869,8 +1878,8 @@ expectClean("Мощность 100 Вт.", `Мощность 100${NBSP}Вт.`);
 expectClean("Код A300dpi", "Код A300dpi");
 expectClean("Код 300dpiX", "Код 300dpiX");
 // Attached agreed units must be recognized before decimal conversion and grouping.
-// Ordinary units keep the author's letters; only the existing technical units
-// have a canonical spelling.
+// Ordinary text uses the agreed spelling; intentional caps/title styling is
+// tested separately, and SI prefixes with different meanings remain distinct.
 const attachedUnitCaseGroups = [
   { variants: ["с", "С"] },
   { variants: ["м", "М"] },
@@ -1890,7 +1899,7 @@ const attachedUnitCaseGroups = [
 
 for (const { variants, canonical } of attachedUnitCaseGroups) {
   for (const unit of variants) {
-    const expectedUnit = canonical ?? unit;
+    const expectedUnit = canonical ?? variants[0];
 
     expectClean(`10000${unit}`, `10${NBSP}000${NBSP}${expectedUnit}`);
     expectClean(`2.5${unit}`, `2,5${NBSP}${expectedUnit}`);
@@ -1909,7 +1918,7 @@ expectClean("10000 С комиссией", `10000${NBSP}С комиссией`);
 expectClean("10000 С КОМИССИЕЙ", `10000${NBSP}С КОМИССИЕЙ`);
 expectClean("10000 с КоМиСсИеЙ", `10000${NBSP}с КоМиСсИеЙ`);
 expectClean("10000 С РАБОТЫ", `10000${NBSP}С РАБОТЫ`);
-expectDevelopmentIdempotent("10000КГ", "10*000*КГ");
+expectDevelopmentIdempotent("10000КГ", "10*000*кг");
 expectDevelopmentIdempotent("2.5КВТ", "2,5*кВт");
 expectDevelopmentIdempotent("10000 С КОМИССИЕЙ", "10000*С КОМИССИЕЙ");
 
@@ -3562,8 +3571,113 @@ async function runStandalonePhoneCountryPrefixContextTests() {
   assert.strictEqual(unrelatedTail.characters, `977${NBSP}700${NB_HYPHEN}10${NB_HYPHEN}20`);
 }
 
+async function runAbbreviationCaseStyleProcessingTests() {
+  const exposeTextCase = (node) => Object.defineProperty(node, "textCase", {
+    get: () => {
+      const segments = node.getStyledTextSegments(["textCase"]);
+      return segments.every((segment) => segment.textCase === segments[0].textCase) ? segments[0].textCase : context.figma.mixed;
+    },
+  });
+  const originalLoadFont = context.figma.loadFontAsync;
+  try {
+    context.figma.loadFontAsync = async () => {};
+    for (const textCase of ["ORIGINAL", "UPPER", "TITLE"]) {
+      const input = "Срок 6 Мес, масса 5 КГ. товара";
+      const mock = createStyleInheritingTextNodeMock(`case-${textCase}`, input, { textCase });
+      exposeTextCase(mock.node);
+      const expected = textCase === "ORIGINAL" ? `Срок 6${NBSP}мес., масса 5${NBSP}кг товара` : `Срок 6${NBSP}Мес., масса 5${NBSP}КГ. товара`;
+      for (let pass = 0; pass < 2; pass += 1) {
+        const result = await processTextNodes([mock.node], 0, 0, beautyOptions, "point");
+        assert.strictEqual(result.failed, 0, `${textCase}: styled abbreviations must be writable`);
+        assert.strictEqual(mock.node.characters, expected);
+        assert.strictEqual(mock.styleAt(mock.node.characters.indexOf("ес")).textCase, textCase);
+      }
+    }
+
+    const mixedInput = "Срок 6 Мес, масса 5 КГ";
+    const mixedStart = mixedInput.indexOf("Мес");
+    const mixed = createStyleInheritingTextNodeMock("mixed-case-ranges", mixedInput, { textCase: "ORIGINAL" }, [
+      { start: mixedStart, end: mixedStart + 3, style: { textCase: "TITLE" } },
+    ]);
+    exposeTextCase(mixed.node);
+    for (let pass = 0; pass < 2; pass += 1) {
+      const result = await processTextNodes([mixed.node], 0, 0, beautyOptions, "point");
+      assert.strictEqual(result.failed, 0);
+      assert.strictEqual(mixed.node.characters, `Срок 6${NBSP}Мес., масса 5${NBSP}кг`);
+      assert.strictEqual(mixed.styleAt(mixed.node.characters.indexOf("Мес")).textCase, "TITLE");
+      assert.strictEqual(mixed.styleAt(mixed.node.characters.indexOf("кг")).textCase, "ORIGINAL");
+    }
+
+    for (const [before, after] of [["ORIGINAL", "UPPER"], ["UPPER", "ORIGINAL"], ["ORIGINAL", "TITLE"]]) {
+      const mock = createStyleInheritingTextNodeMock(`case-changed-${before}-${after}`, "Вес 5 КГ. товара", { textCase: before });
+      exposeTextCase(mock.node);
+      let changed = false;
+      context.figma.loadFontAsync = async () => {
+        if (changed) return;
+        changed = true;
+        mock.node.setRangeTextCase(0, mock.node.characters.length, after);
+      };
+      const result = await processTextNodes([mock.node], 0, 0, beautyOptions, "point");
+      assert.strictEqual(result.failed, 0, `${before} → ${after}: accept stable new case formatting`);
+      assert.strictEqual(mock.node.characters, after === "ORIGINAL" ? `Вес 5${NBSP}кг товара` : `Вес 5${NBSP}КГ. товара`);
+      assert.strictEqual(mock.styleAt(0).textCase, after);
+      assert.strictEqual(result.analytics.rollbackAttemptedLayersCount, 0);
+    }
+
+    for (const after of ["UPPER", "TITLE"]) {
+      const input = `6${NBSP}Мес.`;
+      const mock = createStyleInheritingTextNodeMock(`case-cancelled-write-${after}`, input, { textCase: "ORIGINAL" });
+      exposeTextCase(mock.node);
+      const undo = configureFigmaUndoForNodes([mock.node]);
+      context.figma.loadFontAsync = async () => mock.node.setRangeTextCase(0, mock.node.characters.length, after);
+      const result = await processTextNodes([mock.node], 0, 0, beautyOptions, "point");
+      assert.strictEqual(result.failed, 0);
+      assert.strictEqual(result.changed, 0, "A change cancelled by current author styling is not a text edit");
+      assert.strictEqual(result.successful, 1);
+      assert.strictEqual(mock.node.characters, input);
+      assert.strictEqual(mock.operations.filter(([operation]) => operation === "insertCharacters" || operation === "deleteCharacters").length, 0);
+      assert.strictEqual(undo.getCommitCalls(), 0, "An unchanged result must not create an undo checkpoint");
+      assert.strictEqual(result.analytics.pointEditOperationsCount, 0);
+      assert.strictEqual(result.analytics.charactersChangedTotal, 0);
+    }
+  } finally {
+    context.figma.loadFontAsync = originalLoadFont;
+  }
+}
+
 async function runEvidenceBasedNumberLayerContextTests() {
   context.figma.loadFontAsync = async () => {};
+
+  for (const [input, expected] of [
+    ["10000", `10${NBSP}000`],
+    ["10 000", `10${NBSP}000`],
+    [`10${NBSP}000`, `10${NBSP}000`],
+    ["10\u2009000", `10${NBSP}000`],
+    ["10\u202F000", `10${NBSP}000`],
+    ["10 000,50", `10${NBSP}000,50`],
+  ]) {
+    for (const [marker, leading] of [["₽", false], ["₽", true], ["кг", false]]) {
+      const repeatedAmount = createProcessTextNodeMock("repeated-amount", input, { height: 20, width: 70, x: 0, y: 0 });
+      const repeatedMarker = createProcessTextNodeMock("repeated-marker", marker, { height: 20, width: 20, x: 80, y: 0 });
+      connectHorizontalAutoLayoutParent("repeated-number-parent", leading ? [repeatedMarker, repeatedAmount] : [repeatedAmount, repeatedMarker]);
+
+      for (let run = 0; run < 3; run += 1) {
+        const repeatedResult = await processTextNodes([repeatedAmount], 0, 0, beautyOptions);
+        assert.strictEqual(repeatedResult.failed, 0, `${input} | ${marker}, run ${run + 1}`);
+        assert.strictEqual(repeatedAmount.characters, expected, `${input} | ${marker}, run ${run + 1}`);
+        assert.strictEqual(repeatedMarker.characters, marker, "An unselected marker must stay unchanged");
+        if (run > 0) assert.strictEqual(repeatedResult.changed, 0, "A repeated run must preserve grouped number spaces");
+      }
+    }
+  }
+
+  const groupedAmbiguousLeft = createProcessTextNodeMock("grouped-ambiguous-left", `10${NBSP}000`, { height: 20, width: 70, x: 0, y: 0 });
+  const groupedAmbiguousMarker = createProcessTextNodeMock("grouped-ambiguous-marker", "₽", { height: 20, width: 20, x: 80, y: 0 });
+  const groupedAmbiguousRight = createProcessTextNodeMock("grouped-ambiguous-right", "10000", { height: 20, width: 70, x: 110, y: 0 });
+  connectHorizontalAutoLayoutParent("grouped-ambiguous-parent", [groupedAmbiguousLeft, groupedAmbiguousMarker, groupedAmbiguousRight]);
+  const groupedAmbiguousResult = await processTextNodes([groupedAmbiguousRight], 0, 0, beautyOptions);
+  assert.strictEqual(groupedAmbiguousResult.failed, 0);
+  assert.strictEqual(groupedAmbiguousRight.characters, "10000", "A grouped neighbor must still make a currency marker ambiguous");
 
   const rubleAmount = createProcessTextNodeMock("cross-layer-ruble-amount", "100", { height: 20, width: 40, x: 0, y: 0 });
   const rubleAbbreviation = createProcessTextNodeMock("cross-layer-ruble-abbreviation", "руб", { height: 20, width: 30, x: 50, y: 0 });
@@ -5940,6 +6054,7 @@ runStyleRestorationTests()
   .then(runDetectedRollbackDamageTests)
   .then(runUnavailableLinkedStylePreflightTests)
   .then(runStandalonePhoneCountryPrefixContextTests)
+  .then(runAbbreviationCaseStyleProcessingTests)
   .then(runEvidenceBasedNumberLayerContextTests)
   .then(runRuleAnalyticsFinalTextTests)
   .then(runProcessingFailureAnalyticsTests)
